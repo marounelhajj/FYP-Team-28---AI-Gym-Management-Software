@@ -1,7 +1,7 @@
 # AI Gym Management Software
 
 **EECE 501 – Final Year Project | Team 28**
-American University of Beirut, Course Coordinator: Dr. Youssef Tawk
+American University of Beirut
 
 ## Project Description
 
@@ -47,19 +47,9 @@ is deployed on the cloud.
 - **System Administrator** – accounts, roles/permissions, and audit logs.
 - **Prospective Member** – plan browsing and online sign-up.
 
-## Project Timeline
+## Jira Backlog
 
-- **Fall term:** Product vision, features, user stories and scenarios,
-  product backlog, product roadmap, prototype, and an initial product
-  version.
-- **Spring term:** A complete, incrementally developed, cloud-deployed
-  operational product.
-
-## Disciplines
-
-Artificial Intelligence and Machine Learning · Computer Software Systems ·
-Networks and Security
-
+https://fypteam28.atlassian.net/jira/software/projects/SCRUM/boards/1/backlog?atlOrigin=eyJpIjoiYzYyNjc3MDU0YjMzNDY5YThjZDIzM2E3MDQwNTRhMWEiLCJwIjoiaiJ9
 ## References
 
 - https://www.capterra.com/gym-management-software/
