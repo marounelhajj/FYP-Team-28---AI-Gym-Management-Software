@@ -1,0 +1,15 @@
+{
+  "name": "gym-management-backend",
+  "version": "1.0.0",
+  "description": "Backend API for the AI Gym Management Software (EECE 501 FYP - Team 28)",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2"
+  }
+}
