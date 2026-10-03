@@ -1,24 +1,31 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchMembers, fetchMemberFilterOptions } from "../api/members.js";
 import RegisterMemberForm from "./RegisterMemberForm.jsx";
+import { BUTTON_COLORS } from "../styles/buttonColors.js";
 
 const STATUS_STYLES = {
-  Active: { bg: "#e6f4ea", fg: "#1e7a34" },
-  Frozen: { bg: "#e8f0fe", fg: "#1a56c4" },
-  Cancelled: { bg: "#fdeceb", fg: "#b3261e" },
+  Active: BUTTON_COLORS.green,
+  Frozen: BUTTON_COLORS.blue,
+  Cancelled: BUTTON_COLORS.red,
 };
 
 function StatusBadge({ status }) {
-  const style = STATUS_STYLES[status] || { bg: "#eee", fg: "#333" };
+  const style = STATUS_STYLES[status] || { background: "#eee", color: "#333" };
   return (
     <span
       style={{
-        background: style.bg,
-        color: style.fg,
-        padding: "2px 10px",
-        borderRadius: 999,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        height: 22,
+        width: 76,
+        background: style.background,
+        color: style.color,
+        padding: "0 10px",
+        borderRadius: 6,
         fontSize: 12,
         fontWeight: 600,
+        lineHeight: 1,
         whiteSpace: "nowrap",
       }}
     >
@@ -193,7 +200,9 @@ export default function MemberDirectory() {
                   <td style={styles.td}>
                     <span style={styles.nameCell}>{m.name}</span>
                   </td>
-                  <td style={styles.td}>{m.email}</td>
+                  <td style={styles.td}>
+                    <span style={styles.emailCell}>{m.email}</span>
+                  </td>
                   <td style={styles.td}>{m.branch}</td>
                   <td style={styles.td}>{m.membershipPlan}</td>
                   <td style={styles.td}>
@@ -241,8 +250,7 @@ const styles = {
     fontSize: 14,
     border: "none",
     borderRadius: 8,
-    background: "#1a56c4",
-    color: "#fff",
+    ...BUTTON_COLORS.blue,
     fontWeight: 600,
     cursor: "pointer",
     whiteSpace: "nowrap",
@@ -315,7 +323,8 @@ const styles = {
     borderBottom: "1px solid #f0f0f2",
   },
   row: {},
-  nameCell: { fontWeight: 600 },
+  nameCell: { fontWeight: 400 },
+  emailCell: { fontWeight: 400 },
   emptyCell: {
     padding: "28px 14px",
     textAlign: "center",

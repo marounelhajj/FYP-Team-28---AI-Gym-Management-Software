@@ -1,17 +1,35 @@
 import { useState } from "react";
-import { createMember } from "../api/members.js";
-import { BUTTON_COLORS } from "../styles/buttonColors.js";
+import { createStaffAccount, updateStaffAccount } from "../../api/admin.js";
+import { BUTTON_COLORS } from "../../styles/buttonColors.js";
 
-// User story: "As a receptionist, I want to register a new walk-in
-// member's profile and membership plan, so that I can onboard new
-// customers on the spot."
+// Mirrors StaffAccount.JobTitle on the backend (administration/models.py).
+const JOB_TITLES = [
+  "System Administrator", "General Manager", "Branch Manager",
+  "Receptionist", "Coach", "Marketing Staff",
+];
+
+const EMPTY_FORM = { fullName: "", email: "", username: "", jobTitle: "", roleId: "", password: "" };
+
+// User story: "As a system administrator, I want to create, edit and
+// deactivate staff login accounts, so that only current staff can sign in
+// to the system."
 //
-// A new member is always created as Active with today's join date -
-// the receptionist only supplies profile + plan info, nothing else.
-const EMPTY_FORM = { name: "", email: "", phone: "", branch: "", membershipPlan: "" };
-
-export default function RegisterMemberForm({ filterOptions, onClose, onRegistered }) {
-  const [form, setForm] = useState(EMPTY_FORM);
+// Used for both creating a new account and editing an existing one -
+// `account` is null for create, or the staff account being edited.
+export default function StaffAccountForm({ account, roles, onClose, onSaved }) {
+  const isEditing = Boolean(account);
+  const [form, setForm] = useState(
+    account
+      ? {
+          fullName: account.fullName,
+          email: account.email,
+          username: account.username,
+          jobTitle: account.jobTitle,
+          roleId: String(account.roleId),
+          password: "",
+        }
+      : EMPTY_FORM
+  );
   const [fieldErrors, setFieldErrors] = useState({});
   const [submitError, setSubmitError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -26,9 +44,24 @@ export default function RegisterMemberForm({ filterOptions, onClose, onRegistere
     setSubmitError(null);
     setFieldErrors({});
 
+    const payload = {
+      fullName: form.fullName,
+      email: form.email,
+      username: form.username,
+      jobTitle: form.jobTitle,
+      roleId: Number(form.roleId),
+    };
+    // On create, password is required. On edit, only send it if the admin
+    // actually typed a new one - an empty field means "leave it unchanged".
+    if (!isEditing || form.password) {
+      payload.password = form.password;
+    }
+
     try {
-      const member = await createMember(form);
-      onRegistered(member);
+      const saved = isEditing
+        ? await updateStaffAccount(account.id, payload)
+        : await createStaffAccount(payload);
+      onSaved(saved);
     } catch (err) {
       if (err.fieldErrors) {
         setFieldErrors(err.fieldErrors);
@@ -44,18 +77,18 @@ export default function RegisterMemberForm({ filterOptions, onClose, onRegistere
     <div style={styles.overlay} onClick={onClose}>
       <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
         <div style={styles.modalHeader}>
-          <h2 style={styles.modalTitle}>Register New Member</h2>
+          <h2 style={styles.modalTitle}>{isEditing ? "Edit Staff Account" : "New Staff Account"}</h2>
           <button onClick={onClose} style={styles.closeButton} aria-label="Close">
             &times;
           </button>
         </div>
 
         <form onSubmit={handleSubmit}>
-          <Field label="Full name" error={fieldErrors.name}>
+          <Field label="Full name" error={fieldErrors.fullName}>
             <input
               type="text"
-              value={form.name}
-              onChange={(e) => update("name", e.target.value)}
+              value={form.fullName}
+              onChange={(e) => update("fullName", e.target.value)}
               style={styles.input}
               autoFocus
             />
@@ -70,43 +103,56 @@ export default function RegisterMemberForm({ filterOptions, onClose, onRegistere
             />
           </Field>
 
-          <Field label="Phone" error={fieldErrors.phone}>
+          <Field label="Username" error={fieldErrors.username}>
             <input
-              type="tel"
-              value={form.phone}
-              onChange={(e) => update("phone", e.target.value)}
+              type="text"
+              value={form.username}
+              onChange={(e) => update("username", e.target.value)}
               style={styles.input}
             />
           </Field>
 
-          <Field label="Branch" error={fieldErrors.branch}>
+          <Field label="Job title" error={fieldErrors.jobTitle}>
             <select
-              value={form.branch}
-              onChange={(e) => update("branch", e.target.value)}
+              value={form.jobTitle}
+              onChange={(e) => update("jobTitle", e.target.value)}
               style={styles.input}
             >
-              <option value="">Select a branch...</option>
-              {filterOptions.branches.map((b) => (
-                <option key={b} value={b}>
-                  {b}
+              <option value="">Select a job title...</option>
+              {JOB_TITLES.map((title) => (
+                <option key={title} value={title}>
+                  {title}
                 </option>
               ))}
             </select>
           </Field>
 
-          <Field label="Membership plan" error={fieldErrors.membershipPlan}>
+          <Field label="Role" error={fieldErrors.roleId}>
             <select
-              value={form.membershipPlan}
-              onChange={(e) => update("membershipPlan", e.target.value)}
+              value={form.roleId}
+              onChange={(e) => update("roleId", e.target.value)}
               style={styles.input}
             >
-              <option value="">Select a plan...</option>
-              {(filterOptions.plans || []).map((p) => (
-                <option key={p} value={p}>
-                  {p}
+              <option value="">Select a role...</option>
+              {roles.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
                 </option>
               ))}
             </select>
+          </Field>
+
+          <Field
+            label={isEditing ? "New password (leave blank to keep current)" : "Password"}
+            error={fieldErrors.password}
+          >
+            <input
+              type="password"
+              value={form.password}
+              onChange={(e) => update("password", e.target.value)}
+              style={styles.input}
+              placeholder={isEditing ? "••••••••" : ""}
+            />
           </Field>
 
           {submitError && <div style={styles.errorBox}>{submitError}</div>}
@@ -116,7 +162,7 @@ export default function RegisterMemberForm({ filterOptions, onClose, onRegistere
               Cancel
             </button>
             <button type="submit" disabled={submitting} style={styles.submitButton}>
-              {submitting ? "Registering..." : "Register member"}
+              {submitting ? "Saving..." : isEditing ? "Save changes" : "Create account"}
             </button>
           </div>
         </form>

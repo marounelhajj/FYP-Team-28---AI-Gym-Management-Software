@@ -1,23 +1,36 @@
 import { useState } from "react";
-import { createMember } from "../api/members.js";
-import { BUTTON_COLORS } from "../styles/buttonColors.js";
+import { createRole, updateRole } from "../../api/admin.js";
+import { BUTTON_COLORS } from "../../styles/buttonColors.js";
 
-// User story: "As a receptionist, I want to register a new walk-in
-// member's profile and membership plan, so that I can onboard new
-// customers on the spot."
+const EMPTY_FORM = { name: "", description: "", permissions: [] };
+
+// User story: "As a system administrator, I want to define roles with
+// specific permission sets, so that access matches each job function."
 //
-// A new member is always created as Active with today's join date -
-// the receptionist only supplies profile + plan info, nothing else.
-const EMPTY_FORM = { name: "", email: "", phone: "", branch: "", membershipPlan: "" };
-
-export default function RegisterMemberForm({ filterOptions, onClose, onRegistered }) {
-  const [form, setForm] = useState(EMPTY_FORM);
+// Used for both creating a new role and editing an existing one - `role`
+// is null for create, or the role being edited.
+export default function RoleForm({ role, permissions, onClose, onSaved }) {
+  const isEditing = Boolean(role);
+  const [form, setForm] = useState(
+    role
+      ? { name: role.name, description: role.description, permissions: role.permissions }
+      : EMPTY_FORM
+  );
   const [fieldErrors, setFieldErrors] = useState({});
   const [submitError, setSubmitError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }));
+  }
+
+  function togglePermission(key) {
+    setForm((f) => ({
+      ...f,
+      permissions: f.permissions.includes(key)
+        ? f.permissions.filter((p) => p !== key)
+        : [...f.permissions, key],
+    }));
   }
 
   async function handleSubmit(e) {
@@ -27,8 +40,8 @@ export default function RegisterMemberForm({ filterOptions, onClose, onRegistere
     setFieldErrors({});
 
     try {
-      const member = await createMember(form);
-      onRegistered(member);
+      const saved = isEditing ? await updateRole(role.id, form) : await createRole(form);
+      onSaved(saved);
     } catch (err) {
       if (err.fieldErrors) {
         setFieldErrors(err.fieldErrors);
@@ -44,14 +57,14 @@ export default function RegisterMemberForm({ filterOptions, onClose, onRegistere
     <div style={styles.overlay} onClick={onClose}>
       <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
         <div style={styles.modalHeader}>
-          <h2 style={styles.modalTitle}>Register New Member</h2>
+          <h2 style={styles.modalTitle}>{isEditing ? "Edit Role" : "New Role"}</h2>
           <button onClick={onClose} style={styles.closeButton} aria-label="Close">
             &times;
           </button>
         </div>
 
         <form onSubmit={handleSubmit}>
-          <Field label="Full name" error={fieldErrors.name}>
+          <Field label="Role name" error={fieldErrors.name}>
             <input
               type="text"
               value={form.name}
@@ -61,52 +74,29 @@ export default function RegisterMemberForm({ filterOptions, onClose, onRegistere
             />
           </Field>
 
-          <Field label="Email" error={fieldErrors.email}>
+          <Field label="Description" error={fieldErrors.description}>
             <input
-              type="email"
-              value={form.email}
-              onChange={(e) => update("email", e.target.value)}
+              type="text"
+              value={form.description}
+              onChange={(e) => update("description", e.target.value)}
               style={styles.input}
+              placeholder="What this role is for..."
             />
           </Field>
 
-          <Field label="Phone" error={fieldErrors.phone}>
-            <input
-              type="tel"
-              value={form.phone}
-              onChange={(e) => update("phone", e.target.value)}
-              style={styles.input}
-            />
-          </Field>
-
-          <Field label="Branch" error={fieldErrors.branch}>
-            <select
-              value={form.branch}
-              onChange={(e) => update("branch", e.target.value)}
-              style={styles.input}
-            >
-              <option value="">Select a branch...</option>
-              {filterOptions.branches.map((b) => (
-                <option key={b} value={b}>
-                  {b}
-                </option>
+          <Field label="Permissions" error={fieldErrors.permissions}>
+            <div style={styles.permissionList}>
+              {permissions.map((p) => (
+                <label key={p.key} style={styles.permissionRow}>
+                  <input
+                    type="checkbox"
+                    checked={form.permissions.includes(p.key)}
+                    onChange={() => togglePermission(p.key)}
+                  />
+                  {p.label}
+                </label>
               ))}
-            </select>
-          </Field>
-
-          <Field label="Membership plan" error={fieldErrors.membershipPlan}>
-            <select
-              value={form.membershipPlan}
-              onChange={(e) => update("membershipPlan", e.target.value)}
-              style={styles.input}
-            >
-              <option value="">Select a plan...</option>
-              {(filterOptions.plans || []).map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </select>
+            </div>
           </Field>
 
           {submitError && <div style={styles.errorBox}>{submitError}</div>}
@@ -116,7 +106,7 @@ export default function RegisterMemberForm({ filterOptions, onClose, onRegistere
               Cancel
             </button>
             <button type="submit" disabled={submitting} style={styles.submitButton}>
-              {submitting ? "Registering..." : "Register member"}
+              {submitting ? "Saving..." : isEditing ? "Save changes" : "Create role"}
             </button>
           </div>
         </form>
@@ -152,7 +142,7 @@ const styles = {
     borderRadius: 12,
     padding: 24,
     width: "100%",
-    maxWidth: 420,
+    maxWidth: 440,
     maxHeight: "90vh",
     overflowY: "auto",
     fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
@@ -190,6 +180,23 @@ const styles = {
     borderRadius: 8,
     outline: "none",
     background: "#fff",
+  },
+  permissionList: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 8,
+    border: "1px solid #d0d0d5",
+    borderRadius: 8,
+    padding: 12,
+    maxHeight: 220,
+    overflowY: "auto",
+  },
+  permissionRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    fontSize: 14,
+    cursor: "pointer",
   },
   fieldError: {
     color: "#b3261e",
