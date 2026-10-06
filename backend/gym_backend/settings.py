@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'members',
     'administration',
+    'plans',
 ]
 
 MIDDLEWARE = [
