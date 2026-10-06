@@ -1,23 +1,31 @@
 import { useEffect, useState } from "react";
 import { fetchCurrentUser, logout } from "./api/auth.js";
+import { fetchCurrentMember, logoutMember } from "./api/memberAuth.js";
 import MemberDirectory from "./components/MemberDirectory.jsx";
 import AdminConsole from "./components/admin/AdminConsole.jsx";
 import PlanManager from "./components/plans/PlanManager.jsx";
 import PromotionManager from "./components/plans/PromotionManager.jsx";
 import LoginPage from "./components/LoginPage.jsx";
+import WelcomeScreen from "./components/WelcomeScreen.jsx";
+import MemberLoginPage from "./components/member/MemberLoginPage.jsx";
+import MemberSignupPage from "./components/member/MemberSignupPage.jsx";
+import MemberDashboard from "./components/member/MemberDashboard.jsx";
 import Logo from "./components/Logo.jsx";
 
-// Which screens a logged-in account can open are resolved from their actual
-// permissions (set by a System Administrator via Admin Console -> Roles),
-// not chosen by the user - see LoginPage.jsx and administration/auth_views.py
-// for why.
+// Which screens a logged-in STAFF account can open are resolved from their
+// actual permissions (set by a System Administrator via Admin Console ->
+// Roles), not chosen by the user - see LoginPage.jsx and
+// administration/auth_views.py for why. Members are a separate account
+// type entirely (members/auth_views.py) with no roles/permissions - they
+// always land on MemberDashboard.
 function canAccessAdminConsole(account) {
   return account.permissions.includes("manage_staff_accounts") || account.permissions.includes("manage_roles");
 }
 
-// Everyone except system administrators gets one tab per screen their role
-// allows (e.g. a General Manager sees Plans + Promotions, a Branch Manager
-// sees Members + Promotions, a Receptionist just Members - no tab bar).
+// Every staff account except system administrators gets one tab per screen
+// their role allows (e.g. a General Manager sees Plans + Promotions, a
+// Branch Manager sees Members + Promotions, a Receptionist just Members -
+// no tab bar).
 function availableScreens(account) {
   const has = (p) => account.permissions.includes(p);
   const screens = [];
@@ -33,22 +41,63 @@ function availableScreens(account) {
   return screens;
 }
 
+function destinationLabel(account) {
+  return canAccessAdminConsole(account)
+    ? "the System Administrator Console"
+    : `the ${availableScreens(account)[0].label}`;
+}
+
 export default function App() {
-  const [account, setAccount] = useState(null);
+  // session is null (logged out) or { type: "staff" | "member", data }.
+  const [session, setSession] = useState(null);
   const [checkingSession, setCheckingSession] = useState(true);
+  // Which logged-out screen to show. Staff sign-in is the default landing
+  // screen; members get there via the "Gym member?" link.
+  const [authScreen, setAuthScreen] = useState("staffLogin");
+  // True only right after an explicit staff login action (not a restored
+  // session on page refresh) - triggers the one-time welcome screen so it
+  // never gets in the way on a normal reload. Members skip this screen:
+  // MemberDashboard already opens with "Welcome, {name}", so there's no
+  // role ambiguity left to clarify the way there was for staff.
+  const [justLoggedIn, setJustLoggedIn] = useState(false);
+  // Which staff tab is open (see availableScreens). null = the first one.
   const [screenKey, setScreenKey] = useState(null);
 
   // Restore an existing session on page load/refresh, so logging in isn't
-  // required every time the page reloads.
+  // required every time the page reloads. Staff and member sessions use
+  // separate cookies server-side, so check both.
   useEffect(() => {
     fetchCurrentUser()
-      .then(setAccount)
+      .then((account) => {
+        if (account) {
+          setSession({ type: "staff", data: account });
+          return null;
+        }
+        return fetchCurrentMember();
+      })
+      .then((member) => {
+        if (member) setSession({ type: "member", data: member });
+      })
       .finally(() => setCheckingSession(false));
   }, []);
 
+  function handleStaffLoggedIn(account) {
+    setSession({ type: "staff", data: account });
+    setJustLoggedIn(true);
+  }
+
+  function handleMemberLoggedIn(member) {
+    setSession({ type: "member", data: member });
+  }
+
   async function handleLogout() {
-    await logout();
-    setAccount(null);
+    if (session?.type === "staff") {
+      await logout();
+    } else if (session?.type === "member") {
+      await logoutMember();
+    }
+    setSession(null);
+    setAuthScreen("staffLogin");
     setScreenKey(null);
   }
 
@@ -56,13 +105,47 @@ export default function App() {
     return <div style={styles.loadingScreen}>Loading...</div>;
   }
 
-  if (!account) {
-    return <LoginPage onLoggedIn={setAccount} />;
+  if (!session) {
+    if (authScreen === "memberLogin") {
+      return (
+        <MemberLoginPage
+          onLoggedIn={handleMemberLoggedIn}
+          onSwitchToSignup={() => setAuthScreen("memberSignup")}
+          onSwitchToStaff={() => setAuthScreen("staffLogin")}
+        />
+      );
+    }
+    if (authScreen === "memberSignup") {
+      return (
+        <MemberSignupPage
+          onSignedUp={handleMemberLoggedIn}
+          onSwitchToLogin={() => setAuthScreen("memberLogin")}
+          onSwitchToStaff={() => setAuthScreen("staffLogin")}
+        />
+      );
+    }
+    return <LoginPage onLoggedIn={handleStaffLoggedIn} onSwitchToMember={() => setAuthScreen("memberLogin")} />;
   }
 
-  const isAdmin = canAccessAdminConsole(account);
-  const screens = isAdmin ? [] : availableScreens(account);
+  if (session.type === "staff" && justLoggedIn) {
+    return (
+      <WelcomeScreen
+        account={session.data}
+        destination={destinationLabel(session.data)}
+        onContinue={() => setJustLoggedIn(false)}
+      />
+    );
+  }
+
+  const isStaff = session.type === "staff";
+  const isAdmin = isStaff && canAccessAdminConsole(session.data);
+  const screens = isStaff && !isAdmin ? availableScreens(session.data) : [];
   const activeScreen = screens.find((s) => s.key === screenKey) || screens[0];
+
+  let content;
+  if (!isStaff) content = <MemberDashboard member={session.data} />;
+  else if (isAdmin) content = <AdminConsole />;
+  else content = activeScreen.render();
 
   return (
     <div>
@@ -70,8 +153,8 @@ export default function App() {
         <Logo size={34} />
         <div style={styles.userGroup}>
           <div style={styles.userInfo}>
-            <div style={styles.userName}>{account.fullName}</div>
-            <div style={styles.userRole}>{account.roleName}</div>
+            <div style={styles.userName}>{session.data.fullName || session.data.name}</div>
+            <div style={styles.userRole}>{isStaff ? session.data.roleName : "Member"}</div>
           </div>
           <button onClick={handleLogout} style={styles.logoutButton}>
             Log out
@@ -93,7 +176,7 @@ export default function App() {
         </nav>
       )}
 
-      {isAdmin ? <AdminConsole /> : activeScreen.render()}
+      {content}
     </div>
   );
 }
