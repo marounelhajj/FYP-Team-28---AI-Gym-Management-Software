@@ -45,6 +45,7 @@ def login(request):
             status=401,
         )
 
+    request.session.pop("member_id", None)
     request.session["staff_account_id"] = account.id
     return Response(_session_payload(account))
 

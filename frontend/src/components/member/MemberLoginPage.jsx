@@ -1,14 +1,12 @@
 import { useState } from "react";
-import { login } from "../api/auth.js";
-import { BUTTON_COLORS } from "../styles/buttonColors.js";
-import Logo from "./Logo.jsx";
+import { loginMember } from "../../api/memberAuth.js";
+import { BUTTON_COLORS } from "../../styles/buttonColors.js";
+import Logo from "../Logo.jsx";
 
-// Staff sign-in only. There is intentionally no sign-up link and no role
-// picker here: staff accounts are provisioned by a System Administrator
-// (Admin Console -> Staff Accounts -> + New Staff Account), never
-// self-registered, and each account's role is resolved server-side from
-// the account record on login - never chosen by the person signing in.
-export default function LoginPage({ onLoggedIn, onSwitchToMember }) {
+// Member sign-in. Mirrors the staff LoginPage but hits /api/members/login
+// and links both ways to sign-up (prospective members) and to the staff
+// login (so neither audience gets stuck on the wrong page).
+export default function MemberLoginPage({ onLoggedIn, onSwitchToSignup, onSwitchToStaff }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState(null);
@@ -19,8 +17,8 @@ export default function LoginPage({ onLoggedIn, onSwitchToMember }) {
     setSubmitting(true);
     setError(null);
     try {
-      const account = await login(username, password);
-      onLoggedIn(account);
+      const member = await loginMember(username, password);
+      onLoggedIn(member);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -35,10 +33,8 @@ export default function LoginPage({ onLoggedIn, onSwitchToMember }) {
           <Logo size={44} />
         </div>
 
-        <h1 style={styles.title}>Staff Login</h1>
-        <p style={styles.subtitle}>
-          Accounts are created by a System Administrator. Contact yours if you don't have one yet.
-        </p>
+        <h1 style={styles.title}>Member Login</h1>
+        <p style={styles.subtitle}>Book classes, check your membership, and more.</p>
 
         <form onSubmit={handleSubmit}>
           <label style={styles.label}>Username</label>
@@ -68,9 +64,15 @@ export default function LoginPage({ onLoggedIn, onSwitchToMember }) {
         </form>
 
         <p style={styles.switchLine}>
-          Gym member?{" "}
-          <button type="button" onClick={onSwitchToMember} style={styles.linkButton}>
-            Login or sign up here
+          Don't have an account?{" "}
+          <button type="button" onClick={onSwitchToSignup} style={styles.linkButton}>
+            Sign up
+          </button>
+        </p>
+        <p style={styles.switchLine}>
+          Staff member?{" "}
+          <button type="button" onClick={onSwitchToStaff} style={styles.linkButton}>
+            Login here
           </button>
         </p>
       </div>
