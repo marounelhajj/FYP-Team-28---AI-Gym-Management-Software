@@ -143,3 +143,33 @@ Everyone adding a new feature: add your own app under `backend/` (e.g.
 your own component under `frontend/src/components/`. Keeping each
 feature in its own file/app avoids merge conflicts when we're all
 pushing at once.
+
+## Role-based access control (SCRUM-117)
+
+Every staff-only endpoint checks the caller's role server-side via
+`administration/permissions.py` (`authorize(request, *permissions)`), so
+hiding a screen in the UI is never the only protection. Permissions are read
+from the database on each request, so editing a role or deactivating an
+account takes effect immediately, even for sessions already open.
+
+| Endpoint | Permission needed |
+|---|---|
+| `/api/staff`, `/api/staff/<id>` | `manage_staff_accounts` |
+| `/api/roles` (read) | `manage_roles` or `manage_staff_accounts` |
+| `/api/roles` (create/edit), `/api/permissions` | `manage_roles` |
+| `/api/members`, `/api/members/<id>` (read/register) | `manage_members` |
+| `POST/PATCH /api/plans` | `manage_membership_plans` |
+| `POST/PATCH /api/plans/promotions` | `manage_branch_promotions` or `manage_membership_plans` |
+
+Not logged in -> `401`; logged in without the permission -> `403`. Public:
+`/api/plans` reads, `/api/members/meta`, member sign-up/login.
+
+Frontend: tabs shown per role in `App.jsx`, per-tab permission in
+`AdminConsole.jsx`, and `components/AccessDenied.jsx` for roles with no pages
+or a permission revoked mid-session. A `401` anywhere returns the user to login.
+
+Demo accounts (password `ChangeMe123!`): `mfakhoury` (admin), `rhaddad`
+(general manager), `kabboud` (branch manager), `dsarkis` (receptionist),
+`nkhalil` (marketing, no pages), `fghosn` (deactivated).
+
+Run tests: `cd backend && python manage.py test`

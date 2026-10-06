@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchMembers, fetchMemberFilterOptions } from "../api/members.js";
 import RegisterMemberForm from "./RegisterMemberForm.jsx";
+import AccessDenied from "./AccessDenied.jsx";
 import { BUTTON_COLORS } from "../styles/buttonColors.js";
 
 const STATUS_STYLES = {
@@ -44,6 +45,9 @@ export default function MemberDirectory() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  // Set when the API answers 403 (e.g. this role's permission was removed
+  // while the page was open) - swaps the whole screen for the denied card.
+  const [forbidden, setForbidden] = useState(false);
 
   const [showRegisterForm, setShowRegisterForm] = useState(false);
   const [successMessage, setSuccessMessage] = useState(null);
@@ -68,7 +72,10 @@ export default function MemberDirectory() {
         setResults(data.results);
         setTotal(data.total);
       })
-      .catch((err) => setError(err.message))
+      .catch((err) => {
+        if (err.status === 403) setForbidden(true);
+        else setError(err.message);
+      })
       .finally(() => setLoading(false));
   }
 
@@ -106,6 +113,8 @@ export default function MemberDirectory() {
     clearFilters();
     runSearch();
   }
+
+  if (forbidden) return <AccessDenied message="Your role no longer includes permission to view the member directory." />;
 
   return (
     <div style={styles.page}>

@@ -2,7 +2,7 @@ from django.utils import timezone
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from administration.models import StaffAccount
+from administration.permissions import authorize
 from members.models import Member
 
 from .models import BranchPromotion, MembershipPlan
@@ -21,17 +21,7 @@ MANAGE_PROMOTIONS_PERMISSION = "manage_branch_promotions"
 # receptionist's registration form will need prices), but changing them
 # requires a logged-in, active staff account whose role grants at least one
 # of `permissions`. Returns (account, None) if allowed, else (None, error).
-def _require_permission(request, *permissions):
-    account_id = request.session.get("staff_account_id")
-    account = None
-    if account_id:
-        account = StaffAccount.objects.select_related("role").filter(id=account_id, is_active=True).first()
-
-    if account is None:
-        return None, Response({"error": "Not authenticated."}, status=401)
-    if not any(p in account.role.permissions for p in permissions):
-        return None, Response({"error": "You don't have permission to do that."}, status=403)
-    return account, None
+_require_permission = authorize
 
 
 def _validate_branch(branch):
