@@ -1,12 +1,7 @@
 // Thin wrapper around the /api/staff, /api/roles and /api/permissions
 // endpoints used by the System Administrator console.
 
-async function parseError(res) {
-  const body = await res.json().catch(() => ({}));
-  const err = new Error(typeof body.error === "string" ? body.error : `Request failed with status ${res.status}`);
-  err.fieldErrors = body.error && typeof body.error === "object" ? body.error : null;
-  return err;
-}
+import { parseError } from "./http.js";
 
 // --- Staff accounts ---
 // User story: "As a system administrator, I want to create, edit and

@@ -11,6 +11,7 @@ import MemberLoginPage from "./components/member/MemberLoginPage.jsx";
 import MemberSignupPage from "./components/member/MemberSignupPage.jsx";
 import MemberDashboard from "./components/member/MemberDashboard.jsx";
 import Logo from "./components/Logo.jsx";
+import AccessDenied from "./components/AccessDenied.jsx";
 
 // Which screens a logged-in STAFF account can open are resolved from their
 // actual permissions (set by a System Administrator via Admin Console ->
@@ -35,16 +36,17 @@ function availableScreens(account) {
   if (has("manage_branch_promotions") || has("manage_membership_plans")) {
     screens.push({ key: "promotions", label: "Branch Promotions", render: () => <PromotionManager /> });
   }
-  if (has("manage_members") || screens.length === 0) {
+  if (has("manage_members")) {
     screens.push({ key: "members", label: "Member Directory", render: () => <MemberDirectory /> });
   }
   return screens;
 }
 
 function destinationLabel(account) {
-  return canAccessAdminConsole(account)
-    ? "the System Administrator Console"
-    : `the ${availableScreens(account)[0].label}`;
+  if (canAccessAdminConsole(account)) return "the System Administrator Console";
+  const first = availableScreens(account)[0];
+  if (!first) return "your account (no pages are assigned to your role yet)";
+  return first.key === "members" ? "the Member Directory" : first.label;
 }
 
 export default function App() {
@@ -81,6 +83,18 @@ export default function App() {
       .finally(() => setCheckingSession(false));
   }, []);
 
+  // Any API call that comes back 401 (session expired, or the account was
+  // deactivated while logged in) sends the user back to the login screen.
+  useEffect(() => {
+    function onAuthExpired() {
+      setSession(null);
+      setScreenKey(null);
+      setAuthScreen("staffLogin");
+    }
+    window.addEventListener("auth:expired", onAuthExpired);
+    return () => window.removeEventListener("auth:expired", onAuthExpired);
+  }, []);
+
   function handleStaffLoggedIn(account) {
     setSession({ type: "staff", data: account });
     setJustLoggedIn(true);
@@ -97,8 +111,8 @@ export default function App() {
       await logoutMember();
     }
     setSession(null);
-    setAuthScreen("staffLogin");
     setScreenKey(null);
+    setAuthScreen("staffLogin");
   }
 
   if (checkingSession) {
@@ -144,8 +158,17 @@ export default function App() {
 
   let content;
   if (!isStaff) content = <MemberDashboard member={session.data} />;
-  else if (isAdmin) content = <AdminConsole />;
-  else content = activeScreen.render();
+  else if (isAdmin) content = <AdminConsole permissions={session.data.permissions} />;
+  else if (activeScreen) content = activeScreen.render();
+  else {
+    content = (
+      <AccessDenied
+        title="No pages assigned"
+        message="Your role doesn't have access to any screens yet."
+        roleName={session.data.roleName}
+      />
+    );
+  }
 
   return (
     <div>
@@ -168,7 +191,7 @@ export default function App() {
             <button
               key={s.key}
               onClick={() => setScreenKey(s.key)}
-              style={s.key === activeScreen.key ? styles.navTabActive : styles.navTab}
+              style={s.key === activeScreen?.key ? styles.navTabActive : styles.navTab}
             >
               {s.label}
             </button>
