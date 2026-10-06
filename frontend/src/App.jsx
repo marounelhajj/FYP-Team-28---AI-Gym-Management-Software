@@ -23,9 +23,10 @@ function canAccessAdminConsole(account) {
   return account.permissions.includes("manage_staff_accounts") || account.permissions.includes("manage_roles");
 }
 
-// Everyone except system administrators gets one tab per screen their role
-// allows (e.g. a General Manager sees Plans + Promotions, a Branch Manager
-// sees Members + Promotions, a Receptionist just Members - no tab bar).
+// Every staff account except system administrators gets one tab per screen
+// their role allows (e.g. a General Manager sees Plans + Promotions, a
+// Branch Manager sees Members + Promotions, a Receptionist just Members -
+// no tab bar).
 function availableScreens(account) {
   const has = (p) => account.permissions.includes(p);
   const screens = [];
@@ -61,6 +62,7 @@ export default function App() {
   // MemberDashboard already opens with "Welcome, {name}", so there's no
   // role ambiguity left to clarify the way there was for staff.
   const [justLoggedIn, setJustLoggedIn] = useState(false);
+  // Which staff tab is open (see availableScreens). null = the first one.
   const [screenKey, setScreenKey] = useState(null);
 
   // Restore an existing session on page load/refresh, so logging in isn't
@@ -154,6 +156,20 @@ export default function App() {
   const screens = isStaff && !isAdmin ? availableScreens(session.data) : [];
   const activeScreen = screens.find((s) => s.key === screenKey) || screens[0];
 
+  let content;
+  if (!isStaff) content = <MemberDashboard member={session.data} />;
+  else if (isAdmin) content = <AdminConsole permissions={session.data.permissions} />;
+  else if (activeScreen) content = activeScreen.render();
+  else {
+    content = (
+      <AccessDenied
+        title="No pages assigned"
+        message="Your role doesn't have access to any screens yet."
+        roleName={session.data.roleName}
+      />
+    );
+  }
+
   return (
     <div>
       <div style={styles.topBar}>
@@ -183,19 +199,7 @@ export default function App() {
         </nav>
       )}
 
-      {!isStaff ? (
-        <MemberDashboard member={session.data} />
-      ) : isAdmin ? (
-        <AdminConsole permissions={session.data.permissions} />
-      ) : activeScreen ? (
-        activeScreen.render()
-      ) : (
-        <AccessDenied
-          title="No pages assigned"
-          message="Your role doesn't have access to any screens yet."
-          roleName={session.data.roleName}
-        />
-      )}
+      {content}
     </div>
   );
 }
