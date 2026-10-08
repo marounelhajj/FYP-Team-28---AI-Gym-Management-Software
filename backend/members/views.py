@@ -1,6 +1,8 @@
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
+from administration.permissions import authorize
+
 from .models import Member
 from .serializers import MemberSerializer, MemberCreateSerializer
 
@@ -35,6 +37,11 @@ from .serializers import MemberSerializer, MemberCreateSerializer
 # protection on file before I start training."
 @api_view(["GET", "POST"])
 def member_list(request):
+    # The directory holds personal data: staff with manage_members only.
+    _, denied = authorize(request, "manage_members")
+    if denied:
+        return denied
+
     if request.method == "POST":
         serializer = MemberCreateSerializer(data=request.data)
         if not serializer.is_valid():
@@ -104,6 +111,10 @@ def member_meta(request):
 # GET /api/members/<id>/
 @api_view(["GET"])
 def member_detail(request, member_id):
+    _, denied = authorize(request, "manage_members")
+    if denied:
+        return denied
+
     try:
         member = Member.objects.select_related("waiver").get(id=member_id)
     except Member.DoesNotExist:

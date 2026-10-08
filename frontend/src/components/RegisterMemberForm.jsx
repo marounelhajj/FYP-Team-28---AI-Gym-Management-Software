@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { createMember } from "../api/members.js";
 import { LIABILITY_WAIVER_TEXT, HEALTH_DISCLAIMER_TEXT } from "../data/waiverText.js";
+import { BUTTON_COLORS } from "../styles/buttonColors.js";
 
 // User story: "As a receptionist, I want to register a new walk-in
 // member's profile and membership plan, so that I can onboard new
@@ -352,8 +353,7 @@ const styles = {
     fontSize: 14,
     border: "none",
     borderRadius: 8,
-    background: "#1a56c4",
-    color: "#fff",
+    ...BUTTON_COLORS.blue,
     fontWeight: 600,
     cursor: "pointer",
   },

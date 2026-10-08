@@ -1,6 +1,8 @@
 // Thin wrapper around the /api/members endpoints.
 // Swap the base URL here if the backend ever moves off the Vite proxy.
 
+import { parseError } from "./http.js";
+
 export async function fetchMembers({ q, status, branch, limit = 25, offset = 0 } = {}) {
   const params = new URLSearchParams();
   if (q) params.set("q", q);
@@ -10,10 +12,7 @@ export async function fetchMembers({ q, status, branch, limit = 25, offset = 0 }
   params.set("offset", offset);
 
   const res = await fetch(`/api/members?${params.toString()}`);
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.error || `Request failed with status ${res.status}`);
-  }
+  if (!res.ok) throw await parseError(res);
   return res.json();
 }
 
@@ -53,6 +52,7 @@ export async function createMember({
 
   const body = await res.json().catch(() => ({}));
 
+  if (res.status === 401) window.dispatchEvent(new Event("auth:expired"));
   if (!res.ok) {
     // body.error is a dict of field -> [messages] from the serializer,
     // e.g. { name: ["This field is required."] }, so the form can show
