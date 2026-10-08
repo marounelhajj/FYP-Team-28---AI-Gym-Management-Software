@@ -6,7 +6,8 @@ from .serializers import MemberSerializer, MemberCreateSerializer
 
 
 # GET  /api/members/  - search/filter/paginate the member directory
-# POST /api/members/  - register a new walk-in member
+# POST /api/members/  - register a new walk-in member (profile + plan +
+#                        signed digital waiver/health disclaimer)
 #
 # GET query params (all optional, all combinable):
 #   q        - case-insensitive substring match on member name
@@ -19,13 +20,19 @@ from .serializers import MemberSerializer, MemberCreateSerializer
 # member directory by name, membership status, or branch, so that I can
 # quickly find a member's record."
 #
-# POST body: { name, email, phone, branch, membershipPlan }
-# On success: 201 + the created member (same shape as a GET result).
+# POST body: { name, email, phone, branch, membershipPlan, signatureName,
+#              healthDisclaimerAccepted, liabilityWaiverAccepted }
+# On success: 201 + the created member (same shape as a GET result,
+# including the nested "waiver" object that was just signed).
 # On validation failure: 400 + {"error": {field: [messages]}}.
 #
-# User story (POST): "As a receptionist, I want to register a new walk-in
-# member's profile and membership plan, so that I can onboard new customers
-# on the spot."
+# User story (POST, profile): "As a receptionist, I want to register a new
+# walk-in member's profile and membership plan, so that I can onboard new
+# customers on the spot."
+#
+# User story (POST, waiver): "As a member, I want to sign a digital waiver
+# and health disclaimer during signup, so that the gym has liability
+# protection on file before I start training."
 @api_view(["GET", "POST"])
 def member_list(request):
     if request.method == "POST":
@@ -65,7 +72,7 @@ def member_list(request):
             status=400,
         )
 
-    queryset = Member.objects.all()
+    queryset = Member.objects.select_related("waiver").all()
     if q and q.strip():
         queryset = queryset.filter(name__icontains=q.strip())
     if status_param:
@@ -98,7 +105,7 @@ def member_meta(request):
 @api_view(["GET"])
 def member_detail(request, member_id):
     try:
-        member = Member.objects.get(id=member_id)
+        member = Member.objects.select_related("waiver").get(id=member_id)
     except Member.DoesNotExist:
         return Response({"error": f"Member {member_id} not found"}, status=404)
     return Response(MemberSerializer(member).data)

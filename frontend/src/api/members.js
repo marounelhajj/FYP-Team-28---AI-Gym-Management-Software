@@ -23,13 +23,32 @@ export async function fetchMemberFilterOptions() {
   return res.json();
 }
 
-// Registers a new walk-in member. Status defaults to Active and the join
+// Registers a new walk-in member and records their signed digital waiver +
+// health disclaimer, in one call. Status defaults to Active and the join
 // date defaults to today - both are set server-side, not passed here.
-export async function createMember({ name, email, phone, branch, membershipPlan }) {
+export async function createMember({
+  name,
+  email,
+  phone,
+  branch,
+  membershipPlan,
+  signatureName,
+  healthDisclaimerAccepted,
+  liabilityWaiverAccepted,
+}) {
   const res = await fetch("/api/members", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, email, phone, branch, membershipPlan }),
+    body: JSON.stringify({
+      name,
+      email,
+      phone,
+      branch,
+      membershipPlan,
+      signatureName,
+      healthDisclaimerAccepted,
+      liabilityWaiverAccepted,
+    }),
   });
 
   const body = await res.json().catch(() => ({}));
@@ -43,5 +62,5 @@ export async function createMember({ name, email, phone, branch, membershipPlan 
     throw err;
   }
 
-  return body; // the newly created member, same shape as a GET result
+  return body; // the newly created member, same shape as a GET result (includes "waiver")
 }

@@ -31,3 +31,23 @@ class Member(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.branch})"
+
+
+# User story: "As a member, I want to sign a digital waiver and health
+# disclaimer during signup, so that the gym has liability protection on
+# file before I start training."
+#
+# One-to-one with Member: a member can't exist in the system without a
+# signed waiver, because MemberCreateSerializer creates both together in
+# one transaction and requires both acknowledgments to be True. That's
+# what makes "liability protection on file" true by construction rather
+# than a checkbox someone could leave unticked.
+class Waiver(models.Model):
+    member = models.OneToOneField(Member, on_delete=models.CASCADE, related_name="waiver")
+    signature_name = models.CharField(max_length=150)
+    health_disclaimer_accepted = models.BooleanField(default=False)
+    liability_waiver_accepted = models.BooleanField(default=False)
+    signed_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Waiver for {self.member.name} ({self.signed_at:%Y-%m-%d})"

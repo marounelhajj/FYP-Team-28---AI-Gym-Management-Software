@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { fetchMembers, fetchMemberFilterOptions } from "../api/members.js";
 import RegisterMemberForm from "./RegisterMemberForm.jsx";
 
@@ -23,6 +24,30 @@ function StatusBadge({ status }) {
       }}
     >
       {status}
+    </span>
+  );
+}
+
+// Shows whether liability/health disclaimer protection is on file for this
+// member. null means they predate the signup waiver feature (e.g. the
+// seeded demo data) or were never put through the signup flow.
+function WaiverBadge({ waiver }) {
+  const signed = Boolean(waiver);
+  const style = signed ? { bg: "#e6f4ea", fg: "#1e7a34" } : { bg: "#f0f0f2", fg: "#777" };
+  return (
+    <span
+      style={{
+        background: style.bg,
+        color: style.fg,
+        padding: "2px 10px",
+        borderRadius: 999,
+        fontSize: 12,
+        fontWeight: 600,
+        whiteSpace: "nowrap",
+      }}
+      title={signed ? `Signed by ${waiver.signatureName} on ${waiver.signedAt}` : "No waiver on file"}
+    >
+      {signed ? "Signed" : "Not on file"}
     </span>
   );
 }
@@ -109,9 +134,14 @@ export default function MemberDirectory() {
             Search and filter members by name, status, or branch to quickly pull up a record.
           </p>
         </div>
-        <button onClick={() => setShowRegisterForm(true)} style={styles.registerButton}>
-          + Register New Member
-        </button>
+        <div style={styles.headerActions}>
+          <Link to="/join" style={styles.joinPageLink}>
+            View public signup page
+          </Link>
+          <button onClick={() => setShowRegisterForm(true)} style={styles.registerButton}>
+            + Register New Member
+          </button>
+        </div>
       </div>
 
       {successMessage && <div style={styles.successBox}>{successMessage}</div>}
@@ -177,13 +207,14 @@ export default function MemberDirectory() {
                 <th style={styles.th}>Branch</th>
                 <th style={styles.th}>Plan</th>
                 <th style={styles.th}>Status</th>
+                <th style={styles.th}>Waiver</th>
                 <th style={styles.th}>Member Since</th>
               </tr>
             </thead>
             <tbody>
               {!loading && results.length === 0 && (
                 <tr>
-                  <td colSpan={6} style={styles.emptyCell}>
+                  <td colSpan={7} style={styles.emptyCell}>
                     No members match your search.
                   </td>
                 </tr>
@@ -198,6 +229,9 @@ export default function MemberDirectory() {
                   <td style={styles.td}>{m.membershipPlan}</td>
                   <td style={styles.td}>
                     <StatusBadge status={m.status} />
+                  </td>
+                  <td style={styles.td}>
+                    <WaiverBadge waiver={m.waiver} />
                   </td>
                   <td style={styles.td}>{m.joinDate}</td>
                 </tr>
@@ -235,6 +269,17 @@ const styles = {
   },
   title: { fontSize: 24, fontWeight: 700, margin: 0 },
   subtitle: { fontSize: 14, color: "#666", marginTop: 4 },
+  headerActions: {
+    display: "flex",
+    alignItems: "center",
+    gap: 14,
+    flexShrink: 0,
+  },
+  joinPageLink: {
+    fontSize: 13,
+    color: "#1a56c4",
+    whiteSpace: "nowrap",
+  },
   registerButton: {
     flexShrink: 0,
     padding: "10px 16px",
