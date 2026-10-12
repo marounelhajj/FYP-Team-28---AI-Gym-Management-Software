@@ -8,7 +8,11 @@ const JOB_TITLES = [
   "Receptionist", "Coach", "Marketing Staff",
 ];
 
-const EMPTY_FORM = { fullName: "", email: "", username: "", jobTitle: "", roleId: "", password: "" };
+// Mirrors StaffAccount.Branch on the backend. Optional: a System
+// Administrator or General Manager isn't necessarily tied to one branch.
+const BRANCHES = ["Hamra", "Achrafieh", "Jnah", "Zalka"];
+
+const EMPTY_FORM = { fullName: "", email: "", username: "", jobTitle: "", roleId: "", branch: "", password: "" };
 
 // User story: "As a system administrator, I want to create, edit and
 // deactivate staff login accounts, so that only current staff can sign in
@@ -26,6 +30,7 @@ export default function StaffAccountForm({ account, roles, onClose, onSaved }) {
           username: account.username,
           jobTitle: account.jobTitle,
           roleId: String(account.roleId),
+          branch: account.branch || "",
           password: "",
         }
       : EMPTY_FORM
@@ -50,6 +55,9 @@ export default function StaffAccountForm({ account, roles, onClose, onSaved }) {
       username: form.username,
       jobTitle: form.jobTitle,
       roleId: Number(form.roleId),
+      // Optional: send null rather than "" when no branch was picked, so
+      // it clears cleanly instead of failing the backend's choice field.
+      branch: form.branch || null,
     };
     // On create, password is required. On edit, only send it if the admin
     // actually typed a new one - an empty field means "leave it unchanged".
@@ -137,6 +145,21 @@ export default function StaffAccountForm({ account, roles, onClose, onSaved }) {
               {roles.map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="Branch (optional)" error={fieldErrors.branch}>
+            <select
+              value={form.branch}
+              onChange={(e) => update("branch", e.target.value)}
+              style={styles.input}
+            >
+              <option value="">No specific branch</option>
+              {BRANCHES.map((b) => (
+                <option key={b} value={b}>
+                  {b}
                 </option>
               ))}
             </select>
