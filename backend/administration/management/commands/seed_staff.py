@@ -12,7 +12,8 @@ ROLES = [
         "description": "Full system access: manages staff accounts, roles, and system-wide configuration.",
         "permissions": [
             "manage_members", "manage_staff_accounts", "manage_roles",
-            "manage_class_schedule", "manage_billing", "view_financial_reports",
+            "manage_class_schedule", "manage_billing", "manage_membership_plans",
+            "manage_branch_promotions", "view_financial_reports",
             "manage_marketing_campaigns", "view_audit_log",
         ],
     },

@@ -18,17 +18,18 @@ import Logo from "./components/Logo.jsx";
 // administration/auth_views.py for why. Members are a separate account
 // type entirely (members/auth_views.py) with no roles/permissions - they
 // always land on MemberDashboard.
-function canAccessAdminConsole(account) {
-  return account.permissions.includes("manage_staff_accounts") || account.permissions.includes("manage_roles");
-}
-
-// Every staff account except system administrators gets one tab per screen
-// their role allows (e.g. a General Manager sees Plans + Promotions, a
-// Branch Manager sees Members + Promotions, a Receptionist just Members -
-// no tab bar).
+//
+// Every staff account gets one tab per screen their permissions allow - a
+// System Administrator (who holds every permission) sees all of them,
+// including Admin Console alongside Plans/Promotions/Members, not instead
+// of them. A Receptionist with just manage_members sees one screen and no
+// tab bar at all (see the `screens.length > 1` check below).
 function availableScreens(account) {
   const has = (p) => account.permissions.includes(p);
   const screens = [];
+  if (has("manage_staff_accounts") || has("manage_roles")) {
+    screens.push({ key: "admin", label: "Admin Console", render: () => <AdminConsole /> });
+  }
   if (has("manage_membership_plans")) {
     screens.push({ key: "plans", label: "Plans & Pricing", render: () => <PlanManager /> });
   }
@@ -42,9 +43,7 @@ function availableScreens(account) {
 }
 
 function destinationLabel(account) {
-  return canAccessAdminConsole(account)
-    ? "the System Administrator Console"
-    : `the ${availableScreens(account)[0].label}`;
+  return `the ${availableScreens(account)[0].label}`;
 }
 
 export default function App() {
@@ -138,14 +137,9 @@ export default function App() {
   }
 
   const isStaff = session.type === "staff";
-  const isAdmin = isStaff && canAccessAdminConsole(session.data);
-  const screens = isStaff && !isAdmin ? availableScreens(session.data) : [];
+  const screens = isStaff ? availableScreens(session.data) : [];
   const activeScreen = screens.find((s) => s.key === screenKey) || screens[0];
-
-  let content;
-  if (!isStaff) content = <MemberDashboard member={session.data} />;
-  else if (isAdmin) content = <AdminConsole />;
-  else content = activeScreen.render();
+  const content = !isStaff ? <MemberDashboard member={session.data} /> : activeScreen.render();
 
   return (
     <div>
