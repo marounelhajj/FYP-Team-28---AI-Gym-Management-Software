@@ -2,6 +2,7 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from administration.permissions import authorize
+from plans.models import MembershipPlan
 
 from .models import Member
 from .serializers import MemberSerializer, MemberCreateSerializer
@@ -89,14 +90,16 @@ def member_list(request):
 
 # GET /api/members/meta/
 # Returns the valid filter values so the frontend dropdowns never hardcode
-# a list that can drift out of sync with the model's choices.
+# a list that can drift out of sync with the model's choices. "plans" is
+# the plans the General Manager currently sells (cheapest first), so the
+# walk-in and online signup forms always offer the real tiers.
 @api_view(["GET"])
 def member_meta(request):
     return Response(
         {
             "branches": [choice.value for choice in Member.Branch],
             "statuses": [choice.value for choice in Member.Status],
-            "plans": [choice.value for choice in Member.Plan],
+            "plans": list(MembershipPlan.objects.filter(is_active=True).values_list("name", flat=True)),
         }
     )
 

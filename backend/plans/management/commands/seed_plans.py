@@ -5,9 +5,8 @@ from django.utils import timezone
 
 from plans.models import BranchPromotion, MembershipPlan
 
-# Starting tiers reuse the plan names members are already on (Basic /
-# Standard / Premium - see members.models.Member.Plan), so seeded demo
-# members line up with real plans.
+# Starting tiers reuse the plan names seed_members puts demo members on
+# (Basic / Standard / Premium), so seeded members line up with real plans.
 PLANS = [
     {
         "name": "Basic",

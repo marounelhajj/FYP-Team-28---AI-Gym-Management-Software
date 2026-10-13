@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { signupMember } from "../../api/memberAuth.js";
 import { fetchMemberFilterOptions } from "../../api/members.js";
+import { fetchBranchPricing } from "../../api/plans.js";
 import { BUTTON_COLORS } from "../../styles/buttonColors.js";
 import Logo from "../Logo.jsx";
 
@@ -8,12 +9,27 @@ const EMPTY_FORM = {
   name: "", email: "", phone: "", branch: "", membershipPlan: "", username: "", password: "",
 };
 
+const CYCLE_TEXT = {
+  Monthly: "per month",
+  Quarterly: "per quarter",
+  "Semi-Annual": "every 6 months",
+  Annual: "per year",
+};
+
 // User story: "As a prospective member, I want to browse membership plans
 // and sign up online, so that I can join a branch without visiting in
 // person first."
-export default function MemberSignupPage({ onSignedUp, onSwitchToLogin, onSwitchToStaff }) {
-  const [form, setForm] = useState(EMPTY_FORM);
+//
+// `initialSelection` ({ planName, branch }) comes from PlanBrowser's "Join"
+// button so the plan/branch the visitor just compared are pre-filled.
+export default function MemberSignupPage({ initialSelection, onSignedUp, onSwitchToLogin, onSwitchToStaff, onBrowsePlans }) {
+  const [form, setForm] = useState({
+    ...EMPTY_FORM,
+    membershipPlan: initialSelection?.planName || "",
+    branch: initialSelection?.branch || "",
+  });
   const [filterOptions, setFilterOptions] = useState({ branches: [], plans: [] });
+  const [quote, setQuote] = useState(null); // pricing row for the chosen plan at the chosen branch
   const [fieldErrors, setFieldErrors] = useState({});
   const [submitError, setSubmitError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -23,6 +39,22 @@ export default function MemberSignupPage({ onSignedUp, onSwitchToLogin, onSwitch
       .then(setFilterOptions)
       .catch(() => {});
   }, []);
+
+  // Show what the chosen plan actually costs at the chosen branch today
+  // (organization-wide price minus any running local promotion).
+  useEffect(() => {
+    setQuote(null);
+    if (!form.branch || !form.membershipPlan) return;
+    let cancelled = false;
+    fetchBranchPricing(form.branch)
+      .then((data) => {
+        if (!cancelled) setQuote(data.results.find((row) => row.name === form.membershipPlan) || null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [form.branch, form.membershipPlan]);
 
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }));
@@ -56,7 +88,12 @@ export default function MemberSignupPage({ onSignedUp, onSwitchToLogin, onSwitch
         </div>
 
         <h1 style={styles.title}>Join Fitness Factory</h1>
-        <p style={styles.subtitle}>Pick a branch and plan, and you're in.</p>
+        <p style={styles.subtitle}>
+          Pick a branch and plan, and you're in.{" "}
+          <button type="button" onClick={onBrowsePlans} style={styles.linkButton}>
+            Compare plans
+          </button>
+        </p>
 
         <form onSubmit={handleSubmit}>
           <Field label="Full name" error={fieldErrors.name}>
@@ -112,6 +149,20 @@ export default function MemberSignupPage({ onSignedUp, onSwitchToLogin, onSwitch
               ))}
             </select>
           </Field>
+
+          {quote && (
+            <div style={styles.quote}>
+              <div>
+                {quote.promotion && <s style={styles.quoteOld}>${quote.basePrice}</s>}{" "}
+                <strong>${quote.effectivePrice}</strong> {CYCLE_TEXT[quote.billingCycle] || ""} at {form.branch}
+              </div>
+              {quote.promotion && (
+                <div style={styles.quotePromo}>
+                  {quote.promotion.name} offer, until {quote.promotion.endDate}
+                </div>
+              )}
+            </div>
+          )}
 
           <Field label="Username" error={fieldErrors.username}>
             <input
@@ -221,6 +272,16 @@ const styles = {
     fontSize: 13,
     marginBottom: 16,
   },
+  quote: {
+    background: "#eef7f0",
+    color: "#1d5e2f",
+    padding: "10px 12px",
+    borderRadius: 8,
+    fontSize: 14,
+    marginBottom: 14,
+  },
+  quoteOld: { color: "#888", fontWeight: 400 },
+  quotePromo: { fontSize: 12, marginTop: 2 },
   submitButton: {
     width: "100%",
     padding: "11px 16px",
