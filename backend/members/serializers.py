@@ -1,5 +1,18 @@
 from rest_framework import serializers
+
+from plans.models import MembershipPlan
+
 from .models import Member
+
+
+# Shared by walk-in registration and online signup: a new member can only
+# join a plan the General Manager currently sells (active MembershipPlan).
+# Matching is case-insensitive and the plan's canonical name is stored.
+def validate_active_plan_name(value):
+    plan = MembershipPlan.objects.filter(name__iexact=(value or "").strip(), is_active=True).first()
+    if plan is None:
+        raise serializers.ValidationError("Choose one of the membership plans currently on offer.")
+    return plan.name
 
 
 class MemberSerializer(serializers.ModelSerializer):
@@ -21,11 +34,14 @@ class MemberSerializer(serializers.ModelSerializer):
 # freshly registered walk-in is always Active, and the join date is always
 # "today" - both are set server-side in create() below.
 class MemberCreateSerializer(serializers.ModelSerializer):
-    membershipPlan = serializers.ChoiceField(source="membership_plan", choices=Member.Plan.choices)
+    membershipPlan = serializers.CharField(source="membership_plan")
 
     class Meta:
         model = Member
         fields = ["name", "email", "phone", "branch", "membershipPlan"]
+
+    def validate_membershipPlan(self, value):
+        return validate_active_plan_name(value)
 
     def create(self, validated_data):
         from django.utils import timezone
@@ -45,7 +61,7 @@ class MemberCreateSerializer(serializers.ModelSerializer):
 # sets their own username/password here and can log in immediately -
 # that's the whole point of self-service.
 class MemberSignupSerializer(serializers.ModelSerializer):
-    membershipPlan = serializers.ChoiceField(source="membership_plan", choices=Member.Plan.choices)
+    membershipPlan = serializers.CharField(source="membership_plan")
     password = serializers.CharField(write_only=True, min_length=8)
     # validators=[] disables DRF's auto-generated UniqueValidator (attached
     # because username is unique=True on the model) so our own
@@ -55,6 +71,9 @@ class MemberSignupSerializer(serializers.ModelSerializer):
     class Meta:
         model = Member
         fields = ["name", "email", "phone", "branch", "membershipPlan", "username", "password"]
+
+    def validate_membershipPlan(self, value):
+        return validate_active_plan_name(value)
 
     def validate_username(self, value):
         if Member.objects.filter(username=value).exists():

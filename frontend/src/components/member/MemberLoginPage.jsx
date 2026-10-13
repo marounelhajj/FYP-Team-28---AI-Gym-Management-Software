@@ -6,7 +6,7 @@ import Logo from "../Logo.jsx";
 // Member sign-in. Mirrors the staff LoginPage but hits /api/members/login
 // and links both ways to sign-up (prospective members) and to the staff
 // login (so neither audience gets stuck on the wrong page).
-export default function MemberLoginPage({ onLoggedIn, onSwitchToSignup, onSwitchToStaff }) {
+export default function MemberLoginPage({ onLoggedIn, onSwitchToSignup, onSwitchToStaff, onBrowsePlans }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState(null);
@@ -65,8 +65,12 @@ export default function MemberLoginPage({ onLoggedIn, onSwitchToSignup, onSwitch
 
         <p style={styles.switchLine}>
           Don't have an account?{" "}
+          <button type="button" onClick={onBrowsePlans} style={styles.linkButton}>
+            Browse plans
+          </button>{" "}
+          or{" "}
           <button type="button" onClick={onSwitchToSignup} style={styles.linkButton}>
-            Sign up
+            sign up
           </button>
         </p>
         <p style={styles.switchLine}>

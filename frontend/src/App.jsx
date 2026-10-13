@@ -10,6 +10,7 @@ import WelcomeScreen from "./components/WelcomeScreen.jsx";
 import MemberLoginPage from "./components/member/MemberLoginPage.jsx";
 import MemberSignupPage from "./components/member/MemberSignupPage.jsx";
 import MemberDashboard from "./components/member/MemberDashboard.jsx";
+import PlanBrowser from "./components/member/PlanBrowser.jsx";
 import Logo from "./components/Logo.jsx";
 import AccessDenied from "./components/AccessDenied.jsx";
 
@@ -64,6 +65,9 @@ export default function App() {
   const [justLoggedIn, setJustLoggedIn] = useState(false);
   // Which staff tab is open (see availableScreens). null = the first one.
   const [screenKey, setScreenKey] = useState(null);
+  // Plan + branch a prospective member picked on PlanBrowser, carried into
+  // the signup form (and back, if they return to compare plans).
+  const [signupSelection, setSignupSelection] = useState(null);
 
   // Restore an existing session on page load/refresh, so logging in isn't
   // required every time the page reloads. Staff and member sessions use
@@ -102,6 +106,7 @@ export default function App() {
 
   function handleMemberLoggedIn(member) {
     setSession({ type: "member", data: member });
+    setSignupSelection(null);
   }
 
   async function handleLogout() {
@@ -120,25 +125,52 @@ export default function App() {
   }
 
   if (!session) {
+    const browsePlans = () => setAuthScreen("browsePlans");
+
+    if (authScreen === "browsePlans") {
+      return (
+        <PlanBrowser
+          initialBranch={signupSelection?.branch}
+          onChoosePlan={(selection) => {
+            setSignupSelection(selection);
+            setAuthScreen("memberSignup");
+          }}
+          onSwitchToLogin={() => setAuthScreen("memberLogin")}
+          onSwitchToStaff={() => setAuthScreen("staffLogin")}
+        />
+      );
+    }
     if (authScreen === "memberLogin") {
       return (
         <MemberLoginPage
           onLoggedIn={handleMemberLoggedIn}
-          onSwitchToSignup={() => setAuthScreen("memberSignup")}
+          onSwitchToSignup={() => {
+            setSignupSelection(null);
+            setAuthScreen("memberSignup");
+          }}
           onSwitchToStaff={() => setAuthScreen("staffLogin")}
+          onBrowsePlans={browsePlans}
         />
       );
     }
     if (authScreen === "memberSignup") {
       return (
         <MemberSignupPage
+          initialSelection={signupSelection}
           onSignedUp={handleMemberLoggedIn}
           onSwitchToLogin={() => setAuthScreen("memberLogin")}
           onSwitchToStaff={() => setAuthScreen("staffLogin")}
+          onBrowsePlans={browsePlans}
         />
       );
     }
-    return <LoginPage onLoggedIn={handleStaffLoggedIn} onSwitchToMember={() => setAuthScreen("memberLogin")} />;
+    return (
+      <LoginPage
+        onLoggedIn={handleStaffLoggedIn}
+        onSwitchToMember={() => setAuthScreen("memberLogin")}
+        onBrowsePlans={browsePlans}
+      />
+    );
   }
 
   if (session.type === "staff" && justLoggedIn) {
