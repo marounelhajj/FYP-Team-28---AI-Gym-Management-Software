@@ -2,21 +2,28 @@ import { useEffect, useState } from "react";
 import { signupMember } from "../../api/memberAuth.js";
 import { fetchMemberFilterOptions } from "../../api/members.js";
 import { BUTTON_COLORS } from "../../styles/buttonColors.js";
+import { getPriceInfo } from "../../utils/pricing.js";
 import Logo from "../Logo.jsx";
 
 const EMPTY_FORM = {
   name: "", email: "", phone: "", branch: "", membershipPlan: "", username: "", password: "",
+  paymentMethod: "", paymentDuration: "",
 };
+const PAYMENT_METHODS = ["Cash", "Card", "Bank Transfer"];
+const PAYMENT_DURATIONS = ["1 Month", "1 Year"];
 
 // User story: "As a prospective member, I want to browse membership plans
 // and sign up online, so that I can join a branch without visiting in
-// person first."
+// person first." A self-signed-up member isn't Active until they pay
+// here either - same rule as a receptionist's walk-in registration (see
+// backend/members/serializers.py MemberSignupSerializer).
 export default function MemberSignupPage({ onSignedUp, onSwitchToLogin, onSwitchToStaff }) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [filterOptions, setFilterOptions] = useState({ branches: [], plans: [] });
   const [fieldErrors, setFieldErrors] = useState({});
   const [submitError, setSubmitError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const priceInfo = getPriceInfo(filterOptions, form.membershipPlan, form.paymentDuration);
 
   useEffect(() => {
     fetchMemberFilterOptions()
@@ -131,6 +138,48 @@ export default function MemberSignupPage({ onSignedUp, onSwitchToLogin, onSwitch
             />
           </Field>
 
+          <Field label="Payment method" error={fieldErrors.paymentMethod}>
+            <select
+              value={form.paymentMethod}
+              onChange={(e) => update("paymentMethod", e.target.value)}
+              style={styles.input}
+            >
+              <option value="">Select a payment method...</option>
+              {PAYMENT_METHODS.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="Subscription duration" error={fieldErrors.paymentDuration}>
+            <select
+              value={form.paymentDuration}
+              onChange={(e) => update("paymentDuration", e.target.value)}
+              style={styles.input}
+            >
+              <option value="">Select a duration...</option>
+              {PAYMENT_DURATIONS.map((d) => (
+                <option key={d} value={d}>
+                  {d}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          {priceInfo && (
+            <Field label="Price">
+              {priceInfo.hasPromo && (
+                <div style={styles.oldPriceRow}>
+                  <span style={styles.oldPriceTag}>Old price</span>
+                  <span style={styles.oldPriceAmount}>${priceInfo.originalAmount}</span>
+                </div>
+              )}
+              <div style={styles.priceDisplay}>${priceInfo.amount}</div>
+            </Field>
+          )}
+
           {submitError && <div style={styles.errorBox}>{submitError}</div>}
 
           <button type="submit" disabled={submitting} style={styles.submitButton}>
@@ -207,6 +256,33 @@ const styles = {
     outline: "none",
     background: "#fff",
     boxSizing: "border-box",
+  },
+  priceDisplay: {
+    padding: "10px 12px",
+    fontSize: 20,
+    fontWeight: 800,
+    border: "1px solid #e4e4e8",
+    borderRadius: 8,
+    background: "#f5f5f7",
+    color: "#1a1a1a",
+  },
+  oldPriceRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 4,
+  },
+  oldPriceTag: {
+    fontSize: 10,
+    fontWeight: 700,
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+    color: "#999",
+  },
+  oldPriceAmount: {
+    fontSize: 13,
+    color: "#999",
+    textDecoration: "line-through",
   },
   fieldError: {
     color: "#b3261e",

@@ -1,10 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchMembers, fetchMemberFilterOptions } from "../api/members.js";
 import RegisterMemberForm from "./RegisterMemberForm.jsx";
+import RecordPaymentForm from "./RecordPaymentForm.jsx";
+import SubscriptionDetails from "./SubscriptionDetails.jsx";
 import { BUTTON_COLORS } from "../styles/buttonColors.js";
 
 const STATUS_STYLES = {
   Active: BUTTON_COLORS.green,
+  // Subscriptions don't auto-renew (see billing/models.py Payment.record()
+  // and the lazy "freeze lapsed members" sweep in members/views.py) -
+  // every customer without a valid subscription reads as Frozen, same
+  // status a staff-initiated freeze uses.
   Frozen: BUTTON_COLORS.blue,
   Cancelled: BUTTON_COLORS.red,
 };
@@ -46,6 +52,8 @@ export default function MemberDirectory() {
   const [error, setError] = useState(null);
 
   const [showRegisterForm, setShowRegisterForm] = useState(false);
+  const [paymentTarget, setPaymentTarget] = useState(null); // member to subscribe/renew for, or null
+  const [detailsTarget, setDetailsTarget] = useState(null); // member to show subscription details for, or null
   const [successMessage, setSuccessMessage] = useState(null);
 
   const debounceRef = useRef(null);
@@ -102,8 +110,38 @@ export default function MemberDirectory() {
   // than waiting on the debounce.
   function handleMemberRegistered(member) {
     setShowRegisterForm(false);
-    setSuccessMessage(`${member.name} was registered successfully.`);
+    const payment = member.firstPayment;
+    setSuccessMessage(
+      payment
+        ? `${member.name} was registered successfully (Membership ID #${member.id}). `
+          + `Payment of $${payment.amount} (${payment.method}) received. `
+          + `Subscription active until ${payment.expiresAt}.`
+        : `${member.name} was registered successfully (Membership ID #${member.id}).`
+    );
     clearFilters();
+    runSearch();
+  }
+
+  // After recording a payment for an existing member (first-time repay of
+  // a lapsed subscription, or an early renewal): refresh the table so the
+  // updated status/expiry is immediately visible.
+  function handlePaymentRecorded(member) {
+    setPaymentTarget(null);
+    const payment = member.payment;
+    setSuccessMessage(
+      payment
+        ? `Payment of $${payment.amount} (${payment.method}) recorded for ${member.name}. `
+          + `Subscription active until ${payment.expiresAt}.`
+        : `Payment recorded for ${member.name}.`
+    );
+    runSearch();
+  }
+
+  // After ending a member's subscription from the details modal: close it
+  // and refresh the table so their new Cancelled status is visible.
+  function handleSubscriptionCancelled(member) {
+    setDetailsTarget(null);
+    setSuccessMessage(`${member.name}'s subscription has been ended.`);
     runSearch();
   }
 
@@ -179,24 +217,26 @@ export default function MemberDirectory() {
           <table style={styles.table}>
             <thead>
               <tr>
+                <th style={styles.th}>ID</th>
                 <th style={styles.th}>Name</th>
                 <th style={styles.th}>Email</th>
                 <th style={styles.th}>Branch</th>
-                <th style={styles.th}>Plan</th>
                 <th style={styles.th}>Status</th>
                 <th style={styles.th}>Member Since</th>
+                <th style={styles.th}></th>
               </tr>
             </thead>
             <tbody>
               {!loading && results.length === 0 && (
                 <tr>
-                  <td colSpan={6} style={styles.emptyCell}>
+                  <td colSpan={7} style={styles.emptyCell}>
                     No members match your search.
                   </td>
                 </tr>
               )}
               {results.map((m) => (
                 <tr key={m.id} style={styles.row}>
+                  <td style={{ ...styles.td, color: "#888" }}>#{m.id}</td>
                   <td style={styles.td}>
                     <span style={styles.nameCell}>{m.name}</span>
                   </td>
@@ -204,11 +244,21 @@ export default function MemberDirectory() {
                     <span style={styles.emailCell}>{m.email}</span>
                   </td>
                   <td style={styles.td}>{m.branch}</td>
-                  <td style={styles.td}>{m.membershipPlan}</td>
                   <td style={styles.td}>
                     <StatusBadge status={m.status} />
                   </td>
                   <td style={styles.td}>{m.joinDate}</td>
+                  <td style={{ ...styles.td, textAlign: "right", whiteSpace: "nowrap" }}>
+                    {m.status === "Active" ? (
+                      <button onClick={() => setDetailsTarget(m)} style={styles.detailsButton}>
+                        See Subscription Details
+                      </button>
+                    ) : (
+                      <button onClick={() => setPaymentTarget(m)} style={styles.subscribeButton}>
+                        Subscribe
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -221,6 +271,23 @@ export default function MemberDirectory() {
           filterOptions={filterOptions}
           onClose={() => setShowRegisterForm(false)}
           onRegistered={handleMemberRegistered}
+        />
+      )}
+
+      {paymentTarget && (
+        <RecordPaymentForm
+          member={paymentTarget}
+          meta={filterOptions}
+          onClose={() => setPaymentTarget(null)}
+          onRecorded={handlePaymentRecorded}
+        />
+      )}
+
+      {detailsTarget && (
+        <SubscriptionDetails
+          member={detailsTarget}
+          onClose={() => setDetailsTarget(null)}
+          onCancelled={handleSubscriptionCancelled}
         />
       )}
     </div>
@@ -329,5 +396,36 @@ const styles = {
     padding: "28px 14px",
     textAlign: "center",
     color: "#888",
+  },
+  detailsButton: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 190,
+    height: 32,
+    padding: "0 12px",
+    fontSize: 13,
+    border: "none",
+    borderRadius: 6,
+    background: "#c2b697",
+    color: "#fff",
+    fontWeight: 600,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+  },
+  subscribeButton: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 190,
+    height: 32,
+    padding: "0 12px",
+    fontSize: 13,
+    border: "none",
+    borderRadius: 6,
+    background: "#c2b697",
+    color: "#fff",
+    fontWeight: 600,
+    cursor: "pointer",
   },
 };

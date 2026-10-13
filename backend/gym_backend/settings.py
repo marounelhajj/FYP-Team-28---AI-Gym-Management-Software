@@ -41,6 +41,8 @@ INSTALLED_APPS = [
     'corsheaders',
     'members',
     'administration',
+    'billing',
+    'checkins',
 ]
 
 MIDDLEWARE = [

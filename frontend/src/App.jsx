@@ -3,6 +3,7 @@ import { fetchCurrentUser, logout } from "./api/auth.js";
 import { fetchCurrentMember, logoutMember } from "./api/memberAuth.js";
 import MemberDirectory from "./components/MemberDirectory.jsx";
 import AdminConsole from "./components/admin/AdminConsole.jsx";
+import CheckIn from "./components/CheckIn.jsx";
 import LoginPage from "./components/LoginPage.jsx";
 import WelcomeScreen from "./components/WelcomeScreen.jsx";
 import MemberLoginPage from "./components/member/MemberLoginPage.jsx";
@@ -37,6 +38,11 @@ export default function App() {
   // MemberDashboard already opens with "Welcome, {name}", so there's no
   // role ambiguity left to clarify the way there was for staff.
   const [justLoggedIn, setJustLoggedIn] = useState(false);
+  // Which tab a non-admin staff member is on. Admin staff skip this
+  // entirely and go straight to AdminConsole, same as before - this is a
+  // small, local 2-tab switch, not the full multi-screen system (that one
+  // lives only on the unmerged teammate plans branch, not here).
+  const [staffTab, setStaffTab] = useState("members");
 
   // Restore an existing session on page load/refresh, so logging in isn't
   // required every time the page reloads. Staff and member sessions use
@@ -112,11 +118,12 @@ export default function App() {
   }
 
   const isStaff = session.type === "staff";
+  const isAdmin = isStaff && canAccessAdminConsole(session.data);
 
   return (
     <div>
       <div style={styles.topBar}>
-        <Logo size={34} />
+        <Logo size={52} />
         <div style={styles.userGroup}>
           <div style={styles.userInfo}>
             <div style={styles.userName}>{session.data.fullName || session.data.name}</div>
@@ -128,10 +135,31 @@ export default function App() {
         </div>
       </div>
 
-      {isStaff ? (
-        canAccessAdminConsole(session.data) ? <AdminConsole /> : <MemberDirectory />
-      ) : (
+      {isStaff && !isAdmin && (
+        <nav style={styles.tabBar}>
+          <button
+            onClick={() => setStaffTab("members")}
+            style={staffTab === "members" ? styles.tabActive : styles.tab}
+          >
+            Member Directory
+          </button>
+          <button
+            onClick={() => setStaffTab("checkin")}
+            style={staffTab === "checkin" ? styles.tabActive : styles.tab}
+          >
+            Check-In
+          </button>
+        </nav>
+      )}
+
+      {!isStaff ? (
         <MemberDashboard member={session.data} />
+      ) : isAdmin ? (
+        <AdminConsole />
+      ) : staffTab === "checkin" ? (
+        <CheckIn />
+      ) : (
+        <MemberDirectory />
       )}
     </div>
   );
@@ -151,7 +179,7 @@ const styles = {
     alignItems: "center",
     justifyContent: "space-between",
     gap: 10,
-    padding: "10px 20px",
+    padding: "12px 20px",
     background: "#f0f0f3",
     borderBottom: "1px solid #e0e0e5",
     fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
@@ -172,6 +200,34 @@ const styles = {
     borderRadius: 999,
     background: "#fff",
     color: "#444",
+    cursor: "pointer",
+  },
+  tabBar: {
+    display: "flex",
+    gap: 4,
+    padding: "0 20px",
+    background: "#fff",
+    borderBottom: "1px solid #e4e4e8",
+    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+  },
+  tab: {
+    padding: "12px 14px",
+    fontSize: 14,
+    fontWeight: 600,
+    border: "none",
+    borderBottom: "2px solid transparent",
+    background: "transparent",
+    color: "#666",
+    cursor: "pointer",
+  },
+  tabActive: {
+    padding: "12px 14px",
+    fontSize: 14,
+    fontWeight: 600,
+    border: "none",
+    borderBottom: "2px solid #124096",
+    background: "transparent",
+    color: "#124096",
     cursor: "pointer",
   },
 };

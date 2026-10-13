@@ -1,20 +1,34 @@
 import { useState } from "react";
 import { createMember } from "../api/members.js";
 import { BUTTON_COLORS } from "../styles/buttonColors.js";
+import { getPriceInfo } from "../utils/pricing.js";
 
 // User story: "As a receptionist, I want to register a new walk-in
 // member's profile and membership plan, so that I can onboard new
-// customers on the spot."
+// customers on the spot." Extended per: "As a receptionist, I want to
+// process a new member's first payment during registration, so that
+// their membership is activated immediately."
 //
-// A new member is always created as Active with today's join date -
-// the receptionist only supplies profile + plan info, nothing else.
-const EMPTY_FORM = { name: "", email: "", phone: "", branch: "", membershipPlan: "" };
+// A new member is always created as Active with today's join date - the
+// receptionist supplies profile + plan info, plus the payment that
+// justifies that activation. There's no amount field to type into: pricing
+// comes straight from GET /api/members/meta (see utils/pricing.js) and is
+// just shown once both plan and duration are picked - the backend computes
+// the real price itself regardless of what's sent, so this is a genuine
+// constraint, not just a disabled input.
+const EMPTY_FORM = {
+  name: "", email: "", phone: "", branch: "", membershipPlan: "",
+  paymentMethod: "", paymentDuration: "",
+};
+const PAYMENT_METHODS = ["Cash", "Card", "Bank Transfer"];
+const PAYMENT_DURATIONS = ["1 Month", "1 Year"];
 
 export default function RegisterMemberForm({ filterOptions, onClose, onRegistered }) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [fieldErrors, setFieldErrors] = useState({});
   const [submitError, setSubmitError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const priceInfo = getPriceInfo(filterOptions, form.membershipPlan, form.paymentDuration);
 
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }));
@@ -109,6 +123,48 @@ export default function RegisterMemberForm({ filterOptions, onClose, onRegistere
             </select>
           </Field>
 
+          <Field label="Payment method" error={fieldErrors.paymentMethod}>
+            <select
+              value={form.paymentMethod}
+              onChange={(e) => update("paymentMethod", e.target.value)}
+              style={styles.input}
+            >
+              <option value="">Select a payment method...</option>
+              {PAYMENT_METHODS.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="Subscription duration" error={fieldErrors.paymentDuration}>
+            <select
+              value={form.paymentDuration}
+              onChange={(e) => update("paymentDuration", e.target.value)}
+              style={styles.input}
+            >
+              <option value="">Select a duration...</option>
+              {PAYMENT_DURATIONS.map((d) => (
+                <option key={d} value={d}>
+                  {d}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          {priceInfo && (
+            <Field label="Price">
+              {priceInfo.hasPromo && (
+                <div style={styles.oldPriceRow}>
+                  <span style={styles.oldPriceTag}>Old price</span>
+                  <span style={styles.oldPriceAmount}>${priceInfo.originalAmount}</span>
+                </div>
+              )}
+              <div style={styles.priceDisplay}>${priceInfo.amount}</div>
+            </Field>
+          )}
+
           {submitError && <div style={styles.errorBox}>{submitError}</div>}
 
           <div style={styles.actions}>
@@ -116,7 +172,7 @@ export default function RegisterMemberForm({ filterOptions, onClose, onRegistere
               Cancel
             </button>
             <button type="submit" disabled={submitting} style={styles.submitButton}>
-              {submitting ? "Registering..." : "Register member"}
+              {submitting ? "Registering..." : "Register & charge payment"}
             </button>
           </div>
         </form>
@@ -190,6 +246,33 @@ const styles = {
     borderRadius: 8,
     outline: "none",
     background: "#fff",
+  },
+  priceDisplay: {
+    padding: "10px 12px",
+    fontSize: 20,
+    fontWeight: 800,
+    border: "1px solid #e4e4e8",
+    borderRadius: 8,
+    background: "#f5f5f7",
+    color: "#1a1a1a",
+  },
+  oldPriceRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 4,
+  },
+  oldPriceTag: {
+    fontSize: 10,
+    fontWeight: 700,
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+    color: "#999",
+  },
+  oldPriceAmount: {
+    fontSize: 13,
+    color: "#999",
+    textDecoration: "line-through",
   },
   fieldError: {
     color: "#b3261e",

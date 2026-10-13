@@ -2,6 +2,7 @@ from django.contrib.auth.hashers import check_password
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
+from billing.serializers import PaymentSerializer
 from .models import Member
 from .serializers import MemberSerializer, MemberSignupSerializer
 
@@ -16,8 +17,11 @@ def _session_payload(member):
 
 
 # POST /api/members/signup
-# Body: { name, email, phone, branch, membershipPlan, username, password }
-# 201 + member/session payload on success (also logs the new member in).
+# Body: { name, email, phone, branch, membershipPlan, username, password,
+#         paymentAmount, paymentMethod, paymentDuration }
+# 201 + member/session payload (plus "firstPayment") on success - a
+# self-signed-up member is not Active until they pay here either, same
+# rule as a receptionist's walk-in registration. Also logs the new member in.
 # 400 + field errors (e.g. username/email already taken) on failure.
 @api_view(["POST"])
 def signup(request):
@@ -28,7 +32,9 @@ def signup(request):
 
     request.session.pop("staff_account_id", None)
     request.session["member_id"] = member.id
-    return Response(_session_payload(member), status=201)
+    data = _session_payload(member)
+    data["firstPayment"] = PaymentSerializer(member.first_payment).data
+    return Response(data, status=201)
 
 
 # POST /api/members/login
