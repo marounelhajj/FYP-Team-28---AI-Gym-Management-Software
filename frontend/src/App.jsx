@@ -3,6 +3,7 @@ import { fetchCurrentUser, logout } from "./api/auth.js";
 import { fetchCurrentMember, logoutMember } from "./api/memberAuth.js";
 import MemberDirectory from "./components/MemberDirectory.jsx";
 import AdminConsole from "./components/admin/AdminConsole.jsx";
+import CheckIn from "./components/CheckIn.jsx";
 import PlanManager from "./components/plans/PlanManager.jsx";
 import PromotionManager from "./components/plans/PromotionManager.jsx";
 import LoginPage from "./components/LoginPage.jsx";
@@ -10,6 +11,7 @@ import WelcomeScreen from "./components/WelcomeScreen.jsx";
 import MemberLoginPage from "./components/member/MemberLoginPage.jsx";
 import MemberSignupPage from "./components/member/MemberSignupPage.jsx";
 import MemberDashboard from "./components/member/MemberDashboard.jsx";
+import PlanBrowser from "./components/member/PlanBrowser.jsx";
 import Logo from "./components/Logo.jsx";
 import AccessDenied from "./components/AccessDenied.jsx";
 
@@ -25,8 +27,9 @@ function canAccessAdminConsole(account) {
 
 // Every staff account except system administrators gets one tab per screen
 // their role allows (e.g. a General Manager sees Plans + Promotions, a
-// Branch Manager sees Members + Promotions, a Receptionist just Members -
-// no tab bar).
+// Branch Manager sees Members + Promotions + Check-In, a Receptionist sees
+// Members + Check-In - both gated on manage_members since checking a
+// member in/out is part of the same front-desk job as the directory).
 function availableScreens(account) {
   const has = (p) => account.permissions.includes(p);
   const screens = [];
@@ -38,6 +41,7 @@ function availableScreens(account) {
   }
   if (has("manage_members")) {
     screens.push({ key: "members", label: "Member Directory", render: () => <MemberDirectory /> });
+    screens.push({ key: "checkin", label: "Check-In", render: () => <CheckIn /> });
   }
   return screens;
 }
@@ -64,6 +68,9 @@ export default function App() {
   const [justLoggedIn, setJustLoggedIn] = useState(false);
   // Which staff tab is open (see availableScreens). null = the first one.
   const [screenKey, setScreenKey] = useState(null);
+  // Plan + branch a prospective member picked on PlanBrowser, carried into
+  // the signup form (and back, if they return to compare plans).
+  const [signupSelection, setSignupSelection] = useState(null);
 
   // Restore an existing session on page load/refresh, so logging in isn't
   // required every time the page reloads. Staff and member sessions use
@@ -102,6 +109,7 @@ export default function App() {
 
   function handleMemberLoggedIn(member) {
     setSession({ type: "member", data: member });
+    setSignupSelection(null);
   }
 
   async function handleLogout() {
@@ -120,25 +128,52 @@ export default function App() {
   }
 
   if (!session) {
+    const browsePlans = () => setAuthScreen("browsePlans");
+
+    if (authScreen === "browsePlans") {
+      return (
+        <PlanBrowser
+          initialBranch={signupSelection?.branch}
+          onChoosePlan={(selection) => {
+            setSignupSelection(selection);
+            setAuthScreen("memberSignup");
+          }}
+          onSwitchToLogin={() => setAuthScreen("memberLogin")}
+          onSwitchToStaff={() => setAuthScreen("staffLogin")}
+        />
+      );
+    }
     if (authScreen === "memberLogin") {
       return (
         <MemberLoginPage
           onLoggedIn={handleMemberLoggedIn}
-          onSwitchToSignup={() => setAuthScreen("memberSignup")}
+          onSwitchToSignup={() => {
+            setSignupSelection(null);
+            setAuthScreen("memberSignup");
+          }}
           onSwitchToStaff={() => setAuthScreen("staffLogin")}
+          onBrowsePlans={browsePlans}
         />
       );
     }
     if (authScreen === "memberSignup") {
       return (
         <MemberSignupPage
+          initialSelection={signupSelection}
           onSignedUp={handleMemberLoggedIn}
           onSwitchToLogin={() => setAuthScreen("memberLogin")}
           onSwitchToStaff={() => setAuthScreen("staffLogin")}
+          onBrowsePlans={browsePlans}
         />
       );
     }
-    return <LoginPage onLoggedIn={handleStaffLoggedIn} onSwitchToMember={() => setAuthScreen("memberLogin")} />;
+    return (
+      <LoginPage
+        onLoggedIn={handleStaffLoggedIn}
+        onSwitchToMember={() => setAuthScreen("memberLogin")}
+        onBrowsePlans={browsePlans}
+      />
+    );
   }
 
   if (session.type === "staff" && justLoggedIn) {
@@ -173,7 +208,7 @@ export default function App() {
   return (
     <div>
       <div style={styles.topBar}>
-        <Logo size={34} />
+        <Logo size={52} />
         <div style={styles.userGroup}>
           <div style={styles.userInfo}>
             <div style={styles.userName}>{session.data.fullName || session.data.name}</div>
@@ -218,7 +253,7 @@ const styles = {
     alignItems: "center",
     justifyContent: "space-between",
     gap: 10,
-    padding: "10px 20px",
+    padding: "12px 20px",
     background: "#f0f0f3",
     borderBottom: "1px solid #e0e0e5",
     fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",

@@ -115,6 +115,31 @@ change, `seed_staff` will skip; either delete `db.sqlite3` and reseed, or
 log in as the system admin (**mfakhoury**) and add the new permissions to
 the roles in Admin Console -> Roles.
 
+### Browse plans & sign up online (SCRUM-66)
+
+Story: *"As a prospective member, I want to browse membership plans and
+sign up online, so that I can join a branch without visiting in person
+first."*
+
+- `frontend/src/components/member/PlanBrowser.jsx` - public page (no
+  login) listing the plans the general manager currently sells, with
+  description, features and price. Picking a branch shows that branch's
+  price today, including any running branch promotion. Reached from
+  "Browse membership plans" on the staff login, or "Browse plans" on the
+  member login.
+- "Join with <plan>" opens the existing signup form (`MemberSignupPage`)
+  with the plan and branch pre-filled, and the form shows the price the
+  member will pay. "Compare plans" goes back to the browser.
+- Members are no longer limited to the hard-coded Basic/Standard/Premium:
+  `Member.membership_plan` now stores the name of any `MembershipPlan`
+  (migration `members/0003`). Signup and walk-in registration both reject
+  archived or unknown plans, and `GET /api/members/meta` returns the
+  active plans, so the receptionist's registration form and the member
+  directory offer the real tiers too.
+- Requires plans in the database: run `python manage.py seed_plans`, or
+  create plans as the general manager.
+- Tests: `python manage.py test members`
+
 ## Folder structure
 
 ```

@@ -13,7 +13,7 @@ import Logo from "./Logo.jsx";
 // code from the authenticator app ("verify") or, on an account's first
 // login, to scan a QR code and confirm it ("enroll"). Enrollment ends on a
 // one-time screen listing the backup codes.
-export default function LoginPage({ onLoggedIn, onSwitchToMember }) {
+export default function LoginPage({ onLoggedIn, onSwitchToMember, onBrowsePlans }) {
   const [step, setStep] = useState("password"); // password | verify | enroll | backupCodes
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -116,6 +116,12 @@ export default function LoginPage({ onLoggedIn, onSwitchToMember }) {
               Gym member?{" "}
               <button type="button" onClick={onSwitchToMember} style={styles.linkButton}>
                 Login or sign up here
+              </button>
+            </p>
+            <p style={styles.switchLine}>
+              Thinking of joining?{" "}
+              <button type="button" onClick={onBrowsePlans} style={styles.linkButton}>
+                Browse membership plans
               </button>
             </p>
           </>

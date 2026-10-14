@@ -5,28 +5,27 @@ from django.utils import timezone
 
 from plans.models import BranchPromotion, MembershipPlan
 
-# Starting tiers reuse the plan names members are already on (Basic /
-# Standard / Premium - see members.models.Member.Plan), so seeded demo
-# members line up with real plans.
+# Starting tiers reuse the plan names seed_members puts demo members on
+# (Basic / Standard / Premium), so seeded members line up with real plans.
 PLANS = [
     {
         "name": "Basic",
         "description": "Gym floor access during standard hours.",
-        "price": "35.00",
+        "price": "25.00",
         "billing_cycle": "Monthly",
         "features": ["Gym floor access", "Locker room"],
     },
     {
         "name": "Standard",
         "description": "Full gym access plus group classes.",
-        "price": "55.00",
+        "price": "40.00",
         "billing_cycle": "Monthly",
         "features": ["Gym floor access", "Locker room", "Unlimited group classes"],
     },
     {
         "name": "Premium",
         "description": "Everything, at every branch, with monthly PT sessions.",
-        "price": "90.00",
+        "price": "50.00",
         "billing_cycle": "Monthly",
         "features": [
             "Gym floor access", "Locker room", "Unlimited group classes",
@@ -36,7 +35,7 @@ PLANS = [
     {
         "name": "Premium Annual",
         "description": "Premium, paid yearly at a discount.",
-        "price": "900.00",
+        "price": "500.00",
         "billing_cycle": "Annual",
         "features": ["Everything in Premium", "2 months free vs. monthly billing"],
     },

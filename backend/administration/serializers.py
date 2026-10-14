@@ -42,7 +42,7 @@ class StaffAccountSerializer(serializers.ModelSerializer):
         model = StaffAccount
         fields = [
             "id", "fullName", "email", "username", "jobTitle",
-            "roleId", "roleName", "isActive", "createdAt", "twoFactorEnabled",
+            "roleId", "roleName", "branch", "isActive", "createdAt", "twoFactorEnabled",
         ]
 
 
@@ -58,11 +58,12 @@ class StaffAccountCreateSerializer(serializers.ModelSerializer):
     fullName = serializers.CharField(source="full_name")
     jobTitle = serializers.ChoiceField(source="job_title", choices=StaffAccount.JobTitle.choices)
     roleId = serializers.PrimaryKeyRelatedField(source="role", queryset=Role.objects.all())
+    branch = serializers.ChoiceField(choices=StaffAccount.Branch.choices, required=False, allow_null=True)
     password = serializers.CharField(write_only=True, min_length=8)
 
     class Meta:
         model = StaffAccount
-        fields = ["fullName", "email", "username", "jobTitle", "roleId", "password"]
+        fields = ["fullName", "email", "username", "jobTitle", "roleId", "branch", "password"]
 
     def create(self, validated_data):
         password = validated_data.pop("password")
@@ -79,12 +80,13 @@ class StaffAccountUpdateSerializer(serializers.ModelSerializer):
     fullName = serializers.CharField(source="full_name", required=False)
     jobTitle = serializers.ChoiceField(source="job_title", choices=StaffAccount.JobTitle.choices, required=False)
     roleId = serializers.PrimaryKeyRelatedField(source="role", queryset=Role.objects.all(), required=False)
+    branch = serializers.ChoiceField(choices=StaffAccount.Branch.choices, required=False, allow_null=True)
     isActive = serializers.BooleanField(source="is_active", required=False)
     password = serializers.CharField(write_only=True, required=False, min_length=8)
 
     class Meta:
         model = StaffAccount
-        fields = ["fullName", "email", "username", "jobTitle", "roleId", "isActive", "password"]
+        fields = ["fullName", "email", "username", "jobTitle", "roleId", "branch", "isActive", "password"]
 
     def update(self, instance, validated_data):
         password = validated_data.pop("password", None)

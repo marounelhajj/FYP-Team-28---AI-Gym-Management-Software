@@ -1,9 +1,11 @@
 import base64
 import time
-from datetime import timedelta
+from datetime import date, timedelta
 
 from django.test import TestCase
 from django.utils import timezone
+
+from members.models import Member
 
 from . import totp
 from .models import Role, StaffAccount
@@ -292,12 +294,12 @@ class StaffTwoFactorTests(TestCase):
 
     # --- members are not affected ---
     def test_member_login_has_no_second_factor(self):
-        res = self.client.post("/api/members/signup", {
-            "name": "Mia Member", "email": "mia@example.com", "phone": "70123456",
-            "branch": "Hamra", "membershipPlan": "Basic", "username": "mia", "password": PASSWORD,
-        }, content_type="application/json")
-        self.assertEqual(res.status_code, 201, res.content)
-        self.client.post("/api/members/logout")
+        member = Member(
+            name="Mia Member", email="mia@example.com", phone="70123456", branch="Hamra",
+            join_date=date.today(), username="mia",
+        )
+        member.set_password(PASSWORD)
+        member.save()
         res = self.client.post("/api/members/login", {"username": "mia", "password": PASSWORD}, content_type="application/json")
         self.assertEqual(res.status_code, 200, res.content)
         self.assertNotIn("twoFactor", res.json())

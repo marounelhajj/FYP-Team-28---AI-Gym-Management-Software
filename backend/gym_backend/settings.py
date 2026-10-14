@@ -43,6 +43,8 @@ INSTALLED_APPS = [
     'members',
     'administration',
     'plans',
+    'billing',
+    'checkins',
 ]
 
 MIDDLEWARE = [

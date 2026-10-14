@@ -18,11 +18,16 @@ from .serializers import (
 # GET query params (all optional, all combinable):
 #   q         - case-insensitive substring match on full name
 #   roleId    - exact match on role id
+#   branch    - exact match: Hamra | Achrafieh | Jnah | Zalka
 #   isActive  - "true" | "false"
 #
 # User story (both GET and POST/PATCH below): "As a system administrator, I
 # want to create, edit and deactivate staff login accounts, so that only
 # current staff can sign in to the system."
+#
+# The branch field and branch filter also serve: "As a general manager, I
+# want to add, edit, and remove staff and trainer profiles at a branch, so
+# that I can manage headcount and certified training staff."
 @api_view(["GET", "POST"])
 def staff_list(request):
     _, denied = authorize(request, "manage_staff_accounts")
@@ -45,6 +50,10 @@ def staff_list(request):
     role_id = request.query_params.get("roleId")
     if role_id:
         queryset = queryset.filter(role_id=role_id)
+
+    branch = request.query_params.get("branch")
+    if branch:
+        queryset = queryset.filter(branch=branch)
 
     active_param = request.query_params.get("isActive")
     if active_param is not None:

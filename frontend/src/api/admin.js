@@ -8,10 +8,11 @@ import { parseError } from "./http.js";
 // deactivate staff login accounts, so that only current staff can sign in
 // to the system."
 
-export async function fetchStaff({ q, roleId, isActive } = {}) {
+export async function fetchStaff({ q, roleId, branch, isActive } = {}) {
   const params = new URLSearchParams();
   if (q) params.set("q", q);
   if (roleId) params.set("roleId", roleId);
+  if (branch) params.set("branch", branch);
   if (isActive !== undefined && isActive !== "") params.set("isActive", isActive);
 
   const res = await fetch(`/api/staff?${params.toString()}`);
