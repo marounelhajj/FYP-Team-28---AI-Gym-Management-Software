@@ -5,10 +5,12 @@ import { fetchBranchPricing } from "../../api/plans.js";
 import { BUTTON_COLORS } from "../../styles/buttonColors.js";
 import { getPriceInfo } from "../../utils/pricing.js";
 import Logo from "../Logo.jsx";
+import WaiverSection, { EMPTY_WAIVER, isWaiverComplete } from "../WaiverSection.jsx";
 
 const EMPTY_FORM = {
   name: "", email: "", phone: "", branch: "", membershipPlan: "", username: "", password: "",
   paymentMethod: "", paymentDuration: "",
+  ...EMPTY_WAIVER,
 };
 const PAYMENT_METHODS = ["Cash", "Card", "Bank Transfer"];
 const PAYMENT_DURATIONS = ["1 Month", "1 Year"];
@@ -28,6 +30,9 @@ const CYCLE_TEXT = {
 //
 // `initialSelection` ({ planName, branch }) comes from PlanBrowser's "Join"
 // button so the plan/branch the visitor just compared are pre-filled.
+//
+// Ends with the digital waiver + health disclaimer (SCRUM-83); signing up
+// isn't possible until it's signed.
 export default function MemberSignupPage({ initialSelection, onSignedUp, onSwitchToLogin, onSwitchToStaff, onBrowsePlans }) {
   const [form, setForm] = useState({
     ...EMPTY_FORM,
@@ -40,6 +45,7 @@ export default function MemberSignupPage({ initialSelection, onSignedUp, onSwitc
   const [submitError, setSubmitError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const priceInfo = getPriceInfo(quote?.effectivePrice, form.paymentDuration);
+  const waiverSigned = isWaiverComplete(form, form.name);
 
   useEffect(() => {
     fetchMemberFilterOptions()
@@ -231,10 +237,22 @@ export default function MemberSignupPage({ initialSelection, onSignedUp, onSwitc
             </Field>
           )}
 
+          <WaiverSection
+            values={form}
+            onChange={update}
+            errors={fieldErrors}
+            signerName={form.name}
+            hint="Please read before your first session."
+          />
+
           {submitError && <div style={styles.errorBox}>{submitError}</div>}
 
-          <button type="submit" disabled={submitting} style={styles.submitButton}>
-            {submitting ? "Creating account..." : "Sign up"}
+          <button
+            type="submit"
+            disabled={submitting || !waiverSigned}
+            style={{ ...styles.submitButton, ...(waiverSigned ? null : styles.submitDisabled) }}
+          >
+            {submitting ? "Creating account..." : waiverSigned ? "Sign waiver & join" : "Sign the waiver to join"}
           </button>
         </form>
 
@@ -369,6 +387,7 @@ const styles = {
     cursor: "pointer",
     marginTop: 4,
   },
+  submitDisabled: { opacity: 0.5, cursor: "not-allowed" },
   switchLine: { fontSize: 13, color: "#666", textAlign: "center", margin: "14px 0 0" },
   linkButton: {
     border: "none",

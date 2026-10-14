@@ -44,6 +44,16 @@ export default function SubscriptionDetails({ member, onClose, onCancelled }) {
           <Row label="Branch" value={member.branch} />
           <Row label="Member since" value={member.joinDate} />
           <Row label="Subscription expires" value={member.subscriptionExpiresAt || "—"} />
+          <Row
+            label="Waiver"
+            value={
+              member.waiver
+                ? `Signed ${member.waiver.signedAt.slice(0, 10)} (${member.waiver.signedVia}${
+                    member.waiver.witnessedBy ? `, witnessed by ${member.waiver.witnessedBy}` : ""
+                  })`
+                : "Not on file"
+            }
+          />
         </div>
 
         {error && <div style={styles.errorBox}>{error}</div>}

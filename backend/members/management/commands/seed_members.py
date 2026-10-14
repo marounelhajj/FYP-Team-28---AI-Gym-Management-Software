@@ -1,6 +1,7 @@
 import datetime
 from django.core.management.base import BaseCommand
-from members.models import Member
+from members.models import Member, Waiver
+from members.waiver import WAIVER_VERSION
 
 FIRST_NAMES = [
     "Ali", "Maroun", "Ahmad", "Omar", "Layla", "Nour", "Rami", "Dana",
@@ -14,6 +15,8 @@ LAST_NAMES = [
 BRANCHES = ["Hamra", "Achrafieh", "Jnah", "Zalka"]
 STATUSES = ["Active", "Frozen", "Cancelled"]
 PLANS = ["Basic", "Standard", "Premium"]
+
+
 
 
 class Command(BaseCommand):
@@ -50,5 +53,18 @@ class Command(BaseCommand):
                 join_date=join_date,
             ))
 
-        Member.objects.bulk_create(members)
+        created = Member.objects.bulk_create(members)
+
+        # Every seeded member signed the current waiver at the front desk on
+        # the day they joined (SCRUM-83), except a few older records, so the
+        # directory's Waiver column shows what a missing one looks like.
+        Waiver.objects.bulk_create(
+            Waiver(
+                member=m, signature_name=m.name, health_disclaimer_accepted=True,
+                liability_waiver_accepted=True, waiver_version=WAIVER_VERSION,
+                signed_via=Waiver.SignedVia.FRONT_DESK,
+                signed_at=datetime.datetime.combine(m.join_date, datetime.time(10, 0), tzinfo=datetime.timezone.utc),
+            )
+            for i, m in enumerate(created) if i % 11 != 3
+        )
         self.stdout.write(self.style.SUCCESS(f"Seeded {len(members)} members."))

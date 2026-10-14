@@ -1,5 +1,6 @@
 from django.contrib.auth.hashers import make_password
 from django.db import models
+from django.utils import timezone
 
 
 class Member(models.Model):
@@ -69,3 +70,37 @@ class Member(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.branch})"
+
+
+# User story (SCRUM-83): "As a member, I want to sign a digital waiver and
+# health disclaimer during signup, so that the gym has liability
+# protection on file before I start training."
+#
+# One-to-one with Member. Both signup paths (walk-in registration and
+# online signup) create the Member and its Waiver in the same transaction
+# and refuse to save either unless both boxes are ticked and the typed
+# signature matches the member's name, so every member created since this
+# feature has liability protection on file. A member without a Waiver row
+# shows as "Not on file".
+#
+# Original design: Ali's waiver PR (#3).
+class Waiver(models.Model):
+    class SignedVia(models.TextChoices):
+        ONLINE = "Online signup", "Online signup"
+        FRONT_DESK = "Front desk", "Front desk"
+
+    member = models.OneToOneField(Member, on_delete=models.CASCADE, related_name="waiver")
+    signature_name = models.CharField(max_length=150)
+    health_disclaimer_accepted = models.BooleanField(default=False)
+    liability_waiver_accepted = models.BooleanField(default=False)
+    # Which wording was agreed to - see members/waiver.py.
+    waiver_version = models.CharField(max_length=20)
+    signed_via = models.CharField(max_length=20, choices=SignedVia.choices)
+    # The receptionist at the desk for a walk-in signature; null online.
+    witnessed_by = models.ForeignKey(
+        "administration.StaffAccount", on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+    signed_at = models.DateTimeField(default=timezone.now)
+
+    def __str__(self):
+        return f"Waiver for {self.member.name} ({self.signed_at:%Y-%m-%d})"

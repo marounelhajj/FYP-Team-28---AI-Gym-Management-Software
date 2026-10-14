@@ -232,13 +232,14 @@ export default function MemberDirectory() {
                 <th style={styles.th}>Branch</th>
                 <th style={styles.th}>Status</th>
                 <th style={styles.th}>Member Since</th>
+                <th style={styles.th}>Waiver</th>
                 <th style={styles.th}></th>
               </tr>
             </thead>
             <tbody>
               {!loading && results.length === 0 && (
                 <tr>
-                  <td colSpan={7} style={styles.emptyCell}>
+                  <td colSpan={8} style={styles.emptyCell}>
                     No members match your search.
                   </td>
                 </tr>
@@ -257,6 +258,15 @@ export default function MemberDirectory() {
                     <StatusBadge status={m.status} />
                   </td>
                   <td style={styles.td}>{m.joinDate}</td>
+                  <td style={styles.td}>
+                    {m.waiver ? (
+                      <span style={styles.waiverSigned} title={`Signed ${m.waiver.signedAt} via ${m.waiver.signedVia}`}>
+                        Signed
+                      </span>
+                    ) : (
+                      <span style={styles.waiverMissing}>Not on file</span>
+                    )}
+                  </td>
                   <td style={{ ...styles.td, textAlign: "right", whiteSpace: "nowrap" }}>
                     {m.status === "Active" ? (
                       <button onClick={() => setDetailsTarget(m)} style={styles.detailsButton}>
@@ -437,4 +447,6 @@ const styles = {
     fontWeight: 600,
     cursor: "pointer",
   },
+  waiverSigned: { color: "#1d5e2f", fontWeight: 600 },
+  waiverMissing: { color: "#b3261e", fontWeight: 600 },
 };
