@@ -3,6 +3,7 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from billing.serializers import PaymentSerializer
+from . import qr
 from .models import Member
 from .serializers import MemberSerializer, MemberSignupSerializer
 
@@ -81,3 +82,16 @@ def me(request):
         return Response({"error": "Not authenticated."}, status=401)
 
     return Response(_session_payload(member))
+
+
+# GET /api/members/me/qr
+# The logged-in member's check-in QR code (SCRUM-33), shown on their
+# dashboard: { membershipId, payload, qrCode (SVG data URI) }.
+@api_view(["GET"])
+def my_qr(request):
+    member_id = request.session.get("member_id")
+    member = Member.objects.filter(id=member_id).first() if member_id else None
+    if member is None:
+        return Response({"error": "Not authenticated."}, status=401)
+    payload = qr.payload_for(member)
+    return Response({"membershipId": member.id, "payload": payload, "qrCode": qr.svg_data_uri(payload)})

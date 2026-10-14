@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+import { fetchMyQrCode } from "../../api/memberAuth.js";
 import { BUTTON_COLORS } from "../../styles/buttonColors.js";
 
 const STATUS_STYLES = {
@@ -12,6 +14,15 @@ const STATUS_STYLES = {
 // much larger set of backlog stories for a future pass.
 export default function MemberDashboard({ member }) {
   const statusStyle = STATUS_STYLES[member.status] || { background: "#eee", color: "#333" };
+  const [qr, setQr] = useState(null);
+
+  // Check-in QR code (SCRUM-33): shown at the front desk instead of
+  // reading out the membership ID.
+  useEffect(() => {
+    fetchMyQrCode()
+      .then(setQr)
+      .catch(() => {});
+  }, []);
 
   return (
     <div style={styles.page}>
@@ -38,6 +49,17 @@ export default function MemberDashboard({ member }) {
           value={member.waiver ? `Signed ${member.waiver.signedAt.slice(0, 10)}` : "Not on file - ask at the front desk"}
         />
       </div>
+
+      {qr && (
+        <div style={styles.qrCard}>
+          <img src={qr.qrCode} alt={`Check-in QR code for membership #${qr.membershipId}`} style={styles.qrImage} />
+          <div>
+            <div style={styles.qrTitle}>Your check-in code</div>
+            <div style={styles.qrText}>Show this at the front desk to check in.</div>
+            <div style={styles.qrId}>Membership ID #{qr.membershipId}</div>
+          </div>
+        </div>
+      )}
 
       <p style={styles.note}>
         Class booking, billing, and the AI chatbot are coming in a future update.
@@ -91,5 +113,19 @@ const styles = {
     fontWeight: 600,
     lineHeight: 1,
   },
+  qrCard: {
+    display: "flex",
+    alignItems: "center",
+    gap: 16,
+    marginTop: 16,
+    padding: 16,
+    border: "1px solid #e4e4e8",
+    borderRadius: 10,
+    background: "#fff",
+  },
+  qrImage: { width: 132, height: 132, flexShrink: 0 },
+  qrTitle: { fontSize: 16, fontWeight: 700 },
+  qrText: { fontSize: 13, color: "#666", marginTop: 4 },
+  qrId: { fontSize: 13, fontWeight: 600, marginTop: 10 },
   note: { fontSize: 13, color: "#888", marginTop: 20, textAlign: "center" },
 };

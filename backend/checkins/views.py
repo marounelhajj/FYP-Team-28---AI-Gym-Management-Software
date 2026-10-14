@@ -27,7 +27,7 @@ def _lookup_member(membership_id):
 #                                future, a scanned QR code decoding to the
 #                                same ID)
 #
-# POST body: { membershipId }
+# POST body: { membershipId } or { qrCode } (members/qr.py)
 # Only Active members can check in, and only once - trying to check in
 # again while already inside (an open session: Allowed, not yet checked
 # out) is itself refused and logged as Denied ("Already checked in"),
@@ -84,7 +84,7 @@ def checkin_list(request):
 
 
 # POST /api/checkins/checkout
-# Body: { membershipId }
+# Body: { membershipId } or { qrCode }
 # Closes a member's open check-in session and reports how long they were
 # in (CheckInSerializer's "duration"). A member can't check out without
 # having checked in first (no open session -> 400), and - same rule as

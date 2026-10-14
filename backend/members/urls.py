@@ -8,6 +8,7 @@ urlpatterns = [
     path("/login", auth_views.login),
     path("/logout", auth_views.logout),
     path("/me", auth_views.me),
+    path("/me/qr", auth_views.my_qr),
     path("/<int:member_id>/payments", views.member_payment),
     path("/<int:member_id>/cancel", views.member_cancel),
     path("/<int:member_id>", views.member_detail),

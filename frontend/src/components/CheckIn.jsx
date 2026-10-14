@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { checkIn, checkOut, fetchRecentCheckIns } from "../api/checkins.js";
 import { BUTTON_COLORS } from "../styles/buttonColors.js";
+import QrScanner from "./QrScanner.jsx";
 
 const RESULT_DISPLAY_MS = 3000;
 
@@ -9,10 +10,10 @@ const RESULT_DISPLAY_MS = 3000;
 // control entry."
 //
 // Membership ID is just the member's existing id - there's no separate
-// member-number field. "QR code" is typed/pasted entry for now (the same
-// field works for a scanned code once a real scanner exists, since it
-// would decode to this same ID before being submitted here) - see
-// backend/checkins/views.py for why.
+// member-number field. QR: every member has a signed check-in QR code on
+// their dashboard (backend/members/qr.py). "Scan QR" reads it with the
+// camera and checks them in straight away; a USB scanner that types the
+// code into the field works too, since the field accepts either.
 //
 // Check-in and check-out share one open/closed session per member
 // (backend/checkins/models.py CheckIn.checked_out_at): you can't check in
@@ -24,6 +25,7 @@ export default function CheckIn() {
   const [submittingAction, setSubmittingAction] = useState(null); // "checkin" | "checkout" | null
   const [result, setResult] = useState(null); // { action, ok, member?, checkIn?, error? }
   const [recent, setRecent] = useState([]);
+  const [scanning, setScanning] = useState(false);
   const inputRef = useRef(null);
   const dismissTimer = useRef(null);
 
@@ -46,12 +48,12 @@ export default function CheckIn() {
     dismissTimer.current = setTimeout(() => setResult(null), RESULT_DISPLAY_MS);
   }
 
-  async function handleAction(action) {
-    if (!membershipId) return;
+  async function handleAction(action, code = membershipId) {
+    if (!code) return;
     setSubmittingAction(action);
 
     try {
-      const data = action === "checkin" ? await checkIn(membershipId) : await checkOut(membershipId);
+      const data = action === "checkin" ? await checkIn(code) : await checkOut(code);
       showResult({ action, ok: true, ...data });
     } catch (err) {
       showResult({ action, ok: false, error: err.message });
@@ -62,6 +64,12 @@ export default function CheckIn() {
       inputRef.current?.focus();
     }
   }
+
+  const handleScan = useCallback((code) => {
+    setScanning(false);
+    handleAction("checkin", code);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const cardStyle = !result
     ? null
@@ -84,7 +92,6 @@ export default function CheckIn() {
         <input
           ref={inputRef}
           type="text"
-          inputMode="numeric"
           value={membershipId}
           onChange={(e) => setMembershipId(e.target.value)}
           placeholder="Membership ID or scan QR..."
@@ -103,7 +110,17 @@ export default function CheckIn() {
         >
           {submittingAction === "checkout" ? "Checking out..." : "Check Out"}
         </button>
+        <button
+          type="button"
+          onClick={() => setScanning(true)}
+          disabled={scanning || Boolean(submittingAction)}
+          style={styles.scanButton}
+        >
+          Scan QR
+        </button>
       </form>
+
+      {scanning && <QrScanner onScan={handleScan} onClose={() => setScanning(false)} />}
 
       {result && (
         <div style={cardStyle}>
@@ -201,6 +218,17 @@ const styles = {
     borderRadius: 8,
     background: "#c2b697",
     color: "#fff",
+    fontWeight: 700,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+  },
+  scanButton: {
+    padding: "14px 18px",
+    fontSize: 16,
+    border: "1px solid #d0d0d5",
+    borderRadius: 8,
+    background: "#fff",
+    color: "#1a1a1a",
     fontWeight: 700,
     cursor: "pointer",
     whiteSpace: "nowrap",
