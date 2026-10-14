@@ -179,7 +179,7 @@ account takes effect immediately, even for sessions already open.
 
 | Endpoint | Permission needed |
 |---|---|
-| `/api/staff`, `/api/staff/<id>` | `manage_staff_accounts` |
+| `/api/staff`, `/api/staff/<id>`, `POST /api/staff/<id>/2fa/reset` | `manage_staff_accounts` |
 | `/api/roles` (read) | `manage_roles` or `manage_staff_accounts` |
 | `/api/roles` (create/edit), `/api/permissions` | `manage_roles` |
 | `/api/members`, `/api/members/<id>` (read/register) | `manage_members` |
@@ -198,3 +198,31 @@ Demo accounts (password `ChangeMe123!`): `mfakhoury` (admin), `rhaddad`
 `nkhalil` (marketing, no pages), `fghosn` (deactivated).
 
 Run tests: `cd backend && python manage.py test`
+
+## Two-factor sign-in for staff (SCRUM-87)
+
+Staff logins take two steps: password (`POST /api/auth/login`), then a
+6-digit code from an authenticator app (`POST /api/auth/2fa/verify`). The
+staff session is only created after the second step. Members are not
+affected.
+
+- **First login** shows a QR code to scan with Google Authenticator,
+  Microsoft Authenticator, Authy, etc. Entering the code it shows finishes
+  setup, and the next screen lists 10 one-time backup codes (shown once,
+  stored only as hashes).
+- **Lost phone:** "Use a backup code" on the code screen, or a System
+  Administrator clicks **Reset 2FA** in Admin Console -> Staff Accounts; the
+  person sets it up again on their next login.
+- **Lockout:** 5 wrong codes lock the account for 5 minutes.
+- Secrets are encrypted at rest with `TOTP_ENCRYPTION_KEY` (environment
+  variable; see `settings.py`). Locally it falls back to a key derived from
+  `SECRET_KEY`, so nothing needs setting up for dev.
+
+Logic lives in `administration/totp.py` (codes, encryption, backup codes)
+and `administration/auth_views.py` (login, verify, reset). Tests:
+`python manage.py test administration`.
+
+Demo tip: each demo account sets up 2FA on its first login, so have an
+authenticator app on your phone ready. To start a demo account over, use
+Reset 2FA from `mfakhoury`, or reset everyone with
+`python manage.py shell -c "from administration.models import StaffAccount; StaffAccount.objects.update(two_factor_enabled=False, totp_secret_encrypted='')"`.

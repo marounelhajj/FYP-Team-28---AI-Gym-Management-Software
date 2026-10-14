@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -134,6 +135,12 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
 ]
+
+# Key that encrypts staff TOTP secrets at rest (administration/totp.py).
+# Set it in the environment for any shared deployment; generate one with
+#   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+# When unset (local dev), a key derived from SECRET_KEY is used instead.
+TOTP_ENCRYPTION_KEY = os.environ.get("TOTP_ENCRYPTION_KEY", "")
 
 # Our URL patterns deliberately omit trailing slashes to match the
 # frontend's fetch() calls exactly (e.g. /api/members, /api/members/meta),

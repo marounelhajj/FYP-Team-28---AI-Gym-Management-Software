@@ -36,12 +36,13 @@ class StaffAccountSerializer(serializers.ModelSerializer):
     roleName = serializers.CharField(source="role.name", read_only=True)
     isActive = serializers.BooleanField(source="is_active")
     createdAt = serializers.DateTimeField(source="created_at", format="%Y-%m-%d", read_only=True)
+    twoFactorEnabled = serializers.BooleanField(source="two_factor_enabled", read_only=True)
 
     class Meta:
         model = StaffAccount
         fields = [
             "id", "fullName", "email", "username", "jobTitle",
-            "roleId", "roleName", "branch", "isActive", "createdAt",
+            "roleId", "roleName", "branch", "isActive", "createdAt", "twoFactorEnabled",
         ]
 
 

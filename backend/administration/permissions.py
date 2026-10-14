@@ -10,8 +10,9 @@ from .models import StaffAccount
 # request (not copied into the session at login), so changing a role in the
 # Admin Console, or deactivating an account, takes effect immediately.
 #
-# 401 = no valid staff session (not logged in, deactivated, or a member
-#       session, which never carries staff permissions).
+# 401 = no valid staff session (not logged in, deactivated, two-factor
+#       reset by an administrator, or a member session, which never
+#       carries staff permissions).
 # 403 = logged in, but the role doesn't grant any of the required keys.
 
 
@@ -19,7 +20,7 @@ def get_staff_account(request):
     account_id = request.session.get("staff_account_id")
     if not account_id:
         return None
-    return StaffAccount.objects.select_related("role").filter(id=account_id, is_active=True).first()
+    return StaffAccount.objects.select_related("role").filter(id=account_id, is_active=True, two_factor_enabled=True).first()
 
 
 # Returns (account, None) when the caller holds at least one of

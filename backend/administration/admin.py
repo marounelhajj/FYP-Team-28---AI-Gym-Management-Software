@@ -13,3 +13,4 @@ class StaffAccountAdmin(admin.ModelAdmin):
     list_display = ("full_name", "username", "email", "job_title", "role", "is_active")
     list_filter = ("job_title", "role", "is_active")
     search_fields = ("full_name", "email", "username")
+    exclude = ("totp_secret_encrypted",)

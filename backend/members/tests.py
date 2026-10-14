@@ -1,6 +1,7 @@
 from django.test import TestCase
 
 from administration.models import Role, StaffAccount
+from administration.testing import staff_login
 from plans.models import MembershipPlan
 
 from .models import Member
@@ -84,7 +85,7 @@ class SignupPlanTests(TestCase):
         )
         account.set_password(PASSWORD)
         account.save()
-        self.client.post("/api/auth/login", {"username": "desk", "password": PASSWORD}, content_type="application/json")
+        staff_login(self.client, "desk", PASSWORD)
 
         walk_in = {
             "name": "Sami", "email": "sami@example.com", "phone": "71000000", "branch": "Jnah",
