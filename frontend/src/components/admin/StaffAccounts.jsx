@@ -34,7 +34,11 @@ function ActiveBadge({ isActive }) {
 export default function StaffAccounts() {
   const [query, setQuery] = useState("");
   const [roleId, setRoleId] = useState("");
+  const [branch, setBranch] = useState("");
   const [isActive, setIsActive] = useState("");
+
+  // Mirrors StaffAccount.Branch on the backend.
+  const BRANCHES = ["Hamra", "Achrafieh", "Jnah", "Zalka"];
 
   const [roles, setRoles] = useState([]);
   const [results, setResults] = useState([]);
@@ -56,7 +60,7 @@ export default function StaffAccounts() {
   function runSearch() {
     setLoading(true);
     setError(null);
-    fetchStaff({ q: query, roleId, isActive })
+    fetchStaff({ q: query, roleId, branch, isActive })
       .then((data) => {
         setResults(data.results);
         setTotal(data.total);
@@ -70,16 +74,17 @@ export default function StaffAccounts() {
     debounceRef.current = setTimeout(runSearch, 250);
     return () => clearTimeout(debounceRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, roleId, isActive]);
+  }, [query, roleId, branch, isActive]);
 
   const hasActiveFilters = useMemo(
-    () => Boolean(query || roleId || isActive),
-    [query, roleId, isActive]
+    () => Boolean(query || roleId || branch || isActive),
+    [query, roleId, branch, isActive]
   );
 
   function clearFilters() {
     setQuery("");
     setRoleId("");
+    setBranch("");
     setIsActive("");
   }
 
@@ -139,6 +144,20 @@ export default function StaffAccounts() {
         </select>
 
         <select
+          value={branch}
+          onChange={(e) => setBranch(e.target.value)}
+          aria-label="Filter by branch"
+          style={styles.select}
+        >
+          <option value="">All branches</option>
+          {BRANCHES.map((b) => (
+            <option key={b} value={b}>
+              {b}
+            </option>
+          ))}
+        </select>
+
+        <select
           value={isActive}
           onChange={(e) => setIsActive(e.target.value)}
           aria-label="Filter by status"
@@ -172,6 +191,7 @@ export default function StaffAccounts() {
                 <th style={styles.th}>Email</th>
                 <th style={styles.th}>Job Title</th>
                 <th style={styles.th}>Role</th>
+                <th style={styles.th}>Branch</th>
                 <th style={styles.th}>Status</th>
                 <th style={styles.th}></th>
               </tr>
@@ -179,7 +199,7 @@ export default function StaffAccounts() {
             <tbody>
               {!loading && results.length === 0 && (
                 <tr>
-                  <td colSpan={7} style={styles.emptyCell}>
+                  <td colSpan={8} style={styles.emptyCell}>
                     No staff accounts match your search.
                   </td>
                 </tr>
@@ -191,6 +211,7 @@ export default function StaffAccounts() {
                   <td style={styles.td}>{s.email}</td>
                   <td style={styles.td}>{s.jobTitle}</td>
                   <td style={styles.td}>{s.roleName}</td>
+                  <td style={styles.td}>{s.branch || "—"}</td>
                   <td style={styles.td}>
                     <ActiveBadge isActive={s.isActive} />
                   </td>

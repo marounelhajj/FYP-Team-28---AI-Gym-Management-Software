@@ -1,7 +1,19 @@
 from rest_framework import serializers
 
 from billing.models import Payment
+from plans.models import MembershipPlan
+
 from .models import Member
+
+
+# Shared by walk-in registration and online signup: a new member can only
+# join a plan the General Manager currently sells (active MembershipPlan).
+# Matching is case-insensitive and the plan's canonical name is stored.
+def validate_active_plan_name(value):
+    plan = MembershipPlan.objects.filter(name__iexact=(value or "").strip(), is_active=True).first()
+    if plan is None:
+        raise serializers.ValidationError("Choose one of the membership plans currently on offer.")
+    return plan.name
 
 
 class MemberSerializer(serializers.ModelSerializer):
@@ -34,17 +46,20 @@ class MemberSerializer(serializers.ModelSerializer):
 # status and joinDate are intentionally NOT accepted from the client: a
 # freshly registered walk-in is always Active, and the join date is always
 # "today" - both are set server-side in create() below. There is no
-# paymentAmount field: the amount is a fixed, organization-wide price per
-# plan (billing.models.PLAN_PRICES), looked up by Payment.record() - the
+# paymentAmount field: the amount is looked up server-side by
+# Payment.record() (billing.models.price_for(), branch-aware) - the
 # receptionist picks a plan, not a price.
 class MemberCreateSerializer(serializers.ModelSerializer):
-    membershipPlan = serializers.ChoiceField(source="membership_plan", choices=Member.Plan.choices)
+    membershipPlan = serializers.CharField(source="membership_plan")
     paymentMethod = serializers.ChoiceField(choices=Payment.Method.choices)
     paymentDuration = serializers.ChoiceField(choices=Payment.Duration.choices)
 
     class Meta:
         model = Member
         fields = ["name", "email", "phone", "branch", "membershipPlan", "paymentMethod", "paymentDuration"]
+
+    def validate_membershipPlan(self, value):
+        return validate_active_plan_name(value)
 
     def create(self, validated_data):
         from django.db import transaction
@@ -88,7 +103,7 @@ class MemberCreateSerializer(serializers.ModelSerializer):
 # creation paths they came through, and the amount is likewise never
 # client-supplied here either - see Payment.record() in billing/models.py.
 class MemberSignupSerializer(serializers.ModelSerializer):
-    membershipPlan = serializers.ChoiceField(source="membership_plan", choices=Member.Plan.choices)
+    membershipPlan = serializers.CharField(source="membership_plan")
     password = serializers.CharField(write_only=True, min_length=8)
     paymentMethod = serializers.ChoiceField(choices=Payment.Method.choices)
     paymentDuration = serializers.ChoiceField(choices=Payment.Duration.choices)
@@ -103,6 +118,9 @@ class MemberSignupSerializer(serializers.ModelSerializer):
             "name", "email", "phone", "branch", "membershipPlan", "username", "password",
             "paymentMethod", "paymentDuration",
         ]
+
+    def validate_membershipPlan(self, value):
+        return validate_active_plan_name(value)
 
     def validate_username(self, value):
         if Member.objects.filter(username=value).exists():

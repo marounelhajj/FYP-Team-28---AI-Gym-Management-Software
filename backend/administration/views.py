@@ -2,6 +2,7 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from .models import PERMISSION_CHOICES, Role, StaffAccount
+from .permissions import authorize
 from .serializers import (
     RoleSerializer,
     RoleWriteSerializer,
@@ -17,13 +18,22 @@ from .serializers import (
 # GET query params (all optional, all combinable):
 #   q         - case-insensitive substring match on full name
 #   roleId    - exact match on role id
+#   branch    - exact match: Hamra | Achrafieh | Jnah | Zalka
 #   isActive  - "true" | "false"
 #
 # User story (both GET and POST/PATCH below): "As a system administrator, I
 # want to create, edit and deactivate staff login accounts, so that only
 # current staff can sign in to the system."
+#
+# The branch field and branch filter also serve: "As a general manager, I
+# want to add, edit, and remove staff and trainer profiles at a branch, so
+# that I can manage headcount and certified training staff."
 @api_view(["GET", "POST"])
 def staff_list(request):
+    _, denied = authorize(request, "manage_staff_accounts")
+    if denied:
+        return denied
+
     if request.method == "POST":
         serializer = StaffAccountCreateSerializer(data=request.data)
         if not serializer.is_valid():
@@ -41,6 +51,10 @@ def staff_list(request):
     if role_id:
         queryset = queryset.filter(role_id=role_id)
 
+    branch = request.query_params.get("branch")
+    if branch:
+        queryset = queryset.filter(branch=branch)
+
     active_param = request.query_params.get("isActive")
     if active_param is not None:
         queryset = queryset.filter(is_active=active_param.lower() == "true")
@@ -54,6 +68,10 @@ def staff_list(request):
 #                          deactivate/reactivate the account
 @api_view(["GET", "PATCH"])
 def staff_detail(request, staff_id):
+    _, denied = authorize(request, "manage_staff_accounts")
+    if denied:
+        return denied
+
     try:
         account = StaffAccount.objects.get(id=staff_id)
     except StaffAccount.DoesNotExist:
@@ -76,6 +94,15 @@ def staff_detail(request, staff_id):
 # specific permission sets, so that access matches each job function."
 @api_view(["GET", "POST"])
 def role_list(request):
+    # Listing roles is also needed by the staff-account form's role picker,
+    # so either admin permission may read; only manage_roles may write.
+    if request.method == "POST":
+        _, denied = authorize(request, "manage_roles")
+    else:
+        _, denied = authorize(request, "manage_roles", "manage_staff_accounts")
+    if denied:
+        return denied
+
     if request.method == "POST":
         serializer = RoleWriteSerializer(data=request.data)
         if not serializer.is_valid():
@@ -91,6 +118,13 @@ def role_list(request):
 # PUT /api/roles/<id>  - edit name/description/permission set
 @api_view(["GET", "PUT"])
 def role_detail(request, role_id):
+    if request.method == "PUT":
+        _, denied = authorize(request, "manage_roles")
+    else:
+        _, denied = authorize(request, "manage_roles", "manage_staff_accounts")
+    if denied:
+        return denied
+
     try:
         role = Role.objects.get(id=role_id)
     except Role.DoesNotExist:
@@ -112,4 +146,7 @@ def role_detail(request, role_id):
 # drift out of sync with the backend.
 @api_view(["GET"])
 def permission_list(request):
+    _, denied = authorize(request, "manage_roles")
+    if denied:
+        return denied
     return Response([{"key": key, "label": label} for key, label in PERMISSION_CHOICES])

@@ -2,8 +2,11 @@ from django.utils import timezone
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from billing.models import PLAN_PRICES, Payment, price_for
+from administration.permissions import authorize
+from billing.models import Payment
 from billing.serializers import PaymentCreateSerializer, PaymentSerializer
+from plans.models import MembershipPlan
+
 from .models import Member
 from .serializers import MemberSerializer, MemberCreateSerializer
 
@@ -49,6 +52,11 @@ def _freeze_lapsed_members():
 # immediately."
 @api_view(["GET", "POST"])
 def member_list(request):
+    # The directory holds personal data: staff with manage_members only.
+    _, denied = authorize(request, "manage_members")
+    if denied:
+        return denied
+
     if request.method == "POST":
         serializer = MemberCreateSerializer(data=request.data)
         if not serializer.is_valid():
@@ -107,27 +115,20 @@ def member_list(request):
 
 # GET /api/members/meta/
 # Returns the valid filter values so the frontend dropdowns never hardcode
-# a list that can drift out of sync with the model's choices, plus the
-# price for each plan (billing.models.price_for) so forms can display what
-# a plan costs without letting anyone type their own amount. yearlyPrices
-# gives both the undiscounted ("original") and actual ("discounted") 1-year
-# price, so the UI can show the promo as a struck-through old price next
-# to the real one - the frontend never computes this itself.
+# a list that can drift out of sync with the model's choices. "plans" is
+# the plans the General Manager currently sells (cheapest first), so the
+# walk-in and online signup forms always offer the real tiers. There's no
+# price data here anymore - forms get live, branch-aware pricing from
+# GET /api/plans/pricing (see frontend's fetchBranchPricing), which also
+# factors in any running BranchPromotion, so the price preview can never
+# drift out of sync with what Payment.record() actually charges.
 @api_view(["GET"])
 def member_meta(request):
     return Response(
         {
             "branches": [choice.value for choice in Member.Branch],
             "statuses": [choice.value for choice in Member.Status],
-            "plans": [choice.value for choice in Member.Plan],
-            "planPrices": {plan: str(price) for plan, price in PLAN_PRICES.items()},
-            "yearlyPrices": {
-                plan: {
-                    "original": str(monthly * 12),
-                    "discounted": str(price_for(plan, Payment.Duration.ONE_YEAR)),
-                }
-                for plan, monthly in PLAN_PRICES.items()
-            },
+            "plans": list(MembershipPlan.objects.filter(is_active=True).values_list("name", flat=True)),
         }
     )
 
@@ -135,6 +136,10 @@ def member_meta(request):
 # GET /api/members/<id>/
 @api_view(["GET"])
 def member_detail(request, member_id):
+    _, denied = authorize(request, "manage_members")
+    if denied:
+        return denied
+
     try:
         member = Member.objects.get(id=member_id)
     except Member.DoesNotExist:
@@ -160,6 +165,10 @@ def member_detail(request, member_id):
 # expires, since it's deliberately not auto-renewed.
 @api_view(["POST"])
 def member_payment(request, member_id):
+    _, denied = authorize(request, "manage_members")
+    if denied:
+        return denied
+
     try:
         member = Member.objects.get(id=member_id)
     except Member.DoesNotExist:
@@ -193,6 +202,10 @@ def member_payment(request, member_id):
 # currently-subscribed member.
 @api_view(["POST"])
 def member_cancel(request, member_id):
+    _, denied = authorize(request, "manage_members")
+    if denied:
+        return denied
+
     try:
         member = Member.objects.get(id=member_id)
     except Member.DoesNotExist:

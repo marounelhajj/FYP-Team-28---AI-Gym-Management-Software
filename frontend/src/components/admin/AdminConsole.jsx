@@ -1,18 +1,25 @@
 import { useState } from "react";
 import StaffAccounts from "./StaffAccounts.jsx";
 import RoleManager from "./RoleManager.jsx";
+import AccessDenied from "../AccessDenied.jsx";
 
+// Each tab needs its own permission, so a role that only has one of the two
+// (e.g. manage_roles without manage_staff_accounts) sees just that tab.
 const TABS = [
-  { key: "staff", label: "Staff Accounts" },
-  { key: "roles", label: "Roles & Permissions" },
+  { key: "staff", label: "Staff Accounts", permission: "manage_staff_accounts", render: () => <StaffAccounts /> },
+  { key: "roles", label: "Roles & Permissions", permission: "manage_roles", render: () => <RoleManager /> },
 ];
 
 // System Administrator persona shell. Deliberately styled very differently
 // from the receptionist's Member Directory (dark banner vs. light page, a
 // distinct "ADMIN" tag) so it's unmistakable which persona's screen is on
 // screen - admin screens touch staff access, not member data.
-export default function AdminConsole() {
-  const [tab, setTab] = useState("staff");
+export default function AdminConsole({ permissions = [] }) {
+  const tabs = TABS.filter((t) => permissions.includes(t.permission));
+  const [tabKey, setTabKey] = useState(null);
+  const activeTab = tabs.find((t) => t.key === tabKey) || tabs[0];
+
+  if (!activeTab) return <AccessDenied />;
 
   return (
     <div>
@@ -25,18 +32,18 @@ export default function AdminConsole() {
       </div>
 
       <div style={styles.tabBar}>
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.key}
-            onClick={() => setTab(t.key)}
-            style={tab === t.key ? styles.tabActive : styles.tab}
+            onClick={() => setTabKey(t.key)}
+            style={activeTab.key === t.key ? styles.tabActive : styles.tab}
           >
             {t.label}
           </button>
         ))}
       </div>
 
-      <div style={styles.body}>{tab === "staff" ? <StaffAccounts /> : <RoleManager />}</div>
+      <div style={styles.body}>{activeTab.render()}</div>
     </div>
   );
 }

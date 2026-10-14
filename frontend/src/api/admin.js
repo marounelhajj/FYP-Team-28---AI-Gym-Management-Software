@@ -1,22 +1,18 @@
 // Thin wrapper around the /api/staff, /api/roles and /api/permissions
 // endpoints used by the System Administrator console.
 
-async function parseError(res) {
-  const body = await res.json().catch(() => ({}));
-  const err = new Error(typeof body.error === "string" ? body.error : `Request failed with status ${res.status}`);
-  err.fieldErrors = body.error && typeof body.error === "object" ? body.error : null;
-  return err;
-}
+import { parseError } from "./http.js";
 
 // --- Staff accounts ---
 // User story: "As a system administrator, I want to create, edit and
 // deactivate staff login accounts, so that only current staff can sign in
 // to the system."
 
-export async function fetchStaff({ q, roleId, isActive } = {}) {
+export async function fetchStaff({ q, roleId, branch, isActive } = {}) {
   const params = new URLSearchParams();
   if (q) params.set("q", q);
   if (roleId) params.set("roleId", roleId);
+  if (branch) params.set("branch", branch);
   if (isActive !== undefined && isActive !== "") params.set("isActive", isActive);
 
   const res = await fetch(`/api/staff?${params.toString()}`);

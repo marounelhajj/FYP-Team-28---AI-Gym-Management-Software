@@ -4,14 +4,18 @@ import { fetchCurrentMember, logoutMember } from "./api/memberAuth.js";
 import MemberDirectory from "./components/MemberDirectory.jsx";
 import AdminConsole from "./components/admin/AdminConsole.jsx";
 import CheckIn from "./components/CheckIn.jsx";
+import PlanManager from "./components/plans/PlanManager.jsx";
+import PromotionManager from "./components/plans/PromotionManager.jsx";
 import LoginPage from "./components/LoginPage.jsx";
 import WelcomeScreen from "./components/WelcomeScreen.jsx";
 import MemberLoginPage from "./components/member/MemberLoginPage.jsx";
 import MemberSignupPage from "./components/member/MemberSignupPage.jsx";
 import MemberDashboard from "./components/member/MemberDashboard.jsx";
+import PlanBrowser from "./components/member/PlanBrowser.jsx";
 import Logo from "./components/Logo.jsx";
+import AccessDenied from "./components/AccessDenied.jsx";
 
-// Which screen a logged-in STAFF account lands on is resolved from their
+// Which screens a logged-in STAFF account can open are resolved from their
 // actual permissions (set by a System Administrator via Admin Console ->
 // Roles), not chosen by the user - see LoginPage.jsx and
 // administration/auth_views.py for why. Members are a separate account
@@ -21,8 +25,32 @@ function canAccessAdminConsole(account) {
   return account.permissions.includes("manage_staff_accounts") || account.permissions.includes("manage_roles");
 }
 
+// Every staff account except system administrators gets one tab per screen
+// their role allows (e.g. a General Manager sees Plans + Promotions, a
+// Branch Manager sees Members + Promotions + Check-In, a Receptionist sees
+// Members + Check-In - both gated on manage_members since checking a
+// member in/out is part of the same front-desk job as the directory).
+function availableScreens(account) {
+  const has = (p) => account.permissions.includes(p);
+  const screens = [];
+  if (has("manage_membership_plans")) {
+    screens.push({ key: "plans", label: "Plans & Pricing", render: () => <PlanManager /> });
+  }
+  if (has("manage_branch_promotions") || has("manage_membership_plans")) {
+    screens.push({ key: "promotions", label: "Branch Promotions", render: () => <PromotionManager /> });
+  }
+  if (has("manage_members")) {
+    screens.push({ key: "members", label: "Member Directory", render: () => <MemberDirectory /> });
+    screens.push({ key: "checkin", label: "Check-In", render: () => <CheckIn /> });
+  }
+  return screens;
+}
+
 function destinationLabel(account) {
-  return canAccessAdminConsole(account) ? "the System Administrator Console" : "the Member Directory";
+  if (canAccessAdminConsole(account)) return "the System Administrator Console";
+  const first = availableScreens(account)[0];
+  if (!first) return "your account (no pages are assigned to your role yet)";
+  return first.key === "members" ? "the Member Directory" : first.label;
 }
 
 export default function App() {
@@ -38,11 +66,11 @@ export default function App() {
   // MemberDashboard already opens with "Welcome, {name}", so there's no
   // role ambiguity left to clarify the way there was for staff.
   const [justLoggedIn, setJustLoggedIn] = useState(false);
-  // Which tab a non-admin staff member is on. Admin staff skip this
-  // entirely and go straight to AdminConsole, same as before - this is a
-  // small, local 2-tab switch, not the full multi-screen system (that one
-  // lives only on the unmerged teammate plans branch, not here).
-  const [staffTab, setStaffTab] = useState("members");
+  // Which staff tab is open (see availableScreens). null = the first one.
+  const [screenKey, setScreenKey] = useState(null);
+  // Plan + branch a prospective member picked on PlanBrowser, carried into
+  // the signup form (and back, if they return to compare plans).
+  const [signupSelection, setSignupSelection] = useState(null);
 
   // Restore an existing session on page load/refresh, so logging in isn't
   // required every time the page reloads. Staff and member sessions use
@@ -62,6 +90,18 @@ export default function App() {
       .finally(() => setCheckingSession(false));
   }, []);
 
+  // Any API call that comes back 401 (session expired, or the account was
+  // deactivated while logged in) sends the user back to the login screen.
+  useEffect(() => {
+    function onAuthExpired() {
+      setSession(null);
+      setScreenKey(null);
+      setAuthScreen("staffLogin");
+    }
+    window.addEventListener("auth:expired", onAuthExpired);
+    return () => window.removeEventListener("auth:expired", onAuthExpired);
+  }, []);
+
   function handleStaffLoggedIn(account) {
     setSession({ type: "staff", data: account });
     setJustLoggedIn(true);
@@ -69,6 +109,7 @@ export default function App() {
 
   function handleMemberLoggedIn(member) {
     setSession({ type: "member", data: member });
+    setSignupSelection(null);
   }
 
   async function handleLogout() {
@@ -78,6 +119,7 @@ export default function App() {
       await logoutMember();
     }
     setSession(null);
+    setScreenKey(null);
     setAuthScreen("staffLogin");
   }
 
@@ -86,25 +128,52 @@ export default function App() {
   }
 
   if (!session) {
+    const browsePlans = () => setAuthScreen("browsePlans");
+
+    if (authScreen === "browsePlans") {
+      return (
+        <PlanBrowser
+          initialBranch={signupSelection?.branch}
+          onChoosePlan={(selection) => {
+            setSignupSelection(selection);
+            setAuthScreen("memberSignup");
+          }}
+          onSwitchToLogin={() => setAuthScreen("memberLogin")}
+          onSwitchToStaff={() => setAuthScreen("staffLogin")}
+        />
+      );
+    }
     if (authScreen === "memberLogin") {
       return (
         <MemberLoginPage
           onLoggedIn={handleMemberLoggedIn}
-          onSwitchToSignup={() => setAuthScreen("memberSignup")}
+          onSwitchToSignup={() => {
+            setSignupSelection(null);
+            setAuthScreen("memberSignup");
+          }}
           onSwitchToStaff={() => setAuthScreen("staffLogin")}
+          onBrowsePlans={browsePlans}
         />
       );
     }
     if (authScreen === "memberSignup") {
       return (
         <MemberSignupPage
+          initialSelection={signupSelection}
           onSignedUp={handleMemberLoggedIn}
           onSwitchToLogin={() => setAuthScreen("memberLogin")}
           onSwitchToStaff={() => setAuthScreen("staffLogin")}
+          onBrowsePlans={browsePlans}
         />
       );
     }
-    return <LoginPage onLoggedIn={handleStaffLoggedIn} onSwitchToMember={() => setAuthScreen("memberLogin")} />;
+    return (
+      <LoginPage
+        onLoggedIn={handleStaffLoggedIn}
+        onSwitchToMember={() => setAuthScreen("memberLogin")}
+        onBrowsePlans={browsePlans}
+      />
+    );
   }
 
   if (session.type === "staff" && justLoggedIn) {
@@ -119,6 +188,22 @@ export default function App() {
 
   const isStaff = session.type === "staff";
   const isAdmin = isStaff && canAccessAdminConsole(session.data);
+  const screens = isStaff && !isAdmin ? availableScreens(session.data) : [];
+  const activeScreen = screens.find((s) => s.key === screenKey) || screens[0];
+
+  let content;
+  if (!isStaff) content = <MemberDashboard member={session.data} />;
+  else if (isAdmin) content = <AdminConsole permissions={session.data.permissions} />;
+  else if (activeScreen) content = activeScreen.render();
+  else {
+    content = (
+      <AccessDenied
+        title="No pages assigned"
+        message="Your role doesn't have access to any screens yet."
+        roleName={session.data.roleName}
+      />
+    );
+  }
 
   return (
     <div>
@@ -135,32 +220,21 @@ export default function App() {
         </div>
       </div>
 
-      {isStaff && !isAdmin && (
-        <nav style={styles.tabBar}>
-          <button
-            onClick={() => setStaffTab("members")}
-            style={staffTab === "members" ? styles.tabActive : styles.tab}
-          >
-            Member Directory
-          </button>
-          <button
-            onClick={() => setStaffTab("checkin")}
-            style={staffTab === "checkin" ? styles.tabActive : styles.tab}
-          >
-            Check-In
-          </button>
+      {screens.length > 1 && (
+        <nav style={styles.navBar}>
+          {screens.map((s) => (
+            <button
+              key={s.key}
+              onClick={() => setScreenKey(s.key)}
+              style={s.key === activeScreen?.key ? styles.navTabActive : styles.navTab}
+            >
+              {s.label}
+            </button>
+          ))}
         </nav>
       )}
 
-      {!isStaff ? (
-        <MemberDashboard member={session.data} />
-      ) : isAdmin ? (
-        <AdminConsole />
-      ) : staffTab === "checkin" ? (
-        <CheckIn />
-      ) : (
-        <MemberDirectory />
-      )}
+      {content}
     </div>
   );
 }
@@ -192,25 +266,16 @@ const styles = {
   userInfo: { textAlign: "right", lineHeight: 1.25 },
   userName: { fontSize: 13, fontWeight: 700, color: "#1a1a1a" },
   userRole: { fontSize: 12, color: "#666" },
-  logoutButton: {
-    padding: "6px 14px",
-    fontSize: 13,
-    fontWeight: 600,
-    border: "1px solid #d0d0d5",
-    borderRadius: 999,
-    background: "#fff",
-    color: "#444",
-    cursor: "pointer",
-  },
-  tabBar: {
+  navBar: {
     display: "flex",
+    flexWrap: "wrap",
     gap: 4,
     padding: "0 20px",
     background: "#fff",
     borderBottom: "1px solid #e4e4e8",
     fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
   },
-  tab: {
+  navTab: {
     padding: "12px 14px",
     fontSize: 14,
     fontWeight: 600,
@@ -220,7 +285,7 @@ const styles = {
     color: "#666",
     cursor: "pointer",
   },
-  tabActive: {
+  navTabActive: {
     padding: "12px 14px",
     fontSize: 14,
     fontWeight: 600,
@@ -228,6 +293,16 @@ const styles = {
     borderBottom: "2px solid #124096",
     background: "transparent",
     color: "#124096",
+    cursor: "pointer",
+  },
+  logoutButton: {
+    padding: "6px 14px",
+    fontSize: 13,
+    fontWeight: 600,
+    border: "1px solid #d0d0d5",
+    borderRadius: 999,
+    background: "#fff",
+    color: "#444",
     cursor: "pointer",
   },
 };

@@ -6,26 +6,47 @@ from django.db import models, transaction
 from django.utils import timezone
 
 DURATION_MONTHS = {"1 Month": 1, "1 Year": 12}
-
-# Fixed, organization-wide MONTHLY price per membership plan - not
-# editable by whoever is taking the payment. Keyed by the plain plan name
-# (matches members.Member.Plan's string values) rather than importing that
-# enum here, to keep billing/models.py free of a top-level members import.
-PLAN_PRICES = {
-    "Basic": Decimal("25.00"),
-    "Standard": Decimal("40.00"),
-    "Premium": Decimal("50.00"),
-}
+CENT = Decimal("0.01")
 
 YEARLY_MULTIPLIER = 12
 YEARLY_PROMO_DISCOUNT = Decimal("20.00")
 
 
-# A year costs 12x the monthly price (the full annual rate), minus a flat
-# $20 promo - e.g. Basic ($25/mo) is $300 - $20 = $280/yr. Centralized here
-# so every caller of Payment.record() prices a year the same way.
-def price_for(plan, duration):
-    monthly = PLAN_PRICES[plan]
+# The monthly price is never hardcoded here - it's looked up from the
+# General Manager-editable plans.MembershipPlan catalog (deferred import to
+# keep billing/models.py free of a top-level plans import), normalized to
+# a monthly figure via CYCLE_MONTHS in case the plan itself isn't billed
+# monthly. If the member's branch has a running BranchPromotion on this
+# plan, the best one is applied before the monthly figure is derived - so
+# a branch promotion discounts both the "1 Month" and "1 Year" price, same
+# as it discounts the branch's advertised rate (see plans.views.branch_pricing,
+# which this mirrors).
+#
+# A year then costs 12x that (possibly already-discounted) monthly price,
+# minus a flat $20 annual-prepay promo - e.g. Basic ($25/mo) is
+# $300 - $20 = $280/yr. Centralized here so every caller of Payment.record()
+# prices a year the same way.
+def price_for(plan, duration, branch=None):
+    from plans.models import BranchPromotion, MembershipPlan
+
+    membership_plan = MembershipPlan.objects.get(name__iexact=plan, is_active=True)
+    cycle_months = MembershipPlan.CYCLE_MONTHS.get(membership_plan.billing_cycle, 1)
+    cycle_price = Decimal(membership_plan.price)
+
+    if branch:
+        today = timezone.localdate()
+        best_promo = None
+        for promo in BranchPromotion.objects.filter(
+            plan=membership_plan, branch=branch, is_active=True,
+            start_date__lte=today, end_date__gte=today,
+        ):
+            if best_promo is None or promo.discount_amount() > best_promo.discount_amount():
+                best_promo = promo
+        if best_promo is not None:
+            cycle_price = membership_plan.price - best_promo.discount_amount()
+
+    monthly = (cycle_price / cycle_months).quantize(CENT)
+
     if duration == Payment.Duration.ONE_YEAR:
         return monthly * YEARLY_MULTIPLIER - YEARLY_PROMO_DISCOUNT
     return monthly
@@ -88,7 +109,7 @@ class Payment(models.Model):
     def record(member, plan, method, duration, note=""):
         from members.models import Member
 
-        amount = price_for(plan, duration)
+        amount = price_for(plan, duration, branch=member.branch)
         today = timezone.localdate()
         anchor = max(today, member.subscription_expires_at) if member.subscription_expires_at else today
         expires_at = _add_months(anchor, DURATION_MONTHS[duration])

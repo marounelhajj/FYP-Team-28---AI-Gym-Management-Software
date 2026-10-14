@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createMember } from "../api/members.js";
+import { fetchBranchPricing } from "../api/plans.js";
 import { BUTTON_COLORS } from "../styles/buttonColors.js";
 import { getPriceInfo } from "../utils/pricing.js";
 
@@ -12,10 +13,11 @@ import { getPriceInfo } from "../utils/pricing.js";
 // A new member is always created as Active with today's join date - the
 // receptionist supplies profile + plan info, plus the payment that
 // justifies that activation. There's no amount field to type into: pricing
-// comes straight from GET /api/members/meta (see utils/pricing.js) and is
-// just shown once both plan and duration are picked - the backend computes
-// the real price itself regardless of what's sent, so this is a genuine
-// constraint, not just a disabled input.
+// comes straight from GET /api/plans/pricing (see fetchBranchPricing,
+// already branch-promotion-aware) and is just shown once both plan and
+// duration are picked - the backend computes the real price itself
+// regardless of what's sent, so this is a genuine constraint, not just a
+// disabled input.
 const EMPTY_FORM = {
   name: "", email: "", phone: "", branch: "", membershipPlan: "",
   paymentMethod: "", paymentDuration: "",
@@ -28,7 +30,25 @@ export default function RegisterMemberForm({ filterOptions, onClose, onRegistere
   const [fieldErrors, setFieldErrors] = useState({});
   const [submitError, setSubmitError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  const priceInfo = getPriceInfo(filterOptions, form.membershipPlan, form.paymentDuration);
+  const [quote, setQuote] = useState(null); // pricing row for the chosen plan at the chosen branch
+  const priceInfo = getPriceInfo(quote?.effectivePrice, form.paymentDuration);
+
+  // Live, branch-aware monthly price for the chosen plan (factors in any
+  // running BranchPromotion) - the basis getPriceInfo uses for the "1
+  // Month"/"1 Year" preview above.
+  useEffect(() => {
+    setQuote(null);
+    if (!form.branch || !form.membershipPlan) return;
+    let cancelled = false;
+    fetchBranchPricing(form.branch)
+      .then((data) => {
+        if (!cancelled) setQuote(data.results.find((row) => row.name === form.membershipPlan) || null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [form.branch, form.membershipPlan]);
 
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }));

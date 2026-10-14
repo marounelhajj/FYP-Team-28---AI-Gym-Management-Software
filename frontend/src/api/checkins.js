@@ -1,11 +1,6 @@
 // Thin wrapper around the /api/checkins endpoints.
 
-async function parseError(res) {
-  const body = await res.json().catch(() => ({}));
-  const err = new Error(typeof body.error === "string" ? body.error : "Couldn't check in that member");
-  err.fieldErrors = body.error && typeof body.error === "object" ? body.error : null;
-  return err;
-}
+import { parseError } from "./http.js";
 
 // Checks a member in by membership ID (their Member.id - typed, or in
 // the future decoded from a scanned QR code before being sent here).
@@ -23,7 +18,7 @@ export async function checkIn(membershipId) {
 
 export async function fetchRecentCheckIns(limit = 20) {
   const res = await fetch(`/api/checkins?limit=${limit}`);
-  if (!res.ok) throw new Error("Failed to load recent check-ins");
+  if (!res.ok) throw await parseError(res);
   return res.json();
 }
 

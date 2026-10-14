@@ -12,6 +12,8 @@ PERMISSION_CHOICES = [
     ("manage_roles", "Manage roles & permissions"),
     ("manage_class_schedule", "Manage class schedule"),
     ("manage_billing", "Manage billing & payments"),
+    ("manage_membership_plans", "Manage membership plans & pricing"),
+    ("manage_branch_promotions", "Manage branch promotions"),
     ("view_financial_reports", "View financial reports"),
     ("manage_marketing_campaigns", "Manage marketing campaigns"),
     ("view_audit_log", "View audit log"),
@@ -40,12 +42,31 @@ class StaffAccount(models.Model):
         COACH = "Coach", "Coach"
         MARKETING_STAFF = "Marketing Staff", "Marketing Staff"
 
+    # Mirrors members.Member.Branch - kept as its own copy (rather than a
+    # shared import across apps) for the same reason job titles/permissions
+    # are plain choices here: a small, code-owned set of values.
+    class Branch(models.TextChoices):
+        HAMRA = "Hamra", "Hamra"
+        ACHRAFIEH = "Achrafieh", "Achrafieh"
+        JNAH = "Jnah", "Jnah"
+        ZALKA = "Zalka", "Zalka"
+
     full_name = models.CharField(max_length=150)
     email = models.EmailField(unique=True)
     username = models.CharField(max_length=60, unique=True)
     password_hash = models.CharField(max_length=255)
     job_title = models.CharField(max_length=30, choices=JobTitle.choices)
     role = models.ForeignKey(Role, on_delete=models.PROTECT, related_name="staff_accounts")
+    # Which branch this staff/trainer profile belongs to. Optional: a
+    # System Administrator or General Manager may not be tied to a single
+    # branch, while a Branch Manager, Receptionist, or Coach usually is.
+    #
+    # User story: "As a general manager, I want to add, edit, and remove
+    # staff and trainer profiles at a branch, so that I can manage headcount
+    # and certified training staff." ("remove" reuses the existing
+    # deactivate/reactivate behavior below rather than a hard delete, so
+    # history - e.g. past class assignments - isn't lost.)
+    branch = models.CharField(max_length=30, choices=Branch.choices, blank=True, null=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

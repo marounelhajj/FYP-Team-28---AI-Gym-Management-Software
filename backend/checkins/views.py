@@ -2,6 +2,7 @@ from django.utils import timezone
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
+from administration.permissions import authorize
 from members.models import Member
 from members.serializers import MemberSerializer
 from .models import CheckIn
@@ -43,6 +44,10 @@ def _lookup_member(membership_id):
 # control entry."
 @api_view(["GET", "POST"])
 def checkin_list(request):
+    _, denied = authorize(request, "manage_members")
+    if denied:
+        return denied
+
     if request.method == "POST":
         serializer = CheckInCreateSerializer(data=request.data)
         if not serializer.is_valid():
@@ -92,6 +97,10 @@ def checkin_list(request):
 # the matching exit half of that control.
 @api_view(["POST"])
 def checkout(request):
+    _, denied = authorize(request, "manage_members")
+    if denied:
+        return denied
+
     serializer = CheckInCreateSerializer(data=request.data)
     if not serializer.is_valid():
         return Response({"error": serializer.errors}, status=400)

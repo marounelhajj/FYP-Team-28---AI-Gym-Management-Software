@@ -18,17 +18,15 @@ class Member(models.Model):
         JNAH = "Jnah", "Jnah"
         ZALKA = "Zalka", "Zalka"
 
-    class Plan(models.TextChoices):
-        BASIC = "Basic", "Basic"
-        STANDARD = "Standard", "Standard"
-        PREMIUM = "Premium", "Premium"
-
     name = models.CharField(max_length=150)
     email = models.EmailField()
     phone = models.CharField(max_length=30)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE)
     branch = models.CharField(max_length=30, choices=Branch.choices)
-    membership_plan = models.CharField(max_length=20, choices=Plan.choices, default=Plan.BASIC)
+    # The name of a plans.MembershipPlan. Not a fixed choice list any more:
+    # the General Manager defines plans at runtime (SCRUM-49), so the
+    # serializers validate new values against the active plans instead.
+    membership_plan = models.CharField(max_length=60, default="Basic")
     join_date = models.DateField()
 
     # Cached "when does their current subscription lapse" - denormalized

@@ -8,7 +8,7 @@ import Logo from "./Logo.jsx";
 // (Admin Console -> Staff Accounts -> + New Staff Account), never
 // self-registered, and each account's role is resolved server-side from
 // the account record on login - never chosen by the person signing in.
-export default function LoginPage({ onLoggedIn, onSwitchToMember }) {
+export default function LoginPage({ onLoggedIn, onSwitchToMember, onBrowsePlans }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState(null);
@@ -71,6 +71,12 @@ export default function LoginPage({ onLoggedIn, onSwitchToMember }) {
           Gym member?{" "}
           <button type="button" onClick={onSwitchToMember} style={styles.linkButton}>
             Login or sign up here
+          </button>
+        </p>
+        <p style={styles.switchLine}>
+          Thinking of joining?{" "}
+          <button type="button" onClick={onBrowsePlans} style={styles.linkButton}>
+            Browse membership plans
           </button>
         </p>
       </div>

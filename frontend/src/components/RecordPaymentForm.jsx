@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { recordPayment } from "../api/members.js";
+import { fetchBranchPricing } from "../api/plans.js";
 import { BUTTON_COLORS } from "../styles/buttonColors.js";
 import { getPriceInfo } from "../utils/pricing.js";
 
@@ -16,15 +17,30 @@ const PAYMENT_DURATIONS = ["1 Month", "1 Year"];
 // The receptionist picks the membership plan here explicitly every time
 // (defaulting to the member's current one) - this is also how a plan
 // upgrade/downgrade happens, not just a straight renewal. There's no
-// amount field: pricing comes straight from GET /api/members/meta (meta
-// prop, see utils/pricing.js) and is shown read-only, same reasoning as
-// RegisterMemberForm.jsx.
+// amount field: pricing comes straight from GET /api/plans/pricing for the
+// member's own branch (fetchBranchPricing, already branch-promotion-aware)
+// and is shown read-only, same reasoning as RegisterMemberForm.jsx.
 export default function RecordPaymentForm({ member, meta, onClose, onRecorded }) {
   const [form, setForm] = useState({ membershipPlan: member.membershipPlan, method: "", duration: "" });
   const [fieldErrors, setFieldErrors] = useState({});
   const [submitError, setSubmitError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  const priceInfo = getPriceInfo(meta, form.membershipPlan, form.duration);
+  const [quote, setQuote] = useState(null); // pricing row for the chosen plan at the member's branch
+  const priceInfo = getPriceInfo(quote?.effectivePrice, form.duration);
+
+  useEffect(() => {
+    setQuote(null);
+    if (!form.membershipPlan) return;
+    let cancelled = false;
+    fetchBranchPricing(member.branch)
+      .then((data) => {
+        if (!cancelled) setQuote(data.results.find((row) => row.name === form.membershipPlan) || null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [member.branch, form.membershipPlan]);
 
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }));
@@ -80,7 +96,7 @@ export default function RecordPaymentForm({ member, meta, onClose, onRecorded })
               autoFocus
             >
               <option value="">Select a plan...</option>
-              {Object.keys(meta?.planPrices || {}).map((p) => (
+              {(meta?.plans || []).map((p) => (
                 <option key={p} value={p}>
                   {p}
                 </option>

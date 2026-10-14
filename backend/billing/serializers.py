@@ -1,6 +1,5 @@
 from rest_framework import serializers
 
-from members.models import Member
 from .models import Payment
 
 
@@ -26,6 +25,11 @@ class PaymentSerializer(serializers.ModelSerializer):
 # immediately." - extended so a lapsed/expiring member can be repaid for
 # and reactivated the same way, instead of the subscription auto-renewing.
 class PaymentCreateSerializer(serializers.Serializer):
-    membershipPlan = serializers.ChoiceField(choices=Member.Plan.choices)
+    membershipPlan = serializers.CharField()
     method = serializers.ChoiceField(choices=Payment.Method.choices)
     duration = serializers.ChoiceField(choices=Payment.Duration.choices)
+
+    def validate_membershipPlan(self, value):
+        from members.serializers import validate_active_plan_name
+
+        return validate_active_plan_name(value)
