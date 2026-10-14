@@ -4,6 +4,7 @@ from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from administration.models import Role, StaffAccount
+from administration.testing import staff_login
 
 from .models import BranchPromotion, MembershipPlan
 
@@ -28,7 +29,7 @@ class PlansTestBase(APITestCase):
         return account
 
     def _login(self, account):
-        res = self.client.post("/api/auth/login", {"username": account.username, "password": "Password123!"}, format="json")
+        res = staff_login(self.client, account.username, "Password123!")
         self.assertEqual(res.status_code, 200)
 
 

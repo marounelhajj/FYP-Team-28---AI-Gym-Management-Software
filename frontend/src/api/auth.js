@@ -7,11 +7,26 @@ async function parseError(res) {
   return new Error(body.error || `Request failed with status ${res.status}`);
 }
 
+// Step 1 of staff sign-in. Resolves to {twoFactor: "verify"}, or
+// {twoFactor: "enroll", enrollment: {secret, otpauthUri, qrCode}} for an
+// account that hasn't set up its authenticator app yet. No session yet.
 export async function login(username, password) {
   const res = await fetch("/api/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username, password }),
+  });
+  if (!res.ok) throw await parseError(res);
+  return res.json();
+}
+
+// Step 2: a 6-digit authenticator code or a backup code. Resolves to the
+// signed-in account; right after enrollment it also carries backupCodes.
+export async function verifyTwoFactor(code) {
+  const res = await fetch("/api/auth/2fa/verify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code }),
   });
   if (!res.ok) throw await parseError(res);
   return res.json();

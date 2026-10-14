@@ -51,6 +51,16 @@ class StaffAccount(models.Model):
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    # Two-factor sign-in (SCRUM-87). Every staff account must enroll an
+    # authenticator app; two_factor_enabled stays False until the first
+    # code is confirmed, and an administrator reset sets it back to False.
+    # The secret is Fernet-encrypted (see totp.py) and never serialized.
+    totp_secret_encrypted = models.TextField(blank=True, default="")
+    two_factor_enabled = models.BooleanField(default=False)
+    totp_last_used_step = models.BigIntegerField(null=True, blank=True)
+    failed_2fa_attempts = models.PositiveSmallIntegerField(default=0)
+    two_factor_locked_until = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         ordering = ["id"]
 
@@ -60,3 +70,14 @@ class StaffAccount(models.Model):
     def __str__(self):
         status = "active" if self.is_active else "deactivated"
         return f"{self.full_name} ({self.username}, {status})"
+
+
+# One-time recovery codes for a staff account's second factor. Only a hash
+# is stored; the codes themselves are shown once, right after enrollment.
+class StaffBackupCode(models.Model):
+    account = models.ForeignKey(StaffAccount, on_delete=models.CASCADE, related_name="backup_codes")
+    code_hash = models.CharField(max_length=64)
+    used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["id"]

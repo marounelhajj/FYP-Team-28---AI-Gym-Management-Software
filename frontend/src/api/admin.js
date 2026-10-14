@@ -40,6 +40,14 @@ export async function updateStaffAccount(id, data) {
   return res.json();
 }
 
+// For a staff member who lost their phone: clears their two-factor setup so
+// they enroll again (new QR code) on their next login.
+export async function resetStaffTwoFactor(id) {
+  const res = await fetch(`/api/staff/${id}/2fa/reset`, { method: "POST" });
+  if (!res.ok) throw await parseError(res);
+  return res.json();
+}
+
 // --- Roles & permissions ---
 // User story: "As a system administrator, I want to define roles with
 // specific permission sets, so that access matches each job function."

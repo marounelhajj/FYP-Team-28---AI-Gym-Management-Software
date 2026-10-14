@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { fetchStaff, fetchRoles, updateStaffAccount } from "../../api/admin.js";
+import { fetchStaff, fetchRoles, resetStaffTwoFactor, updateStaffAccount } from "../../api/admin.js";
 import { BUTTON_COLORS } from "../../styles/buttonColors.js";
 import StaffAccountForm from "./StaffAccountForm.jsx";
 
@@ -88,6 +88,22 @@ export default function StaffAccounts() {
     runSearch();
   }
 
+  async function resetTwoFactor(account) {
+    const ok = window.confirm(
+      `Reset two-factor sign-in for ${account.fullName}? They will have to scan a new QR code the next time they log in, and their old backup codes stop working.`
+    );
+    if (!ok) return;
+    setPendingToggleId(account.id);
+    try {
+      await resetStaffTwoFactor(account.id);
+      runSearch();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setPendingToggleId(null);
+    }
+  }
+
   async function toggleActive(account) {
     setPendingToggleId(account.id);
     try {
@@ -173,13 +189,14 @@ export default function StaffAccounts() {
                 <th style={styles.th}>Job Title</th>
                 <th style={styles.th}>Role</th>
                 <th style={styles.th}>Status</th>
+                <th style={styles.th}>2FA</th>
                 <th style={styles.th}></th>
               </tr>
             </thead>
             <tbody>
               {!loading && results.length === 0 && (
                 <tr>
-                  <td colSpan={7} style={styles.emptyCell}>
+                  <td colSpan={8} style={styles.emptyCell}>
                     No staff accounts match your search.
                   </td>
                 </tr>
@@ -194,10 +211,22 @@ export default function StaffAccounts() {
                   <td style={styles.td}>
                     <ActiveBadge isActive={s.isActive} />
                   </td>
+                  <td style={{ ...styles.td, color: s.twoFactorEnabled ? "#1a1a1a" : "#888" }}>
+                    {s.twoFactorEnabled ? "On" : "Not set up"}
+                  </td>
                   <td style={{ ...styles.td, textAlign: "right", whiteSpace: "nowrap" }}>
                     <button onClick={() => setFormTarget(s)} style={styles.editButton}>
                       Edit
                     </button>
+                    {s.twoFactorEnabled && (
+                      <button
+                        onClick={() => resetTwoFactor(s)}
+                        disabled={pendingToggleId === s.id}
+                        style={styles.editButton}
+                      >
+                        Reset 2FA
+                      </button>
+                    )}
                     <button
                       onClick={() => toggleActive(s)}
                       disabled={pendingToggleId === s.id}
