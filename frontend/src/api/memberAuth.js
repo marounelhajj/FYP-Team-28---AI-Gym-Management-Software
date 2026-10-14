@@ -41,3 +41,11 @@ export async function fetchCurrentMember() {
   if (!res.ok) return null;
   return res.json();
 }
+
+// The logged-in member's check-in QR code (SCRUM-33):
+// { membershipId, payload, qrCode (SVG data URI) }.
+export async function fetchMyQrCode() {
+  const res = await fetch("/api/members/me/qr");
+  if (!res.ok) throw await parseError(res);
+  return res.json();
+}

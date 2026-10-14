@@ -1,4 +1,6 @@
 from rest_framework import serializers
+
+from members import qr
 from .models import CheckIn
 
 
@@ -25,8 +27,24 @@ class CheckInSerializer(serializers.ModelSerializer):
         return f"{hours}h {minutes}m" if hours else f"{minutes}m"
 
 
-# Used by POST /api/checkins. Just the ID typed in (or, in the future,
-# decoded from a scanned QR code) - everything else (who the member is,
-# whether to allow them in) is resolved server-side in the view.
+# Used by POST /api/checkins and /api/checkins/checkout. Either the
+# membership ID typed in, or the payload of the member's check-in QR code
+# (scanned by camera, or typed by a USB scanner) - see members/qr.py.
+# Everything else (who the member is, whether to allow them in) is
+# resolved server-side in the view. validated_data always ends up with
+# membershipId.
 class CheckInCreateSerializer(serializers.Serializer):
-    membershipId = serializers.IntegerField(min_value=1)
+    membershipId = serializers.IntegerField(min_value=1, required=False)
+    qrCode = serializers.CharField(required=False)
+
+    def validate(self, attrs):
+        if "qrCode" in attrs:
+            member_id = qr.member_id_from(attrs.pop("qrCode"))
+            if member_id is None:
+                raise serializers.ValidationError(
+                    {"qrCode": ["This QR code isn't a valid Fitness Factory membership code."]}
+                )
+            attrs["membershipId"] = member_id
+        if "membershipId" not in attrs:
+            raise serializers.ValidationError({"membershipId": ["Enter a membership ID or scan a QR code."]})
+        return attrs
