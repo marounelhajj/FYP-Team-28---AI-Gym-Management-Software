@@ -43,11 +43,23 @@ function availableScreens(account) {
     screens.push({ key: "members", label: "Member Directory", render: () => <MemberDirectory /> });
     screens.push({ key: "checkin", label: "Check-In", render: () => <CheckIn /> });
   }
+  // A role that has staff/role permissions on top of its own screens - e.g.
+  // a General Manager allowed to manage staff and trainer profiles per
+  // branch (SCRUM-103) - keeps those screens and gets the admin console as
+  // one more tab. A pure System Administrator still lands on the console.
+  if (screens.length > 0 && canAccessAdminConsole(account)) {
+    const label = has("manage_staff_accounts") ? "Staff & Trainers" : "Roles & Permissions";
+    screens.push({ key: "staff", label, render: () => <AdminConsole permissions={account.permissions} embedded /> });
+  }
   return screens;
 }
 
+function isPureAdmin(account) {
+  return canAccessAdminConsole(account) && availableScreens(account).length === 0;
+}
+
 function destinationLabel(account) {
-  if (canAccessAdminConsole(account)) return "the System Administrator Console";
+  if (isPureAdmin(account)) return "the System Administrator Console";
   const first = availableScreens(account)[0];
   if (!first) return "your account (no pages are assigned to your role yet)";
   return first.key === "members" ? "the Member Directory" : first.label;
@@ -187,7 +199,7 @@ export default function App() {
   }
 
   const isStaff = session.type === "staff";
-  const isAdmin = isStaff && canAccessAdminConsole(session.data);
+  const isAdmin = isStaff && isPureAdmin(session.data);
   const screens = isStaff && !isAdmin ? availableScreens(session.data) : [];
   const activeScreen = screens.find((s) => s.key === screenKey) || screens[0];
 
