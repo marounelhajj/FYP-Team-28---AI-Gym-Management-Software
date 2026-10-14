@@ -3,7 +3,8 @@ from rest_framework import serializers
 from billing.models import Payment
 from plans.models import MembershipPlan
 
-from .models import Member
+from .models import Member, Waiver
+from .waiver import WAIVER_VERSION
 
 
 # Shared by walk-in registration and online signup: a new member can only
@@ -16,6 +17,57 @@ def validate_active_plan_name(value):
     return plan.name
 
 
+class WaiverSerializer(serializers.ModelSerializer):
+    signatureName = serializers.CharField(source="signature_name")
+    waiverVersion = serializers.CharField(source="waiver_version")
+    signedVia = serializers.CharField(source="signed_via")
+    witnessedBy = serializers.CharField(source="witnessed_by.full_name", default=None)
+    signedAt = serializers.DateTimeField(source="signed_at", format="%Y-%m-%d %H:%M")
+
+    class Meta:
+        model = Waiver
+        fields = ["signatureName", "waiverVersion", "signedVia", "witnessedBy", "signedAt"]
+
+
+# Shared by walk-in registration and online signup (SCRUM-83): the new
+# member reads the waiver and health disclaimer (GET /api/members/waiver),
+# ticks both boxes and types their full name as a signature. Registration
+# fails - no Member row at all - unless all three are given and the
+# signature matches the name on the form.
+class WaiverSignatureFields(serializers.Serializer):
+    liabilityWaiverAccepted = serializers.BooleanField()
+    healthDisclaimerAccepted = serializers.BooleanField()
+    signatureName = serializers.CharField(max_length=150)
+
+    def validate_liabilityWaiverAccepted(self, value):
+        if not value:
+            raise serializers.ValidationError("The liability waiver must be accepted to register.")
+        return value
+
+    def validate_healthDisclaimerAccepted(self, value):
+        if not value:
+            raise serializers.ValidationError("The health disclaimer must be accepted to register.")
+        return value
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        typed = " ".join(attrs["signatureName"].split()).casefold()
+        if typed != " ".join(attrs.get("name", "").split()).casefold():
+            raise serializers.ValidationError(
+                {"signatureName": ["Type your full name exactly as entered above to sign."]}
+            )
+        return attrs
+
+    @staticmethod
+    def pop_signature(validated_data):
+        return {
+            "liability_waiver_accepted": validated_data.pop("liabilityWaiverAccepted"),
+            "health_disclaimer_accepted": validated_data.pop("healthDisclaimerAccepted"),
+            "signature_name": " ".join(validated_data.pop("signatureName").split()),
+            "waiver_version": WAIVER_VERSION,
+        }
+
+
 class MemberSerializer(serializers.ModelSerializer):
     membershipPlan = serializers.CharField(source="membership_plan")
     joinDate = serializers.DateField(source="join_date", format="%Y-%m-%d")
@@ -25,8 +77,17 @@ class MemberSerializer(serializers.ModelSerializer):
         model = Member
         fields = [
             "id", "name", "email", "phone", "status", "branch", "membershipPlan",
-            "joinDate", "subscriptionExpiresAt",
+            "joinDate", "subscriptionExpiresAt", "waiver",
         ]
+
+    # null for a member with no signed waiver on file.
+    waiver = serializers.SerializerMethodField()
+
+    def get_waiver(self, obj):
+        try:
+            return WaiverSerializer(obj.waiver).data
+        except Waiver.DoesNotExist:
+            return None
 
 
 # Used by POST /api/members to register a new walk-in member.
@@ -49,14 +110,17 @@ class MemberSerializer(serializers.ModelSerializer):
 # paymentAmount field: the amount is looked up server-side by
 # Payment.record() (billing.models.price_for(), branch-aware) - the
 # receptionist picks a plan, not a price.
-class MemberCreateSerializer(serializers.ModelSerializer):
+class MemberCreateSerializer(WaiverSignatureFields, serializers.ModelSerializer):
     membershipPlan = serializers.CharField(source="membership_plan")
     paymentMethod = serializers.ChoiceField(choices=Payment.Method.choices)
     paymentDuration = serializers.ChoiceField(choices=Payment.Duration.choices)
 
     class Meta:
         model = Member
-        fields = ["name", "email", "phone", "branch", "membershipPlan", "paymentMethod", "paymentDuration"]
+        fields = [
+            "name", "email", "phone", "branch", "membershipPlan", "paymentMethod", "paymentDuration",
+            "liabilityWaiverAccepted", "healthDisclaimerAccepted", "signatureName",
+        ]
 
     def validate_membershipPlan(self, value):
         return validate_active_plan_name(value)
@@ -67,10 +131,11 @@ class MemberCreateSerializer(serializers.ModelSerializer):
 
         payment_method = validated_data.pop("paymentMethod")
         payment_duration = validated_data.pop("paymentDuration")
+        signature = self.pop_signature(validated_data)
 
         validated_data["join_date"] = timezone.now().date()
 
-        # Member and its first Payment are created together, atomically:
+        # Member, its signed Waiver and its first Payment are created together, atomically:
         # if Payment.record() fails for any reason, the whole block rolls
         # back - including the member row - so nobody can ever observe a
         # member that exists without the payment that's supposed to
@@ -79,6 +144,10 @@ class MemberCreateSerializer(serializers.ModelSerializer):
         # never gets committed unless Payment.record() also succeeds.)
         with transaction.atomic():
             member = Member.objects.create(**validated_data)
+            Waiver.objects.create(
+                member=member, signed_via=Waiver.SignedVia.FRONT_DESK,
+                witnessed_by=self.context.get("staff_account"), **signature,
+            )
             payment = Payment.record(
                 member, member.membership_plan, payment_method, payment_duration,
                 note="First payment at registration",
@@ -102,7 +171,7 @@ class MemberCreateSerializer(serializers.ModelSerializer):
 # Active without a recorded Payment, regardless of which of the two
 # creation paths they came through, and the amount is likewise never
 # client-supplied here either - see Payment.record() in billing/models.py.
-class MemberSignupSerializer(serializers.ModelSerializer):
+class MemberSignupSerializer(WaiverSignatureFields, serializers.ModelSerializer):
     membershipPlan = serializers.CharField(source="membership_plan")
     password = serializers.CharField(write_only=True, min_length=8)
     paymentMethod = serializers.ChoiceField(choices=Payment.Method.choices)
@@ -117,6 +186,7 @@ class MemberSignupSerializer(serializers.ModelSerializer):
         fields = [
             "name", "email", "phone", "branch", "membershipPlan", "username", "password",
             "paymentMethod", "paymentDuration",
+            "liabilityWaiverAccepted", "healthDisclaimerAccepted", "signatureName",
         ]
 
     def validate_membershipPlan(self, value):
@@ -139,6 +209,7 @@ class MemberSignupSerializer(serializers.ModelSerializer):
         password = validated_data.pop("password")
         payment_method = validated_data.pop("paymentMethod")
         payment_duration = validated_data.pop("paymentDuration")
+        signature = self.pop_signature(validated_data)
 
         validated_data["join_date"] = timezone.now().date()
         member = Member(**validated_data)
@@ -148,6 +219,7 @@ class MemberSignupSerializer(serializers.ModelSerializer):
         # above - see its comment for why.
         with transaction.atomic():
             member.save()
+            Waiver.objects.create(member=member, signed_via=Waiver.SignedVia.ONLINE, **signature)
             payment = Payment.record(
                 member, member.membership_plan, payment_method, payment_duration,
                 note="First payment at signup",

@@ -33,6 +33,10 @@ export default function MemberDashboard({ member }) {
           }
         />
         <Row label="Member since" value={member.joinDate} />
+        <Row
+          label="Waiver"
+          value={member.waiver ? `Signed ${member.waiver.signedAt.slice(0, 10)}` : "Not on file - ask at the front desk"}
+        />
       </div>
 
       <p style={styles.note}>

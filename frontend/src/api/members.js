@@ -16,6 +16,14 @@ export async function fetchMembers({ q, status, branch, limit = 25, offset = 0 }
   return res.json();
 }
 
+// Public: { version, liabilityWaiver, healthDisclaimer } - the agreement
+// both signup forms show (see components/WaiverSection.jsx).
+export async function fetchWaiverText() {
+  const res = await fetch("/api/members/waiver");
+  if (!res.ok) throw new Error("Failed to load the waiver");
+  return res.json();
+}
+
 export async function fetchMemberFilterOptions() {
   const res = await fetch("/api/members/meta");
   if (!res.ok) throw new Error("Failed to load filter options");
@@ -30,13 +38,19 @@ export async function fetchMemberFilterOptions() {
 // client-supplied. The response includes a "firstPayment" block
 // confirming what was charged and when it expires. The subscription does
 // not auto-renew; see recordPayment() below for repaying after it lapses.
+// Also carries the new member's signed waiver (SCRUM-83):
+// liabilityWaiverAccepted, healthDisclaimerAccepted and signatureName.
 export async function createMember({
   name, email, phone, branch, membershipPlan, paymentMethod, paymentDuration,
+  liabilityWaiverAccepted, healthDisclaimerAccepted, signatureName,
 }) {
   const res = await fetch("/api/members", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, email, phone, branch, membershipPlan, paymentMethod, paymentDuration }),
+    body: JSON.stringify({
+      name, email, phone, branch, membershipPlan, paymentMethod, paymentDuration,
+      liabilityWaiverAccepted, healthDisclaimerAccepted, signatureName,
+    }),
   });
 
   const body = await res.json().catch(() => ({}));

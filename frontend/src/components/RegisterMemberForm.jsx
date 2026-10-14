@@ -3,6 +3,7 @@ import { createMember } from "../api/members.js";
 import { fetchBranchPricing } from "../api/plans.js";
 import { BUTTON_COLORS } from "../styles/buttonColors.js";
 import { getPriceInfo } from "../utils/pricing.js";
+import WaiverSection, { EMPTY_WAIVER, isWaiverComplete } from "./WaiverSection.jsx";
 
 // User story: "As a receptionist, I want to register a new walk-in
 // member's profile and membership plan, so that I can onboard new
@@ -18,9 +19,14 @@ import { getPriceInfo } from "../utils/pricing.js";
 // duration are picked - the backend computes the real price itself
 // regardless of what's sent, so this is a genuine constraint, not just a
 // disabled input.
+//
+// The form ends with the member's waiver (SCRUM-83): the receptionist
+// hands the device over so the member can read, tick and sign it, and the
+// backend records the receptionist as the witness.
 const EMPTY_FORM = {
   name: "", email: "", phone: "", branch: "", membershipPlan: "",
   paymentMethod: "", paymentDuration: "",
+  ...EMPTY_WAIVER,
 };
 const PAYMENT_METHODS = ["Cash", "Card", "Bank Transfer"];
 const PAYMENT_DURATIONS = ["1 Month", "1 Year"];
@@ -32,6 +38,7 @@ export default function RegisterMemberForm({ filterOptions, onClose, onRegistere
   const [submitting, setSubmitting] = useState(false);
   const [quote, setQuote] = useState(null); // pricing row for the chosen plan at the chosen branch
   const priceInfo = getPriceInfo(quote?.effectivePrice, form.paymentDuration);
+  const waiverSigned = isWaiverComplete(form, form.name);
 
   // Live, branch-aware monthly price for the chosen plan (factors in any
   // running BranchPromotion) - the basis getPriceInfo uses for the "1
@@ -185,13 +192,26 @@ export default function RegisterMemberForm({ filterOptions, onClose, onRegistere
             </Field>
           )}
 
+          <WaiverSection
+            values={form}
+            onChange={update}
+            errors={fieldErrors}
+            signerName={form.name}
+            hint="Hand the device to the new member to read and sign."
+          />
+
           {submitError && <div style={styles.errorBox}>{submitError}</div>}
 
           <div style={styles.actions}>
             <button type="button" onClick={onClose} style={styles.cancelButton}>
               Cancel
             </button>
-            <button type="submit" disabled={submitting} style={styles.submitButton}>
+            <button
+              type="submit"
+              disabled={submitting || !waiverSigned}
+              title={waiverSigned ? undefined : "The member needs to sign the waiver first"}
+              style={{ ...styles.submitButton, ...(waiverSigned ? null : styles.submitDisabled) }}
+            >
               {submitting ? "Registering..." : "Register & charge payment"}
             </button>
           </div>
@@ -330,4 +350,5 @@ const styles = {
     fontWeight: 600,
     cursor: "pointer",
   },
+  submitDisabled: { opacity: 0.5, cursor: "not-allowed" },
 };

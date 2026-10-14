@@ -8,6 +8,7 @@ from billing.serializers import PaymentCreateSerializer, PaymentSerializer
 from plans.models import MembershipPlan
 
 from .models import Member
+from .waiver import HEALTH_DISCLAIMER_TEXT, LIABILITY_WAIVER_TEXT, WAIVER_VERSION
 from .serializers import MemberSerializer, MemberCreateSerializer
 
 
@@ -53,12 +54,13 @@ def _freeze_lapsed_members():
 @api_view(["GET", "POST"])
 def member_list(request):
     # The directory holds personal data: staff with manage_members only.
-    _, denied = authorize(request, "manage_members")
+    account, denied = authorize(request, "manage_members")
     if denied:
         return denied
 
     if request.method == "POST":
-        serializer = MemberCreateSerializer(data=request.data)
+        # The receptionist is recorded as the witness on the member's waiver.
+        serializer = MemberCreateSerializer(data=request.data, context={"staff_account": account})
         if not serializer.is_valid():
             return Response({"error": serializer.errors}, status=400)
         member = serializer.save()
@@ -98,7 +100,7 @@ def member_list(request):
             status=400,
         )
 
-    queryset = Member.objects.all()
+    queryset = Member.objects.select_related("waiver__witnessed_by").all()
     if q and q.strip():
         queryset = queryset.filter(name__icontains=q.strip())
     if status_param:
@@ -133,6 +135,18 @@ def member_meta(request):
     )
 
 
+# GET /api/members/waiver
+# Public: the liability waiver + health disclaimer text both signup forms
+# show, and its version (recorded with each signature). See waiver.py.
+@api_view(["GET"])
+def waiver_text(request):
+    return Response({
+        "version": WAIVER_VERSION,
+        "liabilityWaiver": LIABILITY_WAIVER_TEXT,
+        "healthDisclaimer": HEALTH_DISCLAIMER_TEXT,
+    })
+
+
 # GET /api/members/<id>/
 @api_view(["GET"])
 def member_detail(request, member_id):
@@ -141,7 +155,7 @@ def member_detail(request, member_id):
         return denied
 
     try:
-        member = Member.objects.get(id=member_id)
+        member = Member.objects.select_related("waiver__witnessed_by").get(id=member_id)
     except Member.DoesNotExist:
         return Response({"error": f"Member {member_id} not found"}, status=404)
 
