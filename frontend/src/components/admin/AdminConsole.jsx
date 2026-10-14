@@ -14,7 +14,11 @@ const TABS = [
 // from the receptionist's Member Directory (dark banner vs. light page, a
 // distinct "ADMIN" tag) so it's unmistakable which persona's screen is on
 // screen - admin screens touch staff access, not member data.
-export default function AdminConsole({ permissions = [] }) {
+//
+// `embedded`: shown as one tab among a non-admin role's own screens (e.g.
+// a General Manager who manages branch staff, see App.jsx), so the admin
+// banner is left out.
+export default function AdminConsole({ permissions = [], embedded = false }) {
   const tabs = TABS.filter((t) => permissions.includes(t.permission));
   const [tabKey, setTabKey] = useState(null);
   const activeTab = tabs.find((t) => t.key === tabKey) || tabs[0];
@@ -23,13 +27,15 @@ export default function AdminConsole({ permissions = [] }) {
 
   return (
     <div>
-      <div style={styles.banner}>
-        <span style={styles.adminTag}>ADMIN</span>
-        <div>
-          <h1 style={styles.bannerTitle}>System Administrator Console</h1>
-          <p style={styles.bannerSubtitle}>Manage staff access: accounts, roles, and permissions.</p>
+      {!embedded && (
+        <div style={styles.banner}>
+          <span style={styles.adminTag}>ADMIN</span>
+          <div>
+            <h1 style={styles.bannerTitle}>System Administrator Console</h1>
+            <p style={styles.bannerSubtitle}>Manage staff access: accounts, roles, and permissions.</p>
+          </div>
         </div>
-      </div>
+      )}
 
       <div style={styles.tabBar}>
         {tabs.map((t) => (
