@@ -3,7 +3,7 @@ from rest_framework import serializers
 from billing.models import Payment
 from plans.models import MembershipPlan
 
-from .models import Member, Waiver
+from .models import AccessCardReissue, Member, Waiver
 from .waiver import WAIVER_VERSION
 
 
@@ -227,3 +227,32 @@ class MemberSignupSerializer(WaiverSignatureFields, serializers.ModelSerializer)
         member.first_payment = payment
         return member
 
+
+class AccessCardReissueSerializer(serializers.ModelSerializer):
+    cardNumber = serializers.IntegerField(source="card_number")
+    reissuedBy = serializers.CharField(source="reissued_by.full_name", default=None)
+    reissuedAt = serializers.DateTimeField(source="reissued_at", format="%Y-%m-%d %H:%M")
+
+    class Meta:
+        model = AccessCardReissue
+        fields = ["cardNumber", "reason", "note", "reissuedBy", "reissuedAt"]
+
+
+# POST /api/members/<id>/access-card. identityConfirmed is the receptionist
+# confirming they checked the member's photo ID - the safeguard that lets a
+# card be reissued at the desk without a manager.
+class AccessCardReissueCreateSerializer(serializers.Serializer):
+    reason = serializers.ChoiceField(choices=AccessCardReissue.Reason.choices)
+    note = serializers.CharField(max_length=200, required=False, allow_blank=True, default="")
+    identityConfirmed = serializers.BooleanField()
+
+    def validate_identityConfirmed(self, value):
+        if not value:
+            raise serializers.ValidationError("Check the member's photo ID before reissuing their card.")
+        return value
+
+    def validate(self, attrs):
+        attrs["note"] = " ".join(attrs.get("note", "").split())
+        if attrs["reason"] == AccessCardReissue.Reason.OTHER and not attrs["note"]:
+            raise serializers.ValidationError({"note": ["Say why the card is being reissued."]})
+        return attrs

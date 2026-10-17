@@ -45,6 +45,11 @@ class Member(models.Model):
     username = models.CharField(max_length=60, unique=True, null=True, blank=True)
     password_hash = models.CharField(max_length=255, null=True, blank=True)
 
+    # Which access card / check-in QR code is the current one. It's signed
+    # into the code (members/qr.py), so reissuing a card - bumping this -
+    # makes every earlier code stop working.
+    access_card_number = models.PositiveIntegerField(default=1)
+
     class Meta:
         ordering = ["id"]
 
@@ -103,3 +108,31 @@ class Waiver(models.Model):
     def __str__(self):
         return f"Waiver for {self.member.name} ({self.signed_at:%Y-%m-%d})"
 
+
+# User story: "As a receptionist, I want to reissue lost access cards or QR
+# codes, so that I can resolve access issues without escalating to a manager."
+#
+# One row per replacement card: card_number is the card it issued, and the
+# card before it stopped working at that moment. The original card (number
+# 1, issued at sign-up) has no row.
+class AccessCardReissue(models.Model):
+    class Reason(models.TextChoices):
+        LOST = "Lost", "Lost"
+        STOLEN = "Stolen", "Stolen"
+        DAMAGED = "Damaged", "Damaged"
+        OTHER = "Other", "Other"
+
+    member = models.ForeignKey(Member, on_delete=models.CASCADE, related_name="card_reissues")
+    card_number = models.PositiveIntegerField()
+    reason = models.CharField(max_length=20, choices=Reason.choices)
+    note = models.CharField(max_length=200, blank=True)
+    reissued_by = models.ForeignKey(
+        "administration.StaffAccount", on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+    reissued_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["-reissued_at", "-id"]
+
+    def __str__(self):
+        return f"Card {self.card_number} for {self.member.name} ({self.reason})"

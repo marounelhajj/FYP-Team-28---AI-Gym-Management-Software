@@ -8,6 +8,7 @@ from administration.testing import staff_login
 from billing.models import Payment
 from plans.models import MembershipPlan
 
+from . import qr
 from .models import Member, Waiver
 from .waiver import WAIVER_VERSION
 
@@ -275,3 +276,119 @@ class SubscriptionStatusTests(TestCase):
         self.assertEqual(res.json()["status"], "Active")
         self.assertIsNotNone(res.json()["subscriptionExpiresAt"])
 
+
+# User story: "As a receptionist, I want to reissue lost access cards or QR
+# codes, so that I can resolve access issues without escalating to a manager."
+class AccessCardReissueTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        for username, name, permissions in (("desk", "Dana Desk", ["manage_members"]),
+                                            ("mkt", "Mark Eting", ["manage_marketing_campaigns"])):
+            role = Role.objects.create(name=f"{username} role", permissions=permissions)
+            account = StaffAccount(full_name=name, email=f"{username}@gym.com", username=username,
+                                   job_title=StaffAccount.JobTitle.RECEPTIONIST, role=role)
+            account.set_password(PASSWORD)
+            account.save()
+        cls.lea = Member(
+            name="Lea Haddad", email="lea@example.com", phone="1", branch="Hamra", join_date="2026-01-05",
+            username="lea", subscription_expires_at=timezone.localdate() + timedelta(days=30),
+        )
+        cls.lea.set_password(PASSWORD)
+        cls.lea.save()
+
+    def setUp(self):
+        staff_login(self.client, "desk", PASSWORD)
+
+    def post(self, path, body):
+        return self.client.post(path, body, content_type="application/json")
+
+    def reissue(self, **body):
+        payload = {"reason": "Lost", "identityConfirmed": True, **body}
+        return self.post(f"/api/members/{self.lea.id}/access-card", payload)
+
+    def test_current_card_is_the_original_until_reissued(self):
+        res = self.client.get(f"/api/members/{self.lea.id}/access-card")
+        self.assertEqual(res.status_code, 200)
+        card = res.json()["card"]
+        self.assertEqual((card["number"], card["issuedOn"], card["issuedBy"]), (1, "2026-01-05", None))
+        self.assertEqual(card["payload"], qr.payload_for(self.lea))
+        self.assertTrue(card["qrCode"].startswith("data:image/svg+xml"))
+        self.assertEqual(res.json()["history"], [])
+
+    def test_reissue_replaces_the_card_and_records_who_and_why(self):
+        old_code = self.client.get(f"/api/members/{self.lea.id}/access-card").json()["card"]["payload"]
+        res = self.reissue(reason="Stolen", note="  Bag stolen   at work ")
+        self.assertEqual(res.status_code, 201, res.content)
+        body = res.json()
+        self.assertEqual(body["card"]["number"], 2)
+        self.assertEqual(body["card"]["issuedBy"], "Dana Desk")
+        self.assertNotEqual(body["card"]["payload"], old_code)
+        self.assertEqual(body["history"][0]["cardNumber"], 2)
+        self.assertEqual(body["history"][0]["reason"], "Stolen")
+        self.assertEqual(body["history"][0]["note"], "Bag stolen at work")
+        self.assertEqual(body["history"][0]["reissuedBy"], "Dana Desk")
+
+    def test_old_card_is_refused_and_new_card_works(self):
+        old_code = qr.payload_for(self.lea)
+        new_code = self.reissue().json()["card"]["payload"]
+
+        denied = self.post("/api/checkins", {"qrCode": old_code})
+        self.assertEqual(denied.status_code, 201)
+        self.assertEqual((denied.json()["checkIn"]["result"], denied.json()["checkIn"]["reason"]),
+                         ("Denied", "Replaced card"))
+
+        allowed = self.post("/api/checkins", {"qrCode": new_code})
+        self.assertEqual(allowed.json()["checkIn"]["result"], "Allowed")
+
+        refused_checkout = self.post("/api/checkins/checkout", {"qrCode": old_code})
+        self.assertEqual(refused_checkout.status_code, 400)
+        self.assertIn("replaced", refused_checkout.json()["error"])
+        self.assertEqual(self.post("/api/checkins/checkout", {"qrCode": new_code}).status_code, 200)
+
+    def test_every_earlier_card_stops_working(self):
+        first = qr.payload_for(self.lea)
+        second = self.reissue().json()["card"]["payload"]
+        third = self.reissue(reason="Damaged").json()["card"]["payload"]
+        for code in (first, second):
+            self.assertEqual(self.post("/api/checkins", {"qrCode": code}).json()["checkIn"]["reason"], "Replaced card")
+        self.assertEqual(self.post("/api/checkins", {"qrCode": third}).json()["checkIn"]["result"], "Allowed")
+
+    def test_membership_id_still_works_after_reissue(self):
+        self.reissue()
+        res = self.post("/api/checkins", {"membershipId": self.lea.id})
+        self.assertEqual(res.json()["checkIn"]["result"], "Allowed")
+
+    def test_a_reissued_code_cannot_be_edited_to_another_card(self):
+        code = self.reissue().json()["card"]["payload"]
+        forged = code.replace(f":{self.lea.id}:2:", f":{self.lea.id}:3:")
+        res = self.post("/api/checkins", {"qrCode": forged})
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("qrCode", res.json()["error"])
+
+    def test_member_sees_the_new_code_on_their_account(self):
+        new_code = self.reissue().json()["card"]["payload"]
+        self.client.post("/api/auth/logout")
+        self.post("/api/members/login", {"username": "lea", "password": PASSWORD})
+        self.assertEqual(self.client.get("/api/members/me/qr").json()["payload"], new_code)
+
+    def test_photo_id_check_and_reason_are_required(self):
+        res = self.reissue(identityConfirmed=False)
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("identityConfirmed", res.json()["error"])
+        res = self.post(f"/api/members/{self.lea.id}/access-card", {"reason": "Lost"})
+        self.assertIn("identityConfirmed", res.json()["error"])
+        res = self.reissue(reason="Misplaced")
+        self.assertIn("reason", res.json()["error"])
+        res = self.reissue(reason="Other", note="   ")
+        self.assertIn("note", res.json()["error"])
+        self.assertEqual(Member.objects.get(id=self.lea.id).access_card_number, 1)
+
+    def test_receptionist_permission_is_enough_and_required(self):
+        self.client.post("/api/auth/logout")
+        self.assertEqual(self.reissue().status_code, 401)
+        staff_login(self.client, "mkt", PASSWORD)
+        self.assertEqual(self.reissue().status_code, 403)
+        self.assertEqual(self.client.get(f"/api/members/{self.lea.id}/access-card").status_code, 403)
+
+    def test_unknown_member(self):
+        self.assertEqual(self.client.get("/api/members/9999/access-card").status_code, 404)

@@ -22,6 +22,12 @@ def _lookup_member(membership_id):
         return None, Response({"error": f"No member found with ID {membership_id}."}, status=404)
 
 
+# A scanned QR code from a card that has since been reissued (lost/stolen).
+def _is_replaced_card(member, validated_data):
+    card_number = validated_data.get("cardNumber")
+    return card_number is not None and card_number != member.access_card_number
+
+
 # GET  /api/checkins          - most recent check-ins (default 20, ?limit= to adjust)
 # POST /api/checkins          - check a member in by membership ID (or, in
 #                                future, a scanned QR code decoding to the
@@ -59,7 +65,9 @@ def checkin_list(request):
 
         member.refresh_expiry_status()
 
-        if member.status != Member.Status.ACTIVE:
+        if _is_replaced_card(member, serializer.validated_data):
+            check_in = CheckIn.objects.create(member=member, result=CheckIn.Result.DENIED, reason="Replaced card")
+        elif member.status != Member.Status.ACTIVE:
             check_in = CheckIn.objects.create(member=member, result=CheckIn.Result.DENIED, reason=member.status)
         elif _open_session(member):
             check_in = CheckIn.objects.create(
@@ -110,6 +118,12 @@ def checkout(request):
         return error
 
     member.refresh_expiry_status()
+
+    if _is_replaced_card(member, serializer.validated_data):
+        return Response(
+            {"error": f"This card was replaced and no longer works. Use {member.name}'s new card or membership ID."},
+            status=400,
+        )
 
     session = _open_session(member)
     if not session:

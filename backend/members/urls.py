@@ -17,6 +17,7 @@ urlpatterns = [
     path("/<int:member_id>/renewal-quote", billing_views.member_renewal_quote),
     path("/<int:member_id>/payments", billing_views.member_payment),
     path("/<int:member_id>/cancel", views.member_cancel),
+    path("/<int:member_id>/access-card", views.member_access_card),
     path("/<int:member_id>", views.member_detail),
     path("", views.member_list),
 ]

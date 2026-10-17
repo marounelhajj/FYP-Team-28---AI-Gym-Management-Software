@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { checkIn, checkOut, fetchRecentCheckIns } from "../api/checkins.js";
 import { BUTTON_COLORS } from "../styles/buttonColors.js";
+import AccessCardPanel from "./AccessCardPanel.jsx";
 import QrScanner from "./QrScanner.jsx";
 
 const RESULT_DISPLAY_MS = 3000;
@@ -26,8 +27,21 @@ export default function CheckIn() {
   const [result, setResult] = useState(null); // { action, ok, member?, checkIn?, error? }
   const [recent, setRecent] = useState([]);
   const [scanning, setScanning] = useState(false);
+  const [cardMemberId, setCardMemberId] = useState(null); // member whose access card panel is open
+  const [cardHint, setCardHint] = useState(null);
   const inputRef = useRef(null);
   const dismissTimer = useRef(null);
+
+  function openAccessCard() {
+    const id = membershipId.trim();
+    if (!/^\d+$/.test(id)) {
+      setCardHint("Type the member's membership ID first, then click Reissue card.");
+      inputRef.current?.focus();
+      return;
+    }
+    setCardHint(null);
+    setCardMemberId(Number(id));
+  }
 
   function loadRecent() {
     fetchRecentCheckIns()
@@ -93,7 +107,10 @@ export default function CheckIn() {
           ref={inputRef}
           type="text"
           value={membershipId}
-          onChange={(e) => setMembershipId(e.target.value)}
+          onChange={(e) => {
+            setMembershipId(e.target.value);
+            setCardHint(null);
+          }}
           placeholder="Membership ID or scan QR..."
           aria-label="Membership ID"
           style={styles.input}
@@ -120,7 +137,16 @@ export default function CheckIn() {
         </button>
       </form>
 
+      <div style={styles.lostCardRow}>
+        <span>Member lost their card or QR code?</span>
+        <button type="button" onClick={openAccessCard} style={styles.linkButton}>
+          Reissue card
+        </button>
+      </div>
+      {cardHint && <div style={styles.cardHint}>{cardHint}</div>}
+
       {scanning && <QrScanner onScan={handleScan} onClose={() => setScanning(false)} />}
+      {cardMemberId && <AccessCardPanel memberId={cardMemberId} onClose={() => setCardMemberId(null)} />}
 
       {result && (
         <div style={cardStyle}>
@@ -139,7 +165,10 @@ export default function CheckIn() {
                   <div style={styles.resultDetail}>
                     {result.checkIn.reason === "Already checked in"
                       ? `${result.member.name} is already checked in.`
-                      : `${result.member.name}'s membership is ${result.checkIn.reason}.`}
+                      : result.checkIn.reason === "Replaced card"
+                        ? `This is an old card for ${result.member.name} (#${result.member.id}). It was replaced and `
+                          + "no longer works - ask for the new card, or reissue one."
+                        : `${result.member.name}'s membership is ${result.checkIn.reason}.`}
                   </div>
                 </>
               )
@@ -191,8 +220,19 @@ const styles = {
   form: {
     display: "flex",
     gap: 10,
-    marginBottom: 20,
+    marginBottom: 10,
   },
+  lostCardRow: { display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "#666", marginBottom: 20 },
+  linkButton: {
+    border: "none",
+    background: "none",
+    padding: 0,
+    color: "#124096",
+    fontSize: 13,
+    fontWeight: 700,
+    cursor: "pointer",
+  },
+  cardHint: { fontSize: 12, color: "#b3261e", marginTop: -14, marginBottom: 20 },
   input: {
     flex: 1,
     padding: "14px 16px",

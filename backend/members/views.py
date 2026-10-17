@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework.decorators import api_view
@@ -7,9 +8,12 @@ from administration.permissions import authorize
 from billing.serializers import PaymentSerializer
 from plans.models import MembershipPlan
 
-from .models import Member
+from . import qr
+from .models import AccessCardReissue, Member
 from .waiver import HEALTH_DISCLAIMER_TEXT, LIABILITY_WAIVER_TEXT, WAIVER_VERSION
-from .serializers import MemberSerializer, MemberCreateSerializer
+from .serializers import (
+    AccessCardReissueCreateSerializer, AccessCardReissueSerializer, MemberCreateSerializer, MemberSerializer,
+)
 
 
 # Every customer without a valid subscription - it expired, or they never
@@ -190,3 +194,52 @@ def member_cancel(request, member_id):
     member.save(update_fields=["status"])
     return Response(MemberSerializer(member).data)
 
+
+def _access_card_data(member):
+    reissues = member.card_reissues.select_related("reissued_by")
+    latest = reissues.first()
+    payload = qr.payload_for(member)
+    return {
+        "member": MemberSerializer(member).data,
+        "card": {
+            "number": member.access_card_number,
+            # The original card dates from sign-up; a reissued one from its reissue.
+            "issuedOn": timezone.localtime(latest.reissued_at).date() if latest else member.join_date,
+            "issuedBy": latest.reissued_by.full_name if latest and latest.reissued_by else None,
+            "payload": payload,
+            "qrCode": qr.svg_data_uri(payload),
+        },
+        "history": AccessCardReissueSerializer(reissues, many=True).data,
+    }
+
+
+# GET  /api/members/<id>/access-card - the member's current access card (QR code) and its reissue history.
+# POST /api/members/<id>/access-card - reissue it. Body: { reason, note?, identityConfirmed }.
+# The previous card stops working immediately (members/qr.py).
+@api_view(["GET", "POST"])
+def member_access_card(request, member_id):
+    account, denied = authorize(request, "manage_members")
+    if denied:
+        return denied
+
+    member = Member.objects.select_related("waiver__witnessed_by").filter(id=member_id).first()
+    if member is None:
+        return Response({"error": f"Member {member_id} not found"}, status=404)
+    member.refresh_expiry_status()
+
+    if request.method == "GET":
+        return Response(_access_card_data(member))
+
+    serializer = AccessCardReissueCreateSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response({"error": serializer.errors}, status=400)
+
+    with transaction.atomic():
+        # Locked so two reissues at once can't hand out the same card number.
+        member.access_card_number = Member.objects.select_for_update().get(pk=member.pk).access_card_number + 1
+        member.save(update_fields=["access_card_number"])
+        AccessCardReissue.objects.create(
+            member=member, card_number=member.access_card_number, reissued_by=account,
+            reason=serializer.validated_data["reason"], note=serializer.validated_data["note"],
+        )
+    return Response(_access_card_data(member), status=201)

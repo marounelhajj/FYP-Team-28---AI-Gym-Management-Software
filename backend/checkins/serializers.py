@@ -32,19 +32,19 @@ class CheckInSerializer(serializers.ModelSerializer):
 # (scanned by camera, or typed by a USB scanner) - see members/qr.py.
 # Everything else (who the member is, whether to allow them in) is
 # resolved server-side in the view. validated_data always ends up with
-# membershipId.
+# membershipId, plus cardNumber when a QR code was scanned.
 class CheckInCreateSerializer(serializers.Serializer):
     membershipId = serializers.IntegerField(min_value=1, required=False)
     qrCode = serializers.CharField(required=False)
 
     def validate(self, attrs):
         if "qrCode" in attrs:
-            member_id = qr.member_id_from(attrs.pop("qrCode"))
-            if member_id is None:
+            card = qr.read(attrs.pop("qrCode"))
+            if card is None:
                 raise serializers.ValidationError(
                     {"qrCode": ["This QR code isn't a valid Fitness Factory membership code."]}
                 )
-            attrs["membershipId"] = member_id
+            attrs["membershipId"], attrs["cardNumber"] = card
         if "membershipId" not in attrs:
             raise serializers.ValidationError({"membershipId": ["Enter a membership ID or scan a QR code."]})
         return attrs

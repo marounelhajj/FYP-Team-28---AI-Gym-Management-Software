@@ -110,6 +110,25 @@ export async function recordPayment(memberId, { membershipPlan, method, duration
   return res.json(); // the updated member + "payment" block
 }
 
+// { member, card: { number, issuedOn, issuedBy, payload, qrCode }, history }
+export async function fetchAccessCard(memberId) {
+  const res = await fetch(`/api/members/${memberId}/access-card`);
+  if (!res.ok) throw await parseError(res);
+  return res.json();
+}
+
+// Issues a new access card / QR code; the member's previous one stops
+// working immediately. Same response shape as fetchAccessCard.
+export async function reissueAccessCard(memberId, { reason, note, identityConfirmed }) {
+  const res = await fetch(`/api/members/${memberId}/access-card`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason, note, identityConfirmed }),
+  });
+  if (!res.ok) throw await parseError(res);
+  return res.json();
+}
+
 // Ends a subscribed member's subscription - sets status to Cancelled.
 // They can be re-subscribed later the same way as any Frozen member
 // (recordPayment above), which reactivates them.

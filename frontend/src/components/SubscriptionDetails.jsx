@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { cancelMembership, fetchMemberBilling } from "../api/members.js";
 import { BUTTON_COLORS } from "../styles/buttonColors.js";
+import AccessCardPanel from "./AccessCardPanel.jsx";
 import PaymentMethodForm from "./PaymentMethodForm.jsx";
 
 const STATUS_STYLES = { Active: BUTTON_COLORS.green, Frozen: BUTTON_COLORS.blue, Cancelled: BUTTON_COLORS.red };
@@ -16,6 +17,7 @@ export default function SubscriptionDetails({ member, onClose, onCancelled, onRe
   const [error, setError] = useState(null);
   const [showMethodForm, setShowMethodForm] = useState(false);
   const [methodSaved, setMethodSaved] = useState(false);
+  const [showAccessCard, setShowAccessCard] = useState(false);
 
   const current = billing?.member ?? member;
   const onFile = billing?.paymentMethod ?? null;
@@ -145,6 +147,9 @@ export default function SubscriptionDetails({ member, onClose, onCancelled, onRe
               <button onClick={() => setConfirming(true)} style={styles.endButton}>
                 End Subscription
               </button>
+              <button onClick={() => setShowAccessCard(true)} style={styles.closeAction}>
+                Access Card
+              </button>
               <button onClick={onClose} style={styles.closeAction}>
                 Close
               </button>
@@ -164,6 +169,8 @@ export default function SubscriptionDetails({ member, onClose, onCancelled, onRe
           onSaved={handleMethodSaved}
         />
       )}
+
+      {showAccessCard && <AccessCardPanel memberId={current.id} onClose={() => setShowAccessCard(false)} />}
     </>
   );
 }
