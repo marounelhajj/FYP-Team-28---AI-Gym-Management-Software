@@ -1,4 +1,7 @@
 from django.urls import path
+
+from billing import views as billing_views
+
 from . import auth_views, views
 
 urlpatterns = [
@@ -9,7 +12,10 @@ urlpatterns = [
     path("/logout", auth_views.logout),
     path("/me", auth_views.me),
     path("/me/qr", auth_views.my_qr),
-    path("/<int:member_id>/payments", views.member_payment),
+    path("/<int:member_id>/billing", billing_views.member_billing),
+    path("/<int:member_id>/payment-method", billing_views.member_payment_method),
+    path("/<int:member_id>/renewal-quote", billing_views.member_renewal_quote),
+    path("/<int:member_id>/payments", billing_views.member_payment),
     path("/<int:member_id>/cancel", views.member_cancel),
     path("/<int:member_id>", views.member_detail),
     path("", views.member_list),

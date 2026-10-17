@@ -28,8 +28,8 @@ const CYCLE_TEXT = {
 // here either - same rule as a receptionist's walk-in registration (see
 // backend/members/serializers.py MemberSignupSerializer).
 //
-// `initialSelection` ({ planName, branch }) comes from PlanBrowser's "Join"
-// button so the plan/branch the visitor just compared are pre-filled.
+// `initialSelection` ({ planName, branch, duration }) comes from PlanBrowser's
+// "Join" button so the plan, branch and duration just compared are pre-filled.
 //
 // Ends with the digital waiver + health disclaimer (SCRUM-83); signing up
 // isn't possible until it's signed.
@@ -38,6 +38,7 @@ export default function MemberSignupPage({ initialSelection, onSignedUp, onSwitc
     ...EMPTY_FORM,
     membershipPlan: initialSelection?.planName || "",
     branch: initialSelection?.branch || "",
+    paymentDuration: initialSelection?.duration || "",
   });
   const [filterOptions, setFilterOptions] = useState({ branches: [], plans: [] });
   const [quote, setQuote] = useState(null); // pricing row for the chosen plan at the chosen branch

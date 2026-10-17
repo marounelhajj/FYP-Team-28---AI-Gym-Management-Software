@@ -1,10 +1,10 @@
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from administration.permissions import authorize
-from billing.models import Payment
-from billing.serializers import PaymentCreateSerializer, PaymentSerializer
+from billing.serializers import PaymentSerializer
 from plans.models import MembershipPlan
 
 from .models import Member
@@ -12,17 +12,15 @@ from .waiver import HEALTH_DISCLAIMER_TEXT, LIABILITY_WAIVER_TEXT, WAIVER_VERSIO
 from .serializers import MemberSerializer, MemberCreateSerializer
 
 
-# Subscriptions don't auto-renew: this is the only place that ever flips a
-# lapsed member's status from Active to Frozen (every customer without a
-# valid/current subscription is Frozen, same status a staff-initiated
-# freeze uses), run lazily on every read (no Celery/cron in this project)
-# as a single bulk UPDATE rather than a per-row loop. Nothing ever reverses
-# this automatically - only Payment.record() (a new registration or a
-# renewal) sets Active again.
+# Every customer without a valid subscription - it expired, or they never
+# paid for one - is Frozen. Subscriptions don't auto-renew, so this runs
+# lazily on every directory read (no Celery/cron in this project) as one
+# bulk UPDATE. Nothing reverses it automatically - only Payment.record()
+# (a registration or a renewal) sets Active again. Cancelled members are
+# left as they are.
 def _freeze_lapsed_members():
-    Member.objects.filter(
-        status=Member.Status.ACTIVE,
-        subscription_expires_at__lt=timezone.localdate(),
+    Member.objects.filter(status=Member.Status.ACTIVE).filter(
+        Q(subscription_expires_at__isnull=True) | Q(subscription_expires_at__lt=timezone.localdate())
     ).update(status=Member.Status.FROZEN)
 
 
@@ -164,43 +162,6 @@ def member_detail(request, member_id):
     return Response(MemberSerializer(member).data)
 
 
-# POST /api/members/<id>/payments
-# Body: { membershipPlan, method, duration } - amount is never accepted
-# here either, it's price_for(membershipPlan, duration) (see
-# Payment.record()). membershipPlan is required and explicit every time -
-# this is also how a receptionist changes a member's plan at renewal.
-# Records a new payment for an EXISTING member - the "repay to reactivate"
-# action for a lapsed (Frozen) subscription, or an early renewal for a
-# still-Active one. See Payment.record() for the expiry/reactivation logic.
-#
-# User story: "As a receptionist, I want to process a new member's first
-# payment during registration, so that their membership is activated
-# immediately." - extended to cover repayment after the subscription
-# expires, since it's deliberately not auto-renewed.
-@api_view(["POST"])
-def member_payment(request, member_id):
-    _, denied = authorize(request, "manage_members")
-    if denied:
-        return denied
-
-    try:
-        member = Member.objects.get(id=member_id)
-    except Member.DoesNotExist:
-        return Response({"error": f"Member {member_id} not found"}, status=404)
-
-    serializer = PaymentCreateSerializer(data=request.data)
-    if not serializer.is_valid():
-        return Response({"error": serializer.errors}, status=400)
-
-    data = serializer.validated_data
-    payment = Payment.record(
-        member, data["membershipPlan"], data["method"], data["duration"], note="Renewal payment",
-    )
-    response_data = MemberSerializer(member).data
-    response_data["payment"] = PaymentSerializer(payment).data
-    return Response(response_data, status=201)
-
-
 # POST /api/members/<id>/cancel
 # Ends a subscribed member's subscription - sets status to Cancelled. No
 # body needed. subscription_expires_at is left as-is (so the date it would
@@ -228,3 +189,4 @@ def member_cancel(request, member_id):
     member.status = Member.Status.CANCELLED
     member.save(update_fields=["status"])
     return Response(MemberSerializer(member).data)
+

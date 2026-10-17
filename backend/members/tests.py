@@ -1,4 +1,7 @@
+from datetime import timedelta
+
 from django.test import TestCase
+from django.utils import timezone
 
 from administration.models import Role, StaffAccount
 from administration.testing import staff_login
@@ -205,3 +208,70 @@ class WaiverTests(TestCase):
                                        join_date="2024-01-01")
         staff_login(self.client, "desk", PASSWORD)
         self.assertIsNone(self.client.get(f"/api/members/{member.id}").json()["waiver"])
+
+
+# Every customer without a valid subscription - expired, or never paid for
+# one - is Frozen until they pay; Cancelled members are left as they are.
+class SubscriptionStatusTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        MembershipPlan.objects.create(name="Basic", price="25.00")
+        role = Role.objects.create(name="Receptionist", permissions=["manage_members"])
+        desk = StaffAccount(
+            full_name="Desk", email="desk@gym.com", username="desk",
+            job_title=StaffAccount.JobTitle.RECEPTIONIST, role=role,
+        )
+        desk.set_password(PASSWORD)
+        desk.save()
+
+        today = timezone.localdate()
+
+        def member(name, status="Active", expires=None):
+            return Member.objects.create(
+                name=name, email=f"{name.lower()}@example.com", phone="1", branch="Hamra",
+                join_date=today, status=status, subscription_expires_at=expires,
+            )
+
+        cls.never_paid = member("Never")
+        cls.lapsed = member("Lapsed", expires=today - timedelta(days=1))
+        cls.last_day = member("Lastday", expires=today)
+        cls.paid = member("Paid", expires=today + timedelta(days=30))
+        cls.cancelled = member("Cancelled", status="Cancelled")
+
+    def setUp(self):
+        staff_login(self.client, "desk", PASSWORD)
+
+    def test_directory_freezes_members_without_a_valid_subscription(self):
+        results = self.client.get("/api/members").json()["results"]
+        self.assertEqual({m["name"]: m["status"] for m in results}, {
+            "Never": "Frozen", "Lapsed": "Frozen", "Lastday": "Active", "Paid": "Active", "Cancelled": "Cancelled",
+        })
+
+    def test_member_detail_freezes_a_member_who_never_paid(self):
+        res = self.client.get(f"/api/members/{self.never_paid.id}")
+        self.assertEqual(res.json()["status"], "Frozen")
+        self.assertIsNone(res.json()["subscriptionExpiresAt"])
+
+    def test_check_in_is_refused_without_a_valid_subscription(self):
+        res = self.client.post("/api/checkins", {"membershipId": self.never_paid.id}, content_type="application/json")
+        self.assertEqual(res.json()["checkIn"]["result"], "Denied")
+        self.assertEqual(res.json()["checkIn"]["reason"], "Frozen")
+
+    def test_member_sees_frozen_on_their_own_account(self):
+        self.client.post("/api/auth/logout")
+        self.never_paid.username = "never"
+        self.never_paid.set_password(PASSWORD)
+        self.never_paid.save()
+        res = self.client.post("/api/members/login", {"username": "never", "password": PASSWORD},
+                               content_type="application/json")
+        self.assertEqual(res.json()["status"], "Frozen")
+        self.assertEqual(self.client.get("/api/members/me").json()["status"], "Frozen")
+
+    def test_paying_makes_them_active_again(self):
+        res = self.client.post(f"/api/members/{self.never_paid.id}/payments",
+                               {"membershipPlan": "Basic", "method": "Cash", "duration": "1 Month"},
+                               content_type="application/json")
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertEqual(res.json()["status"], "Active")
+        self.assertIsNotNone(res.json()["subscriptionExpiresAt"])
+

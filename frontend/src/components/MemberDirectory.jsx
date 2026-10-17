@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchMembers, fetchMemberFilterOptions } from "../api/members.js";
 import RegisterMemberForm from "./RegisterMemberForm.jsx";
-import RecordPaymentForm from "./RecordPaymentForm.jsx";
+import RenewMembershipForm from "./RenewMembershipForm.jsx";
 import SubscriptionDetails from "./SubscriptionDetails.jsx";
 import AccessDenied from "./AccessDenied.jsx";
 import { BUTTON_COLORS } from "../styles/buttonColors.js";
@@ -129,19 +129,22 @@ export default function MemberDirectory() {
     runSearch();
   }
 
-  // After recording a payment for an existing member (first-time repay of
-  // a lapsed subscription, or an early renewal): refresh the table so the
-  // updated status/expiry is immediately visible.
+  // After a renewal or re-subscription: refresh the table so the updated
+  // status is immediately visible.
   function handlePaymentRecorded(member) {
     setPaymentTarget(null);
     const payment = member.payment;
     setSuccessMessage(
-      payment
-        ? `Payment of $${payment.amount} (${payment.method}) recorded for ${member.name}. `
-          + `Subscription active until ${payment.expiresAt}.`
-        : `Payment recorded for ${member.name}.`
+      `${payment.note === "Renewal" ? "Renewal" : "Subscription"} processed for ${member.name}: `
+        + `$${payment.amount} charged (${payment.methodDetail || payment.method}). `
+        + `Active until ${payment.expiresAt}.`
     );
     runSearch();
+  }
+
+  function handleRenewFromDetails(member) {
+    setDetailsTarget(null);
+    setPaymentTarget(member);
   }
 
   // After ending a member's subscription from the details modal: close it
@@ -294,11 +297,11 @@ export default function MemberDirectory() {
       )}
 
       {paymentTarget && (
-        <RecordPaymentForm
+        <RenewMembershipForm
           member={paymentTarget}
-          meta={filterOptions}
+          plans={filterOptions.plans}
           onClose={() => setPaymentTarget(null)}
-          onRecorded={handlePaymentRecorded}
+          onRenewed={handlePaymentRecorded}
         />
       )}
 
@@ -307,6 +310,7 @@ export default function MemberDirectory() {
           member={detailsTarget}
           onClose={() => setDetailsTarget(null)}
           onCancelled={handleSubscriptionCancelled}
+          onRenew={handleRenewFromDetails}
         />
       )}
     </div>

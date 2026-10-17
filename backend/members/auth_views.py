@@ -58,6 +58,7 @@ def login(request):
 
     request.session.pop("staff_account_id", None)
     request.session["member_id"] = member.id
+    member.refresh_expiry_status()
     return Response(_session_payload(member))
 
 
@@ -81,6 +82,7 @@ def me(request):
         request.session.flush()
         return Response({"error": "Not authenticated."}, status=401)
 
+    member.refresh_expiry_status()
     return Response(_session_payload(member))
 
 

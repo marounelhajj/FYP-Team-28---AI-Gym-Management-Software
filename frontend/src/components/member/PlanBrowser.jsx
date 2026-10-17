@@ -1,17 +1,25 @@
 import { useEffect, useState } from "react";
 import { fetchBranchPricing, fetchPlanMeta, fetchPlans } from "../../api/plans.js";
 import { BUTTON_COLORS } from "../../styles/buttonColors.js";
+import { getPriceInfo } from "../../utils/pricing.js";
 import Logo from "../Logo.jsx";
+import SegmentedControl from "../SegmentedControl.jsx";
 
-const CYCLE_SUFFIX = {
-  Monthly: "/ month",
-  Quarterly: "/ quarter",
-  "Semi-Annual": "/ 6 months",
-  Annual: "/ year",
-};
+const CYCLE_MONTHS = { Monthly: 1, Quarterly: 3, "Semi-Annual": 6, Annual: 12 };
+const DURATION_OPTIONS = [
+  { value: "1 Month", label: "1 Month" },
+  { value: "1 Year", label: "1 Year", tag: "Save $20" },
+];
 
 function money(value) {
   return `$${Number(value).toFixed(2)}`;
+}
+
+// The monthly price every duration is priced from, branch promotion
+// included - mirrors billing/models.py _monthly_price.
+function monthlyPrice(plan, local) {
+  const cyclePrice = Number(local ? local.effectivePrice : plan.price);
+  return Math.round((cyclePrice / (CYCLE_MONTHS[plan.billingCycle] || 1)) * 100) / 100;
 }
 
 // Public, no-login plan catalogue - the "browse" half of the story.
@@ -27,6 +35,7 @@ export default function PlanBrowser({ initialBranch, onChoosePlan, onSwitchToLog
   const [plans, setPlans] = useState([]);
   const [branches, setBranches] = useState([]);
   const [branch, setBranch] = useState(initialBranch || "");
+  const [duration, setDuration] = useState("1 Month");
   const [pricing, setPricing] = useState({}); // planId -> pricing row for the selected branch
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -69,6 +78,7 @@ export default function PlanBrowser({ initialBranch, onChoosePlan, onSwitchToLog
         <h1 style={styles.title}>Choose your membership</h1>
         <p style={styles.subtitle}>
           Same plans at every Fitness Factory branch. Pick your branch to see today's price, including any local offers.
+          Pay monthly, or for a whole year at once and save $20.
         </p>
 
         <div style={styles.branchRow} role="group" aria-label="Branch">
@@ -82,6 +92,15 @@ export default function PlanBrowser({ initialBranch, onChoosePlan, onSwitchToLog
           ))}
         </div>
 
+        <div style={styles.durationRow}>
+          <SegmentedControl
+            options={DURATION_OPTIONS}
+            value={duration}
+            onChange={setDuration}
+            ariaLabel="Subscription duration"
+          />
+        </div>
+
         {loading && <div style={styles.meta}>Loading plans...</div>}
         {error && <div style={styles.errorBox}>Couldn't load plans: {error}</div>}
         {!loading && !error && plans.length === 0 && (
@@ -92,6 +111,8 @@ export default function PlanBrowser({ initialBranch, onChoosePlan, onSwitchToLog
           {plans.map((plan) => {
             const local = pricing[plan.id];
             const promo = local?.promotion;
+            const yearly = duration === "1 Year";
+            const price = getPriceInfo(monthlyPrice(plan, local), duration);
             return (
               <div key={plan.id} style={promo ? styles.cardPromo : styles.card}>
                 {promo && <div style={styles.promoBanner}>{promo.name}: until {promo.endDate}</div>}
@@ -100,13 +121,15 @@ export default function PlanBrowser({ initialBranch, onChoosePlan, onSwitchToLog
                 {plan.description && <p style={styles.cardDescription}>{plan.description}</p>}
 
                 <div style={styles.priceRow}>
-                  {promo && <s style={styles.oldPrice}>{money(local.basePrice)}</s>}
-                  <span style={styles.price}>{money(local ? local.effectivePrice : plan.price)}</span>
-                  <span style={styles.priceSuffix}>{CYCLE_SUFFIX[plan.billingCycle] || ""}</span>
+                  {yearly ? (
+                    <s style={styles.oldPrice}>{money(price.originalAmount)}</s>
+                  ) : (
+                    promo && <s style={styles.oldPrice}>{money(local.basePrice)}</s>
+                  )}
+                  <span style={styles.price}>{money(price.amount)}</span>
+                  <span style={styles.priceSuffix}>{yearly ? "/ year" : "/ month"}</span>
                 </div>
-                {plan.billingCycle !== "Monthly" && (
-                  <div style={styles.monthly}>≈ {money(plan.monthlyEquivalent)} / month</div>
-                )}
+                {yearly && <div style={styles.monthly}>Paid once a year, about {money(price.amount / 12)} / month</div>}
 
                 {plan.features.length > 0 && (
                   <ul style={styles.featureList}>
@@ -120,10 +143,10 @@ export default function PlanBrowser({ initialBranch, onChoosePlan, onSwitchToLog
 
                 <button
                   type="button"
-                  onClick={() => onChoosePlan({ planName: plan.name, branch })}
+                  onClick={() => onChoosePlan({ planName: plan.name, branch, duration })}
                   style={styles.joinButton}
                 >
-                  Join with {plan.name}
+                  Join with {plan.name} for {duration.toLowerCase()}
                 </button>
               </div>
             );
@@ -189,7 +212,8 @@ const styles = {
   content: { maxWidth: 1000, margin: "0 auto", padding: "32px 20px 48px" },
   title: { fontSize: 26, fontWeight: 800, margin: 0 },
   subtitle: { fontSize: 14, color: "#666", margin: "6px 0 20px", maxWidth: 560 },
-  branchRow: { display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 24 },
+  branchRow: { display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 },
+  durationRow: { maxWidth: 320, marginBottom: 24 },
   pill: { ...pill, border: "1px solid #d0d0d5", background: "#fff", color: "#444" },
   pillActive: { ...pill, border: "1px solid #124096", background: "#124096", color: "#fff" },
   meta: { fontSize: 14, color: "#666", padding: "12px 0" },

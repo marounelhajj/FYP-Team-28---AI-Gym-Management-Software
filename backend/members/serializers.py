@@ -108,7 +108,7 @@ class MemberSerializer(serializers.ModelSerializer):
 # freshly registered walk-in is always Active, and the join date is always
 # "today" - both are set server-side in create() below. There is no
 # paymentAmount field: the amount is looked up server-side by
-# Payment.record() (billing.models.price_for(), branch-aware) - the
+# Payment.record() (billing.models.renewal_quote(), branch-aware) - the
 # receptionist picks a plan, not a price.
 class MemberCreateSerializer(WaiverSignatureFields, serializers.ModelSerializer):
     membershipPlan = serializers.CharField(source="membership_plan")
@@ -150,7 +150,7 @@ class MemberCreateSerializer(WaiverSignatureFields, serializers.ModelSerializer)
             )
             payment = Payment.record(
                 member, member.membership_plan, payment_method, payment_duration,
-                note="First payment at registration",
+                note="First payment at registration", recorded_by=self.context.get("staff_account"),
             )
         # Stashed (not a DB field) so the view can include it in the
         # creation response without an extra query for the payment it just
@@ -226,3 +226,4 @@ class MemberSignupSerializer(WaiverSignatureFields, serializers.ModelSerializer)
             )
         member.first_payment = payment
         return member
+

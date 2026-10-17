@@ -32,13 +32,6 @@ PLANS = [
             "Access to all branches", "2 personal training sessions / month",
         ],
     },
-    {
-        "name": "Premium Annual",
-        "description": "Premium, paid yearly at a discount.",
-        "price": "500.00",
-        "billing_cycle": "Annual",
-        "features": ["Everything in Premium", "2 months free vs. monthly billing"],
-    },
 ]
 
 

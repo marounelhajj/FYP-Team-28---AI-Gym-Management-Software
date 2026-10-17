@@ -11,7 +11,7 @@ pip install -r requirements.txt --break-system-packages   # or use a venv if you
 python manage.py migrate
 python manage.py seed_members      # only needed once, skips if data already exists
 python manage.py seed_staff        # demo roles + staff logins (password: ChangeMe123!)
-python manage.py seed_plans        # demo membership plans (Basic / Standard / Premium / Premium Annual)
+python manage.py seed_plans        # demo membership plans (Basic / Standard / Premium)
 python manage.py runserver 4000
 ```
 

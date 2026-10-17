@@ -6,10 +6,10 @@ from django.utils import timezone
 class Member(models.Model):
     class Status(models.TextChoices):
         ACTIVE = "Active", "Active"
-        # Also the status a member lapses into automatically once their
-        # subscription_expires_at passes with no renewal (see the lazy
-        # sweep in views.py) - there's no separate "Expired" status; a
-        # lapsed/unpaid member reads the same as a staff-frozen one.
+        # Also the status a member is moved to automatically when they have
+        # no valid subscription - it expired, or they never paid for one
+        # (see refresh_expiry_status and the lazy sweep in views.py). There's
+        # no separate "Expired" status; only a payment makes them Active again.
         FROZEN = "Frozen", "Frozen"
         CANCELLED = "Cancelled", "Cancelled"
 
@@ -33,8 +33,8 @@ class Member(models.Model):
     # Cached "when does their current subscription lapse" - denormalized
     # from their latest billing.Payment (see Payment.record()) so reads
     # here never need to join/query payments. Null for members who've
-    # never had a payment recorded (e.g. pre-existing seeded members from
-    # before this feature existed).
+    # never had a payment recorded (e.g. seeded demo members) - they have
+    # no valid subscription, so they read as Frozen until they pay.
     subscription_expires_at = models.DateField(null=True, blank=True)
 
     # Login credentials. Null for members registered as a walk-in by a
@@ -51,20 +51,18 @@ class Member(models.Model):
     def set_password(self, raw_password):
         self.password_hash = make_password(raw_password)
 
-    # Flips a lapsed-but-still-"Active" member to Frozen, right now, for
-    # this one member - the single-row counterpart to the bulk
-    # "_freeze_lapsed_members" sweep in members/views.py. Used anywhere a
-    # single member's status needs to be trustworthy in the moment
-    # (member_detail, and check-in - letting someone in on a stale Active
-    # status would defeat "control entry").
-    def refresh_expiry_status(self):
-        from django.utils import timezone
+    # Valid through the end of its expiry date.
+    def has_valid_subscription(self):
+        return self.subscription_expires_at is not None and self.subscription_expires_at >= timezone.localdate()
 
-        if (
-            self.status == Member.Status.ACTIVE
-            and self.subscription_expires_at
-            and self.subscription_expires_at < timezone.localdate()
-        ):
+    # Moves an "Active" member with no valid subscription to Frozen, right
+    # now, for this one member - the single-row counterpart to the bulk
+    # "_freeze_lapsed_members" sweep in members/views.py. Used anywhere a
+    # single member's status needs to be trustworthy in the moment (member
+    # detail, billing, the member's own login, and check-in - letting
+    # someone in on a stale Active status would defeat "control entry").
+    def refresh_expiry_status(self):
+        if self.status == Member.Status.ACTIVE and not self.has_valid_subscription():
             self.status = Member.Status.FROZEN
             self.save(update_fields=["status"])
 
@@ -104,3 +102,4 @@ class Waiver(models.Model):
 
     def __str__(self):
         return f"Waiver for {self.member.name} ({self.signed_at:%Y-%m-%d})"
+
