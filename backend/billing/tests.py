@@ -312,3 +312,68 @@ class SelfServicePaymentMethodTests(TestCase):
         other.save()
         self.put_method(method="Cash")
         self.assertIsNone(PaymentMethod.objects.filter(member=other).first())
+
+
+# User story: "As a member, I want to view my membership details and
+# billing history, so that I can track payments and my renewal date."
+#
+# Membership details (plan, status, renewal date) are already covered by
+# members.tests.MemberSelfServiceProfileTests via GET /api/members/me - the
+# serializer already included subscriptionExpiresAt. This class covers the
+# one new piece: GET /api/members/me/billing, the self-service twin of
+# member_billing (same RECENT_PAYMENTS limit and PaymentSerializer, scoped
+# by session instead of a staff permission).
+class SelfServiceBillingHistoryTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        MembershipPlan.objects.create(name="Basic", price="25.00")
+        cls.lea = Member(
+            name="Lea Haddad", email="lea@example.com", phone="1", branch="Hamra",
+            join_date=timezone.localdate(), username="lea",
+        )
+        cls.lea.set_password(PASSWORD)
+        cls.lea.save()
+
+    def setUp(self):
+        self.client.post("/api/members/login", {"username": "lea", "password": PASSWORD},
+                          content_type="application/json")
+
+    def get_billing(self):
+        return self.client.get("/api/members/me/billing")
+
+    def test_no_payments_yet(self):
+        body = self.get_billing().json()
+        self.assertEqual(body, {"payments": [], "paymentCount": 0})
+
+    def test_lists_own_payments_newest_first(self):
+        Payment.record(self.lea, "Basic", "Cash", "1 Month", note="Renewal")
+        Payment.record(self.lea, "Basic", "Card", "1 Year", note="Renewal")
+        body = self.get_billing().json()
+        self.assertEqual(body["paymentCount"], 2)
+        self.assertEqual([p["duration"] for p in body["payments"]], ["1 Year", "1 Month"])
+
+    def test_caps_at_the_same_recent_payments_limit_as_the_receptionist_view(self):
+        for _ in range(12):
+            Payment.record(self.lea, "Basic", "Cash", "1 Month", note="Renewal")
+        body = self.get_billing().json()
+        self.assertEqual(body["paymentCount"], 12)
+        self.assertEqual(len(body["payments"]), 10)
+
+    def test_requires_a_member_session(self):
+        self.client.post("/api/members/logout")
+        self.assertEqual(self.get_billing().status_code, 401)
+
+    def test_staff_session_is_not_a_member_session(self):
+        self.client.post("/api/members/logout")
+        _staff("desk", "Dana Desk", ["manage_members"])
+        staff_login(self.client, "desk", PASSWORD)
+        self.assertEqual(self.get_billing().status_code, 401)
+
+    def test_member_only_ever_sees_their_own_payments(self):
+        other = Member(name="Sami Khoury", email="sami@example.com", phone="2", branch="Jnah",
+                       join_date=timezone.localdate(), username="sami")
+        other.set_password(PASSWORD)
+        other.save()
+        Payment.record(other, "Basic", "Cash", "1 Month", note="Renewal")
+        body = self.get_billing().json()
+        self.assertEqual(body, {"payments": [], "paymentCount": 0})
