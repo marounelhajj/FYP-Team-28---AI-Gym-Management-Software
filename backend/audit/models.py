@@ -57,6 +57,8 @@ class AuditLog(models.Model):
         PAYMENT_RECORDED = "payment.recorded", "Payment recorded"
         PAYMENT_METHOD_UPDATED = "payment_method.updated", "Payment method changed"
         ACCESS_CARD_REISSUED = "access_card.reissued", "Access card reissued"
+        # The log itself (SCRUM-126) - who took a copy of which entries.
+        AUDIT_LOG_EXPORTED = "audit_log.exported", "Audit log exported"
 
     class ActorType(models.TextChoices):
         STAFF = "Staff", "Staff"

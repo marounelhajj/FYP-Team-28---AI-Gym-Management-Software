@@ -24,6 +24,28 @@ export async function fetchAuditLog(filters = {}, { limit = 50, offset = 0 } = {
   return res.json();
 }
 
+// User story (SCRUM-126): "As a general manager, I want to export a
+// filtered audit log, so that I can share evidence in a dispute or review."
+// Downloads every entry matching `filters` (not just the page on screen)
+// as a CSV file. Fetched rather than linked to, so an error (e.g. the role
+// lost view_audit_log) shows on screen instead of replacing the page.
+export async function downloadAuditLogCsv(filters = {}) {
+  const res = await fetch(`/api/audit-log/export?${filterParams(filters).toString()}`);
+  if (!res.ok) throw await parseError(res);
+
+  const blob = await res.blob();
+  const match = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "");
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = match ? match[1] : "audit-log.csv";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  return Number(res.headers.get("X-Export-Rows") || 0);
+}
+
 export async function fetchAuditLogMeta() {
   const res = await fetch("/api/audit-log/meta");
   if (!res.ok) throw await parseError(res);

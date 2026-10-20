@@ -1,6 +1,9 @@
+import csv
+import json
 from datetime import date, datetime, time, timedelta
 
 from django.db.models import Q
+from django.http import StreamingHttpResponse
 from django.utils import timezone
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
@@ -8,6 +11,7 @@ from rest_framework.response import Response
 from administration.permissions import authorize
 from members.models import Member
 
+from .log import record
 from .models import AuditLog
 from .serializers import AuditLogSerializer
 
@@ -29,7 +33,10 @@ CATEGORY_LABELS = {
     "payment": "Payments",
     "payment_method": "Payment methods",
     "access_card": "Access cards",
+    "audit_log": "Audit log",
 }
+
+FILTER_PARAMS = ("user", "action", "branch", "dateFrom", "dateTo")
 
 
 def _parse_date(value, name):
@@ -171,3 +178,93 @@ def audit_log_meta(request):
         "branches": [choice.value for choice in Member.Branch],
         "users": list(seen.values()),
     })
+
+
+EXPORT_COLUMNS = [
+    "Entry ID", "Date & time", "Action", "Action key", "User", "Username", "Role", "User type",
+    "Affected", "Affected type", "Affected ID", "Branch", "Summary", "Details", "IP address",
+]
+
+
+# Spreadsheet apps run a cell starting with one of these as a formula. Some
+# values here are typed by anyone (e.g. the username in a failed sign-in),
+# so they're prefixed with an apostrophe to always open as plain text.
+FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _safe_cell(value):
+    text = "" if value is None else str(value)
+    if text[:1] in FORMULA_PREFIXES:
+        return "'" + text
+    return text
+
+
+def _export_row(entry):
+    return [_safe_cell(v) for v in (
+        entry.id,
+        timezone.localtime(entry.created_at).isoformat(timespec="seconds"),
+        entry.get_action_display(),
+        entry.action,
+        entry.actor_name,
+        entry.actor_username,
+        entry.actor_role,
+        entry.actor_type,
+        entry.target_label,
+        entry.target_type,
+        entry.target_id,
+        entry.branch,
+        entry.summary,
+        json.dumps(entry.details, ensure_ascii=False, sort_keys=True) if entry.details else "",
+        entry.ip_address,
+    )]
+
+
+class _Echo:
+    def write(self, value):
+        return value
+
+
+# GET /api/audit-log/export?user=&action=&branch=&dateFrom=&dateTo=
+#
+# The same filters as GET /api/audit-log, as a CSV download of every
+# matching entry (not just one page), newest first. Starts with a UTF-8
+# BOM so Excel shows names with accents correctly.
+#
+# The export is itself audit-logged (who, which filters, how many rows),
+# so there's a record of every copy of the log that left the system. The
+# new entry isn't part of the file it describes.
+#
+# User story (SCRUM-126): "As a general manager, I want to export a
+# filtered audit log, so that I can share evidence in a dispute or review."
+@api_view(["GET"])
+def audit_log_export(request):
+    account, denied = authorize(request, VIEW_PERMISSION)
+    if denied:
+        return denied
+
+    queryset, error = filtered_entries(request.query_params)
+    if error:
+        return error
+
+    filters = {k: request.query_params[k] for k in FILTER_PARAMS if request.query_params.get(k)}
+    count = queryset.count()
+    described = ", ".join(f"{k}={v}" for k, v in filters.items()) or "no filters"
+    export_entry = record(
+        request, AuditLog.Action.AUDIT_LOG_EXPORTED, actor=account, branch=filters.get("branch", ""),
+        summary=f"Exported {count} audit log {'entry' if count == 1 else 'entries'} ({described})",
+        details={"filters": filters, "rows": count},
+    )
+    entries = queryset.filter(id__lt=export_entry.id)
+
+    writer = csv.writer(_Echo())
+
+    def rows():
+        yield "\ufeff" + writer.writerow(EXPORT_COLUMNS)
+        for entry in entries.iterator(chunk_size=500):
+            yield writer.writerow(_export_row(entry))
+
+    stamp = timezone.localtime(export_entry.created_at).strftime("%Y%m%d-%H%M%S")
+    response = StreamingHttpResponse(rows(), content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = f'attachment; filename="audit-log-{stamp}.csv"'
+    response["X-Export-Rows"] = str(count)
+    return response

@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useState } from "react";
-import { fetchAuditLog, fetchAuditLogMeta } from "../../api/audit.js";
+import { downloadAuditLogCsv, fetchAuditLog, fetchAuditLogMeta } from "../../api/audit.js";
+import { BUTTON_COLORS } from "../../styles/buttonColors.js";
 
 const PAGE_SIZE = 50;
 const EMPTY_FILTERS = { user: "", action: "", branch: "", dateFrom: "", dateTo: "" };
@@ -110,6 +111,10 @@ export default function AuditLog() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [expanded, setExpanded] = useState(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportMessage, setExportMessage] = useState(null); // { ok: bool, text }
+  // Bumped after an export so the list shows the new "Audit log exported" entry.
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     fetchAuditLogMeta()
@@ -129,7 +134,7 @@ export default function AuditLog() {
       .then(setData)
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
-  }, [filters, offset]);
+  }, [filters, offset, reloadKey]);
 
   function setFilter(key, value) {
     setFilters((f) => (f[key] === value ? f : { ...f, [key]: value }));
@@ -144,6 +149,23 @@ export default function AuditLog() {
     setExpanded(null);
   }
 
+  async function handleExport() {
+    setExporting(true);
+    setExportMessage(null);
+    try {
+      const rows = await downloadAuditLogCsv(filters);
+      setExportMessage({
+        ok: true,
+        text: `Downloaded ${rows} ${rows === 1 ? "entry" : "entries"} as CSV. The export itself was added to the log.`,
+      });
+      setReloadKey((k) => k + 1);
+    } catch (err) {
+      setExportMessage({ ok: false, text: `Couldn't export: ${err.message}` });
+    } finally {
+      setExporting(false);
+    }
+  }
+
   const hasFilters = Object.values(filters).some(Boolean) || userInput;
   const from = data.total === 0 ? 0 : offset + 1;
   const to = Math.min(offset + PAGE_SIZE, data.total);
@@ -151,12 +173,26 @@ export default function AuditLog() {
   return (
     <div style={styles.page}>
       <div style={styles.header}>
-        <h1 style={styles.title}>Audit Log</h1>
-        <p style={styles.subtitle}>
-          A permanent record of sensitive actions: who did what, when, and at which branch. Entries can't be edited
-          or deleted.
-        </p>
+        <div>
+          <h1 style={styles.title}>Audit Log</h1>
+          <p style={styles.subtitle}>
+            A permanent record of sensitive actions: who did what, when, and at which branch. Entries can't be edited
+            or deleted.
+          </p>
+        </div>
+        <button
+          onClick={handleExport}
+          disabled={exporting || loading || data.total === 0}
+          style={styles.exportButton}
+          title="Download every entry matching the current filters"
+        >
+          {exporting ? "Exporting..." : "Export CSV"}
+        </button>
       </div>
+
+      {exportMessage && (
+        <div style={exportMessage.ok ? styles.successBox : styles.errorBox}>{exportMessage.text}</div>
+      )}
 
       <div style={styles.filters}>
         <label style={styles.field}>
@@ -347,7 +383,33 @@ const styles = {
     padding: "32px 20px",
     color: "#1a1a1a",
   },
-  header: { marginBottom: 16 },
+  header: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    flexWrap: "wrap",
+    gap: 16,
+    marginBottom: 16,
+  },
+  exportButton: {
+    flexShrink: 0,
+    padding: "10px 16px",
+    fontSize: 14,
+    border: "none",
+    borderRadius: 8,
+    ...BUTTON_COLORS.blue,
+    fontWeight: 600,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+  },
+  successBox: {
+    background: "#e3f5e8",
+    color: "#0f6e2b",
+    padding: "10px 14px",
+    borderRadius: 8,
+    fontSize: 14,
+    marginBottom: 14,
+  },
   title: { fontSize: 22, fontWeight: 700, margin: 0 },
   subtitle: { fontSize: 14, color: "#666", marginTop: 4 },
   filters: {
