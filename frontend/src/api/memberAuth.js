@@ -97,3 +97,28 @@ export async function fetchMyBilling() {
   if (!res.ok) throw await parseError(res);
   return res.json();
 }
+
+// POST /api/members/me/{freeze,resume,cancel} - pause, un-pause, or end
+// the logged-in member's own membership. No body on any of the three;
+// each resolves to the updated member (same shape as fetchCurrentMember).
+//
+// User story: "As a member, I want to freeze or cancel my membership
+// through the app, so that I have control over my subscription without a
+// front-desk visit."
+async function postMembershipAction(action) {
+  const res = await fetch(`/api/members/me/${action}`, { method: "POST" });
+  if (!res.ok) throw await parseError(res);
+  return res.json();
+}
+
+export function freezeMyMembership() {
+  return postMembershipAction("freeze");
+}
+
+export function resumeMyMembership() {
+  return postMembershipAction("resume");
+}
+
+export function cancelMyMembership() {
+  return postMembershipAction("cancel");
+}

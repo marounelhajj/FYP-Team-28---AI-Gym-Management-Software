@@ -28,6 +28,21 @@ def _freeze_lapsed_members():
     ).update(status=Member.Status.FROZEN)
 
 
+# Member-session counterpart to authorize() above - looks the member up
+# from request.session["member_id"] instead of a staff permission. Same
+# pattern as billing.views._get_member_from_session (separate module,
+# same shape - members and billing each own their slice of session lookup
+# rather than importing across apps for one helper).
+def _get_member_from_session(request):
+    member_id = request.session.get("member_id")
+    if not member_id:
+        return None, Response({"error": "Not authenticated."}, status=401)
+    member = Member.objects.filter(id=member_id).first()
+    if member is None:
+        return None, Response({"error": "Not authenticated."}, status=401)
+    return member, None
+
+
 # GET  /api/members/  - search/filter/paginate the member directory
 # POST /api/members/  - register a new walk-in member and their first payment
 #
@@ -189,6 +204,89 @@ def member_cancel(request, member_id):
         member = Member.objects.get(id=member_id)
     except Member.DoesNotExist:
         return Response({"error": f"Member {member_id} not found"}, status=404)
+
+    member.status = Member.Status.CANCELLED
+    member.save(update_fields=["status"])
+    return Response(MemberSerializer(member).data)
+
+
+# POST /api/members/me/freeze
+# POST /api/members/me/resume
+# POST /api/members/me/cancel
+#
+# User story: "As a member, I want to freeze or cancel my membership
+# through the app, so that I have control over my subscription without a
+# front-desk visit." No body needed on any of the three.
+#
+# Freeze/resume is new - there was no manual freeze anywhere before this
+# (Frozen was only ever set automatically by refresh_expiry_status/the
+# lapsed-members sweep above). Keeping it a simple status toggle: freezing
+# doesn't touch subscription_expires_at, so the days spent frozen still
+# count against it - no pause-the-billing-clock tracking for this pass.
+# Cancel is the self-service twin of member_cancel below, same effect,
+# just scoped by session instead of a staff permission.
+
+
+# Only an Active member (one with a currently valid subscription) can
+# freeze - refresh_expiry_status() runs first so a member whose
+# subscription already quietly lapsed is correctly left Frozen for the
+# real reason (nothing to freeze, they need to renew) rather than this
+# endpoint doing it again.
+@api_view(["POST"])
+def my_freeze(request):
+    member, denied = _get_member_from_session(request)
+    if denied:
+        return denied
+
+    member.refresh_expiry_status()
+    if member.status == Member.Status.FROZEN:
+        return Response({"error": "Your membership is already frozen."}, status=400)
+    if member.status == Member.Status.CANCELLED:
+        return Response({"error": "A cancelled membership can't be frozen."}, status=400)
+
+    member.status = Member.Status.FROZEN
+    member.save(update_fields=["status"])
+    return Response(MemberSerializer(member).data)
+
+
+# Undoes a self-service freeze for free - but only when
+# subscription_expires_at is still in the future, i.e. the freeze really
+# was voluntary (my_freeze above only ever freezes an Active - so a
+# currently-valid - subscription). If the subscription has since lapsed
+# while frozen, this refuses: same rule as everywhere else in this app,
+# "only Payment.record() (a renewal) sets a member back to Active" - this
+# can't be the one place that quietly lets that slide.
+@api_view(["POST"])
+def my_resume(request):
+    member, denied = _get_member_from_session(request)
+    if denied:
+        return denied
+
+    if member.status == Member.Status.ACTIVE:
+        return Response({"error": "Your membership is already active."}, status=400)
+    if member.status == Member.Status.CANCELLED:
+        return Response(
+            {"error": "A cancelled membership can't be resumed - renew at the front desk to rejoin."}, status=400,
+        )
+    if not member.has_valid_subscription():
+        return Response(
+            {"error": "Your subscription has expired - renew at the front desk to reactivate."}, status=400,
+        )
+
+    member.status = Member.Status.ACTIVE
+    member.save(update_fields=["status"])
+    return Response(MemberSerializer(member).data)
+
+
+# Self-service twin of member_cancel below - same effect (status ->
+# Cancelled, subscription_expires_at left as-is), scoped by session
+# instead of a staff permission. Permissive about the member's current
+# status, same as member_cancel.
+@api_view(["POST"])
+def my_cancel(request):
+    member, denied = _get_member_from_session(request)
+    if denied:
+        return denied
 
     member.status = Member.Status.CANCELLED
     member.save(update_fields=["status"])

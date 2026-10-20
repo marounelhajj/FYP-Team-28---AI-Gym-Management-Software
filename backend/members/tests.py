@@ -472,3 +472,136 @@ class MemberSelfServiceProfileTests(TestCase):
         account.save()
         staff_login(self.client, "desk", PASSWORD)
         self.assertEqual(self.patch_me(name="Nope").status_code, 401)
+
+
+# User story: "As a member, I want to freeze or cancel my membership
+# through the app, so that I have control over my subscription without a
+# front-desk visit."
+#
+# Freeze/resume didn't exist anywhere before this - Frozen was only ever
+# set automatically by the lapsed-subscription sweep. Kept as a simple
+# status toggle (doesn't touch subscription_expires_at); resume is free
+# only while that date is still in the future, so a member can't dodge a
+# real renewal payment by freezing and immediately resuming once it's
+# actually lapsed.
+class SelfServiceMembershipStatusTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        MembershipPlan.objects.create(name="Basic", price="25.00")
+
+    def setUp(self):
+        self.today = timezone.localdate()
+        self.lea = Member(
+            name="Lea Haddad", email="lea@example.com", phone="70100000", branch="Hamra",
+            join_date=self.today, username="lea", membership_plan="Basic",
+            subscription_expires_at=self.today + timedelta(days=10),
+        )
+        self.lea.set_password(PASSWORD)
+        self.lea.save()
+        self.client.post("/api/members/login", {"username": "lea", "password": PASSWORD},
+                          content_type="application/json")
+
+    def freeze(self):
+        return self.client.post("/api/members/me/freeze")
+
+    def resume(self):
+        return self.client.post("/api/members/me/resume")
+
+    def cancel(self):
+        return self.client.post("/api/members/me/cancel")
+
+    def test_freeze_an_active_membership(self):
+        res = self.freeze()
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(res.json()["status"], "Frozen")
+        self.lea.refresh_from_db()
+        self.assertEqual(self.lea.status, Member.Status.FROZEN)
+        # Simple toggle - the renewal date isn't touched by freezing.
+        self.assertEqual(self.lea.subscription_expires_at, self.today + timedelta(days=10))
+
+    def test_cannot_freeze_an_already_frozen_membership(self):
+        self.freeze()
+        res = self.freeze()
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("already frozen", res.json()["error"])
+
+    def test_cannot_freeze_a_cancelled_membership(self):
+        self.cancel()
+        res = self.freeze()
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("cancelled", res.json()["error"])
+
+    def test_freezing_a_lapsed_active_member_catches_the_real_reason(self):
+        # Still reads Active in the DB (nothing's run refresh_expiry_status
+        # yet), but the subscription itself has already lapsed.
+        self.lea.subscription_expires_at = self.today - timedelta(days=1)
+        self.lea.save(update_fields=["subscription_expires_at"])
+        res = self.freeze()
+        self.assertEqual(res.status_code, 400)
+        self.lea.refresh_from_db()
+        self.assertEqual(self.lea.status, Member.Status.FROZEN)  # caught by refresh_expiry_status, not re-frozen
+
+    def test_resume_a_self_frozen_membership(self):
+        self.freeze()
+        res = self.resume()
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(res.json()["status"], "Active")
+        self.lea.refresh_from_db()
+        self.assertEqual(self.lea.status, Member.Status.ACTIVE)
+
+    def test_cannot_resume_an_active_membership(self):
+        res = self.resume()
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("already active", res.json()["error"])
+
+    def test_cannot_resume_a_cancelled_membership(self):
+        self.cancel()
+        res = self.resume()
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("cancelled", res.json()["error"])
+
+    def test_cannot_resume_once_the_subscription_has_actually_lapsed(self):
+        self.freeze()
+        self.lea.subscription_expires_at = self.today - timedelta(days=1)
+        self.lea.save(update_fields=["subscription_expires_at"])
+        res = self.resume()
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("expired", res.json()["error"])
+        self.lea.refresh_from_db()
+        self.assertEqual(self.lea.status, Member.Status.FROZEN)  # still frozen - a real renewal is needed, not a free toggle
+
+    def test_cancel_an_active_membership(self):
+        res = self.cancel()
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(res.json()["status"], "Cancelled")
+
+    def test_cancel_a_frozen_membership(self):
+        self.freeze()
+        res = self.cancel()
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json()["status"], "Cancelled")
+
+    def test_requires_a_member_session(self):
+        self.client.post("/api/members/logout")
+        self.assertEqual(self.freeze().status_code, 401)
+        self.assertEqual(self.resume().status_code, 401)
+        self.assertEqual(self.cancel().status_code, 401)
+
+    def test_staff_session_is_not_a_member_session(self):
+        self.client.post("/api/members/logout")
+        role = Role.objects.create(name="front desk", permissions=["manage_members"])
+        account = StaffAccount(full_name="Dana Desk", email="desk@gym.com", username="desk",
+                               job_title=StaffAccount.JobTitle.RECEPTIONIST, role=role)
+        account.set_password(PASSWORD)
+        account.save()
+        staff_login(self.client, "desk", PASSWORD)
+        self.assertEqual(self.freeze().status_code, 401)
+
+    def test_member_only_ever_affects_their_own_membership(self):
+        other = Member(name="Sami Khoury", email="sami@example.com", phone="2", branch="Jnah",
+                       join_date=self.today, username="sami", subscription_expires_at=self.today + timedelta(days=5))
+        other.set_password(PASSWORD)
+        other.save()
+        self.freeze()
+        other.refresh_from_db()
+        self.assertEqual(other.status, Member.Status.ACTIVE)
