@@ -193,6 +193,22 @@ specific incident."*
 - Click a row to see its details: old and new values, what was affected,
   and the IP address.
 
+### Exporting the audit log (SCRUM-126)
+
+Story: *"As a general manager, I want to export a filtered audit log, so
+that I can share evidence in a dispute or review."*
+
+- **Export CSV** button on the Audit Log screen downloads every entry that
+  matches the current filters (not just the page on screen).
+- `GET /api/audit-log/export` - same filters as `/api/audit-log`, same
+  `view_audit_log` permission. Returns `audit-log-<timestamp>.csv`, newest
+  first, with a UTF-8 BOM so Excel shows accented names correctly.
+- Cells starting with `=`, `+`, `-` or `@` are prefixed with `'` so they
+  always open as text, not formulas. Some values are typed by anyone (e.g.
+  the username in a failed sign-in).
+- Every export is itself logged (`audit_log.exported`: who, which filters,
+  how many rows), so there's a record of each copy that left the system.
+
 ## Folder structure
 
 ```
@@ -238,7 +254,7 @@ account takes effect immediately, even for sessions already open.
 | `/api/members`, `/api/members/<id>` (read/register) | `manage_members` |
 | `POST/PATCH /api/plans` | `manage_membership_plans` |
 | `POST/PATCH /api/plans/promotions` | `manage_branch_promotions` or `manage_membership_plans` |
-| `GET /api/audit-log`, `/api/audit-log/meta` | `view_audit_log` |
+| `GET /api/audit-log`, `/api/audit-log/meta`, `/api/audit-log/export` | `view_audit_log` |
 
 Not logged in -> `401`; logged in without the permission -> `403`. Public:
 `/api/plans` reads, `/api/members/meta`, member sign-up/login.

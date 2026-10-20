@@ -330,3 +330,94 @@ class AuditLogSearchTests(TestCase):
         staff_login(self.client, "desk", PASSWORD)
         self.assertEqual(self.client.get("/api/audit-log").status_code, 403)
         self.assertEqual(self.client.get("/api/audit-log/meta").status_code, 403)
+
+
+# User story (SCRUM-126): "As a general manager, I want to export a filtered
+# audit log, so that I can share evidence in a dispute or review."
+class AuditLogExportTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        _staff("gm", "Rami GM", ["view_audit_log"], role_name="General Manager")
+        _staff("desk", "Dana Desk", ["manage_members"], role_name="Receptionist")
+        now = timezone.now()
+
+        def entry(days_ago, action, username, branch="", summary="x", **extra):
+            return AuditLog.objects.create(
+                created_at=now - timedelta(days=days_ago), action=action, actor_type=AuditLog.ActorType.STAFF,
+                actor_username=username, actor_name="Dana Sarkis", actor_role="Receptionist",
+                branch=branch, summary=summary, **extra,
+            )
+
+        cls.cancel = entry(
+            3, AuditLog.Action.MEMBER_CANCELLED, "dsarkis", "Hamra", "Cancelled Léa's membership",
+            target_type="member", target_id="7", target_label="Léa Haddad", details={"previousStatus": "Active"},
+        )
+        cls.reissue = entry(1, AuditLog.Action.ACCESS_CARD_REISSUED, "dsarkis", "Jnah")
+        cls.plan = entry(1, AuditLog.Action.PLAN_UPDATED, "rhaddad")
+
+    def setUp(self):
+        staff_login(self.client, "gm", PASSWORD)
+
+    def export(self, query=""):
+        res = self.client.get(f"/api/audit-log/export{query}")
+        self.assertEqual(res.status_code, 200, getattr(res, "content", b""))
+        body = b"".join(res.streaming_content).decode("utf-8")
+        return res, body
+
+    def rows(self, body):
+        import csv
+        import io
+
+        self.assertTrue(body.startswith("﻿"))
+        return list(csv.reader(io.StringIO(body[1:])))
+
+    def test_csv_download_matches_the_filters(self):
+        res, body = self.export("?user=dsarkis")
+        self.assertEqual(res["Content-Type"], "text/csv; charset=utf-8")
+        self.assertRegex(res["Content-Disposition"], r'^attachment; filename="audit-log-\d{8}-\d{6}\.csv"$')
+
+        header, *rows = self.rows(body)
+        self.assertEqual(header[:4], ["Entry ID", "Date & time", "Action", "Action key"])
+        self.assertEqual([r[0] for r in rows], [str(self.reissue.id), str(self.cancel.id)])
+        self.assertEqual(res["X-Export-Rows"], "2")
+
+        cancel = dict(zip(header, rows[1]))
+        self.assertEqual(cancel["Action"], "Membership cancelled")
+        self.assertEqual(cancel["User"], "Dana Sarkis")
+        self.assertEqual(cancel["Affected"], "Léa Haddad")
+        self.assertEqual(cancel["Branch"], "Hamra")
+        self.assertEqual(cancel["Details"], '{"previousStatus": "Active"}')
+
+    def test_export_includes_every_match_not_just_one_page(self):
+        for i in range(60):
+            AuditLog.objects.create(action=AuditLog.Action.MEMBER_FROZEN, actor_type="Member", summary=f"n{i}")
+        _, body = self.export("?action=member.frozen")
+        self.assertEqual(len(self.rows(body)) - 1, 60)
+
+    def test_export_is_itself_logged_but_not_included(self):
+        _, body = self.export("?branch=Jnah&action=access_card")
+        entry = AuditLog.objects.filter(action=AuditLog.Action.AUDIT_LOG_EXPORTED).get()
+        self.assertEqual(entry.actor_username, "gm")
+        self.assertEqual(entry.details, {"filters": {"action": "access_card", "branch": "Jnah"}, "rows": 1})
+        self.assertEqual(entry.branch, "Jnah")
+
+        _, body = self.export("?action=audit_log")
+        self.assertEqual([r[0] for r in self.rows(body)[1:]], [str(entry.id)])
+
+    def test_formula_like_values_open_as_text(self):
+        AuditLog.objects.create(
+            action=AuditLog.Action.STAFF_LOGIN_FAILED, actor_type="Anonymous",
+            actor_username='=HYPERLINK("http://x")', summary="-1+2",
+        )
+        _, body = self.export("?action=staff.login_failed")
+        header, row = self.rows(body)
+        row = dict(zip(header, row))
+        self.assertEqual(row["Username"], "'=HYPERLINK(\"http://x\")")
+        self.assertEqual(row["Summary"], "'-1+2")
+
+    def test_invalid_filters_and_permissions(self):
+        self.assertEqual(self.client.get("/api/audit-log/export?branch=Paris").status_code, 400)
+        self.client.post("/api/auth/logout")
+        staff_login(self.client, "desk", PASSWORD)
+        self.assertEqual(self.client.get("/api/audit-log/export").status_code, 403)
+        self.assertFalse(AuditLog.objects.filter(action=AuditLog.Action.AUDIT_LOG_EXPORTED).exists())
