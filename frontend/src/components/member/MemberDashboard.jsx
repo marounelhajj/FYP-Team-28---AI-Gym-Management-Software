@@ -1,5 +1,12 @@
 import { useEffect, useState } from "react";
-import { fetchMyBilling, fetchMyPaymentMethod, fetchMyQrCode } from "../../api/memberAuth.js";
+import {
+  cancelMyMembership,
+  fetchMyBilling,
+  fetchMyPaymentMethod,
+  fetchMyQrCode,
+  freezeMyMembership,
+  resumeMyMembership,
+} from "../../api/memberAuth.js";
 import { BUTTON_COLORS } from "../../styles/buttonColors.js";
 import MemberPaymentMethodForm from "./MemberPaymentMethodForm.jsx";
 import MemberProfileForm from "./MemberProfileForm.jsx";
@@ -21,6 +28,9 @@ const STATUS_STYLES = {
 // User story (billing history): "As a member, I want to view my
 // membership details and billing history, so that I can track payments
 // and my renewal date."
+// User story (freeze/cancel): "As a member, I want to freeze or cancel my
+// membership through the app, so that I have control over my
+// subscription without a front-desk visit."
 export default function MemberDashboard({ member: initialMember }) {
   const [member, setMember] = useState(initialMember);
   const statusStyle = STATUS_STYLES[member.status] || { background: "#eee", color: "#333" };
@@ -31,6 +41,9 @@ export default function MemberDashboard({ member: initialMember }) {
   const [showProfileForm, setShowProfileForm] = useState(false);
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [savedNotice, setSavedNotice] = useState(null);
+  const [membershipError, setMembershipError] = useState(null);
+  const [membershipBusy, setMembershipBusy] = useState(false);
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
 
   // Check-in QR code (SCRUM-33): shown at the front desk instead of
   // reading out the membership ID.
@@ -70,6 +83,49 @@ export default function MemberDashboard({ member: initialMember }) {
     setPaymentMethod(saved);
     setShowPaymentForm(false);
     setSavedNotice("Your payment method was updated.");
+  }
+
+  async function handleFreeze() {
+    setMembershipError(null);
+    setMembershipBusy(true);
+    try {
+      const updated = await freezeMyMembership();
+      setMember(updated);
+      setSavedNotice("Your membership is frozen. Resume it any time.");
+    } catch (err) {
+      setMembershipError(err.message);
+    } finally {
+      setMembershipBusy(false);
+    }
+  }
+
+  async function handleResume() {
+    setMembershipError(null);
+    setMembershipBusy(true);
+    try {
+      const updated = await resumeMyMembership();
+      setMember(updated);
+      setSavedNotice("Your membership is active again.");
+    } catch (err) {
+      setMembershipError(err.message);
+    } finally {
+      setMembershipBusy(false);
+    }
+  }
+
+  async function handleCancel() {
+    setMembershipError(null);
+    setMembershipBusy(true);
+    try {
+      const updated = await cancelMyMembership();
+      setMember(updated);
+      setConfirmingCancel(false);
+      setSavedNotice("Your membership has been cancelled.");
+    } catch (err) {
+      setMembershipError(err.message);
+    } finally {
+      setMembershipBusy(false);
+    }
   }
 
   return (
@@ -134,6 +190,56 @@ export default function MemberDashboard({ member: initialMember }) {
       <h2 style={styles.sectionTitle}>Billing history</h2>
       {billingError && <div style={styles.errorBox}>Couldn't load your billing history: {billingError}</div>}
       {billing && <BillingHistory payments={billing.payments} total={billing.paymentCount} />}
+
+      <h2 style={styles.sectionTitle}>Membership controls</h2>
+      {membershipError && <div style={styles.errorBox}>{membershipError}</div>}
+
+      {member.status === "Cancelled" ? (
+        <p style={styles.membershipNote}>
+          Your membership is cancelled. Visit the front desk if you'd like to rejoin.
+        </p>
+      ) : (
+        <div style={styles.membershipCard}>
+          <div style={styles.membershipActions}>
+            {member.status === "Frozen" ? (
+              <button onClick={handleResume} disabled={membershipBusy} style={styles.smallButton}>
+                {membershipBusy ? "Resuming..." : "Resume membership"}
+              </button>
+            ) : (
+              <button onClick={handleFreeze} disabled={membershipBusy} style={styles.smallButton}>
+                {membershipBusy ? "Freezing..." : "Freeze membership"}
+              </button>
+            )}
+            <button
+              onClick={() => setConfirmingCancel(true)}
+              disabled={membershipBusy}
+              style={styles.dangerButton}
+            >
+              Cancel membership
+            </button>
+          </div>
+
+          {confirmingCancel && (
+            <div style={styles.confirmBox}>
+              <p style={styles.confirmText}>
+                Cancel your membership? You'll need to visit the front desk to rejoin later.
+              </p>
+              <div style={styles.confirmActions}>
+                <button
+                  onClick={() => setConfirmingCancel(false)}
+                  disabled={membershipBusy}
+                  style={styles.smallButton}
+                >
+                  Never mind
+                </button>
+                <button onClick={handleCancel} disabled={membershipBusy} style={styles.dangerButton}>
+                  {membershipBusy ? "Cancelling..." : "Yes, cancel"}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <p style={styles.note}>
         Class booking and the AI chatbot are coming in a future update.
@@ -353,4 +459,31 @@ const styles = {
     textAlign: "center",
   },
   historyNote: { fontSize: 12, color: "#888", marginTop: 6 },
+  membershipNote: {
+    fontSize: 13,
+    color: "#666",
+    padding: 16,
+    border: "1px dashed #d0d0d5",
+    borderRadius: 10,
+    textAlign: "center",
+  },
+  membershipCard: {
+    padding: 16,
+    border: "1px solid #e4e4e8",
+    borderRadius: 10,
+    background: "#fff",
+  },
+  membershipActions: { display: "flex", gap: 10, flexWrap: "wrap" },
+  dangerButton: {
+    padding: "6px 12px",
+    fontSize: 13,
+    border: "none",
+    borderRadius: 6,
+    ...BUTTON_COLORS.red,
+    fontWeight: 600,
+    cursor: "pointer",
+  },
+  confirmBox: { marginTop: 14 },
+  confirmText: { fontSize: 13, color: "#444", margin: "0 0 10px" },
+  confirmActions: { display: "flex", gap: 10 },
 };
