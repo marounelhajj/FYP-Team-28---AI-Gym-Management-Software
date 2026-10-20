@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { fetchMyPaymentMethod, fetchMyQrCode } from "../../api/memberAuth.js";
+import { fetchMyBilling, fetchMyPaymentMethod, fetchMyQrCode } from "../../api/memberAuth.js";
 import { BUTTON_COLORS } from "../../styles/buttonColors.js";
 import MemberPaymentMethodForm from "./MemberPaymentMethodForm.jsx";
 import MemberProfileForm from "./MemberProfileForm.jsx";
@@ -18,11 +18,16 @@ const STATUS_STYLES = {
 // update my saved payment method and personal profile information myself
 // in the app, so that I don't need to visit the front desk for routine
 // changes."
+// User story (billing history): "As a member, I want to view my
+// membership details and billing history, so that I can track payments
+// and my renewal date."
 export default function MemberDashboard({ member: initialMember }) {
   const [member, setMember] = useState(initialMember);
   const statusStyle = STATUS_STYLES[member.status] || { background: "#eee", color: "#333" };
   const [qr, setQr] = useState(null);
   const [paymentMethod, setPaymentMethod] = useState(null);
+  const [billing, setBilling] = useState(null);
+  const [billingError, setBillingError] = useState(null);
   const [showProfileForm, setShowProfileForm] = useState(false);
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [savedNotice, setSavedNotice] = useState(null);
@@ -39,6 +44,12 @@ export default function MemberDashboard({ member: initialMember }) {
     fetchMyPaymentMethod()
       .then(setPaymentMethod)
       .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    fetchMyBilling()
+      .then(setBilling)
+      .catch((err) => setBillingError(err.message));
   }, []);
 
   // Auto-dismiss the "saved" banner after a few seconds, same pattern as
@@ -89,6 +100,7 @@ export default function MemberDashboard({ member: initialMember }) {
             </span>
           }
         />
+        <Row label="Renewal date" value={member.subscriptionExpiresAt || "—"} />
         <Row label="Member since" value={member.joinDate} />
         <Row
           label="Waiver"
@@ -119,6 +131,10 @@ export default function MemberDashboard({ member: initialMember }) {
         </div>
       </div>
 
+      <h2 style={styles.sectionTitle}>Billing history</h2>
+      {billingError && <div style={styles.errorBox}>Couldn't load your billing history: {billingError}</div>}
+      {billing && <BillingHistory payments={billing.payments} total={billing.paymentCount} />}
+
       <p style={styles.note}>
         Class booking and the AI chatbot are coming in a future update.
       </p>
@@ -145,6 +161,52 @@ function Row({ label, value }) {
       <span style={styles.rowLabel}>{label}</span>
       <span style={styles.rowValue}>{value}</span>
     </div>
+  );
+}
+
+// Read-only table of the member's own past payments - same columns as the
+// receptionist-facing PaymentHistory in ../SubscriptionDetails.jsx (Date,
+// Type, Amount, Paid with, Valid until), minus "Taken by": useful for
+// staff reviewing a payment, not for a member checking their own history.
+function BillingHistory({ payments, total }) {
+  if (payments.length === 0) {
+    return <div style={styles.emptyHistory}>No payments recorded yet.</div>;
+  }
+  return (
+    <>
+      <div style={styles.historyWrap}>
+        <table style={styles.table}>
+          <thead>
+            <tr>
+              <th style={styles.th}>Date</th>
+              <th style={styles.th}>Type</th>
+              <th style={styles.th}>Amount</th>
+              <th style={styles.th}>Paid with</th>
+              <th style={styles.th}>Valid until</th>
+            </tr>
+          </thead>
+          <tbody>
+            {payments.map((p) => (
+              <tr key={p.id}>
+                <td style={styles.tdNoWrap}>{p.paidAt.slice(0, 10)}</td>
+                <td style={styles.td}>
+                  {p.note || "Payment"}
+                  <div style={styles.cellSub}>{p.duration}</div>
+                </td>
+                <td style={{ ...styles.tdNoWrap, fontWeight: 600 }}>${p.amount}</td>
+                <td style={styles.td}>{p.methodDetail || p.method}</td>
+                <td style={styles.tdNoWrap}>{p.expiresAt}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {total > payments.length && (
+        <div style={styles.historyNote}>
+          Showing the {payments.length} most recent of {total} payments.
+        </div>
+      )}
+    </>
   );
 }
 
@@ -243,4 +305,52 @@ const styles = {
   qrText: { fontSize: 13, color: "#666", marginTop: 4 },
   qrId: { fontSize: 13, fontWeight: 600, marginTop: 10 },
   note: { fontSize: 13, color: "#888", marginTop: 20, textAlign: "center" },
+  sectionTitle: { fontSize: 16, fontWeight: 700, margin: "24px 0 10px" },
+  errorBox: {
+    background: "#fdeceb",
+    color: "#b3261e",
+    padding: "10px 14px",
+    borderRadius: 8,
+    fontSize: 13,
+    marginBottom: 10,
+  },
+  historyWrap: {
+    border: "1px solid #e4e4e8",
+    borderRadius: 10,
+    overflow: "auto",
+  },
+  table: { width: "100%", borderCollapse: "collapse", fontSize: 13 },
+  th: {
+    textAlign: "left",
+    padding: "8px 10px",
+    background: "#fafafa",
+    borderBottom: "1px solid #e4e4e8",
+    fontWeight: 600,
+    fontSize: 11,
+    textTransform: "uppercase",
+    letterSpacing: 0.3,
+    color: "#555",
+    whiteSpace: "nowrap",
+  },
+  td: {
+    padding: "8px 10px",
+    borderBottom: "1px solid #f0f0f2",
+    verticalAlign: "top",
+  },
+  tdNoWrap: {
+    padding: "8px 10px",
+    borderBottom: "1px solid #f0f0f2",
+    verticalAlign: "top",
+    whiteSpace: "nowrap",
+  },
+  cellSub: { fontSize: 11, color: "#888" },
+  emptyHistory: {
+    padding: "14px",
+    border: "1px dashed #d0d0d5",
+    borderRadius: 10,
+    fontSize: 13,
+    color: "#888",
+    textAlign: "center",
+  },
+  historyNote: { fontSize: 12, color: "#888", marginTop: 6 },
 };

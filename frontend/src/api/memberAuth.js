@@ -87,3 +87,13 @@ export async function updateMyPaymentMethod(data) {
   if (!res.ok) throw await parseError(res);
   return res.json();
 }
+
+// GET /api/members/me/billing - the logged-in member's own recent payments
+// and total count: { payments, paymentCount }. Membership details (plan,
+// status, renewal date) come from fetchCurrentMember()/MemberSerializer
+// instead - this is just payment history.
+export async function fetchMyBilling() {
+  const res = await fetch("/api/members/me/billing");
+  if (!res.ok) throw await parseError(res);
+  return res.json();
+}

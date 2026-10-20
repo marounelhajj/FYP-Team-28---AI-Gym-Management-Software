@@ -177,3 +177,27 @@ def my_payment_method(request):
         member=member, defaults={**serializer.validated_data, "updated_by": None},
     )
     return Response(PaymentMethodSerializer(on_file).data)
+
+
+# GET /api/members/me/billing - the logged-in member's own recent payments.
+#
+# User story: "As a member, I want to view my membership details and
+# billing history, so that I can track payments and my renewal date."
+# Membership details (plan, status, renewal date) are already available
+# from GET /api/members/me (MemberSerializer already includes
+# subscriptionExpiresAt) - this adds the one piece that wasn't exposed to
+# members yet: payment history. Self-service counterpart to member_billing
+# above, scoped by session instead of a staff permission; same
+# RECENT_PAYMENTS limit and PaymentSerializer so the shape matches what
+# the receptionist sees.
+@api_view(["GET"])
+def my_billing(request):
+    member, denied = _get_member_from_session(request)
+    if denied:
+        return denied
+
+    payments = member.payments.select_related("recorded_by")
+    return Response({
+        "payments": PaymentSerializer(payments[:RECENT_PAYMENTS], many=True).data,
+        "paymentCount": payments.count(),
+    })
