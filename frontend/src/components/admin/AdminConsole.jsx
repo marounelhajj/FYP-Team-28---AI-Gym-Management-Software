@@ -1,6 +1,7 @@
 import { useState } from "react";
 import StaffAccounts from "./StaffAccounts.jsx";
 import RoleManager from "./RoleManager.jsx";
+import AuditLog from "../audit/AuditLog.jsx";
 import AccessDenied from "../AccessDenied.jsx";
 
 // Each tab needs its own permission, so a role that only has one of the two
@@ -8,6 +9,7 @@ import AccessDenied from "../AccessDenied.jsx";
 const TABS = [
   { key: "staff", label: "Staff Accounts", permission: "manage_staff_accounts", render: () => <StaffAccounts /> },
   { key: "roles", label: "Roles & Permissions", permission: "manage_roles", render: () => <RoleManager /> },
+  { key: "audit", label: "Audit Log", permission: "view_audit_log", render: () => <AuditLog /> },
 ];
 
 // System Administrator persona shell. Deliberately styled very differently
@@ -19,7 +21,8 @@ const TABS = [
 // a General Manager who manages branch staff, see App.jsx), so the admin
 // banner is left out.
 export default function AdminConsole({ permissions = [], embedded = false }) {
-  const tabs = TABS.filter((t) => permissions.includes(t.permission));
+  // Embedded, the audit log is already its own top-level tab (App.jsx).
+  const tabs = TABS.filter((t) => permissions.includes(t.permission) && !(embedded && t.key === "audit"));
   const [tabKey, setTabKey] = useState(null);
   const activeTab = tabs.find((t) => t.key === tabKey) || tabs[0];
 
@@ -32,7 +35,7 @@ export default function AdminConsole({ permissions = [], embedded = false }) {
           <span style={styles.adminTag}>ADMIN</span>
           <div>
             <h1 style={styles.bannerTitle}>System Administrator Console</h1>
-            <p style={styles.bannerSubtitle}>Manage staff access: accounts, roles, and permissions.</p>
+            <p style={styles.bannerSubtitle}>Manage staff access: accounts, roles, and permissions, and review the audit log.</p>
           </div>
         </div>
       )}
