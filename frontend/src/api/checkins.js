@@ -43,3 +43,34 @@ export async function checkOut(code) {
   if (!res.ok) throw await parseError(res);
   return res.json();
 }
+
+// Flags a check-in attempt as suspicious: { reason, note }. Returns the flag
+// with its attempt (same shape as a fetchFlags() row).
+export async function flagCheckIn(checkInId, { reason, note }) {
+  const res = await fetch(`/api/checkins/${checkInId}/flag`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason, note }),
+  });
+  if (!res.ok) throw await parseError(res);
+  return res.json();
+}
+
+// status: "Open" (default) | "Confirmed" | "Dismissed" | "all".
+// Returns { results, openCount }.
+export async function fetchFlags(status = "Open") {
+  const res = await fetch(`/api/checkins/flags?status=${encodeURIComponent(status)}`);
+  if (!res.ok) throw await parseError(res);
+  return res.json();
+}
+
+// outcome: "Confirmed" (keeps warning at this member's check-ins) or "Dismissed" (false alarm).
+export async function resolveFlag(flagId, { outcome, note }) {
+  const res = await fetch(`/api/checkins/flags/${flagId}/resolve`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ outcome, note }),
+  });
+  if (!res.ok) throw await parseError(res);
+  return res.json();
+}

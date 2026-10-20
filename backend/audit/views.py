@@ -33,6 +33,7 @@ CATEGORY_LABELS = {
     "payment": "Payments",
     "payment_method": "Payment methods",
     "access_card": "Access cards",
+    "checkin": "Check-ins",
     "audit_log": "Audit log",
 }
 

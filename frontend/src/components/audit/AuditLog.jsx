@@ -17,7 +17,9 @@ const TARGET_TYPES = {
 
 // Red for things that went wrong or locked someone out, so they stand out
 // when scanning for an incident.
-const WARNING_ACTIONS = new Set(["staff.login_failed", "staff.2fa_locked", "staff.deactivated", "member.cancelled"]);
+const WARNING_ACTIONS = new Set([
+  "staff.login_failed", "staff.2fa_locked", "staff.deactivated", "member.cancelled", "checkin.flagged",
+]);
 
 function formatWhen(iso) {
   const d = new Date(iso);

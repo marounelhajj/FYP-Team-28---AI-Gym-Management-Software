@@ -57,6 +57,9 @@ class AuditLog(models.Model):
         PAYMENT_RECORDED = "payment.recorded", "Payment recorded"
         PAYMENT_METHOD_UPDATED = "payment_method.updated", "Payment method changed"
         ACCESS_CARD_REISSUED = "access_card.reissued", "Access card reissued"
+        # Front desk
+        CHECKIN_FLAGGED = "checkin.flagged", "Check-in attempt flagged"
+        CHECKIN_FLAG_RESOLVED = "checkin.flag_resolved", "Check-in flag resolved"
         # The log itself (SCRUM-126) - who took a copy of which entries.
         AUDIT_LOG_EXPORTED = "audit_log.exported", "Audit log exported"
 

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { checkIn, checkOut, fetchRecentCheckIns } from "../api/checkins.js";
+import { checkIn, checkOut, fetchFlags, fetchRecentCheckIns } from "../api/checkins.js";
 import { BUTTON_COLORS } from "../styles/buttonColors.js";
 import AccessCardPanel from "./AccessCardPanel.jsx";
+import FlagCheckInForm from "./FlagCheckInForm.jsx";
+import FlaggedCheckIns from "./FlaggedCheckIns.jsx";
 import QrScanner from "./QrScanner.jsx";
 
 const RESULT_DISPLAY_MS = 3000;
@@ -29,8 +31,26 @@ export default function CheckIn() {
   const [scanning, setScanning] = useState(false);
   const [cardMemberId, setCardMemberId] = useState(null); // member whose access card panel is open
   const [cardHint, setCardHint] = useState(null);
+  const [flagTarget, setFlagTarget] = useState(null); // check-in attempt being flagged
+  const [tab, setTab] = useState("recent"); // "recent" | "flags"
+  const [openFlags, setOpenFlags] = useState(0);
+  const [flagsVersion, setFlagsVersion] = useState(0); // bumped to reload the flagged list
   const inputRef = useRef(null);
   const dismissTimer = useRef(null);
+
+  function loadOpenFlags() {
+    fetchFlags("Open")
+      .then((data) => setOpenFlags(data.openCount))
+      .catch(() => {});
+  }
+
+  function handleFlagged(flag) {
+    setFlagTarget(null);
+    setResult((r) => (r?.checkIn?.id === flag.checkIn.id ? { ...r, checkIn: flag.checkIn } : r));
+    loadRecent();
+    loadOpenFlags();
+    setFlagsVersion((v) => v + 1);
+  }
 
   function openAccessCard() {
     const id = membershipId.trim();
@@ -53,13 +73,18 @@ export default function CheckIn() {
 
   useEffect(() => {
     loadRecent();
+    loadOpenFlags();
     return () => clearTimeout(dismissTimer.current);
   }, []);
 
+  // A normal result disappears after 3 seconds. One that needs the desk's
+  // attention (a flagged member, or a suspicious attempt) stays until dismissed.
   function showResult(data) {
     setResult(data);
     clearTimeout(dismissTimer.current);
-    dismissTimer.current = setTimeout(() => setResult(null), RESULT_DISPLAY_MS);
+    if (!data.flagWarning && !data.checkIn?.suspicion) {
+      dismissTimer.current = setTimeout(() => setResult(null), RESULT_DISPLAY_MS);
+    }
   }
 
   async function handleAction(action, code = membershipId) {
@@ -147,6 +172,9 @@ export default function CheckIn() {
 
       {scanning && <QrScanner onScan={handleScan} onClose={() => setScanning(false)} />}
       {cardMemberId && <AccessCardPanel memberId={cardMemberId} onClose={() => setCardMemberId(null)} />}
+      {flagTarget && (
+        <FlagCheckInForm checkIn={flagTarget} onClose={() => setFlagTarget(null)} onFlagged={handleFlagged} />
+      )}
 
       {result && (
         <div style={cardStyle}>
@@ -184,21 +212,97 @@ export default function CheckIn() {
               <div style={styles.resultDetail}>{result.error}</div>
             </>
           )}
+
+          {result.ok && result.action === "checkin" && result.checkIn.suspicion && (
+            <div style={styles.resultSuspicion}>{result.checkIn.suspicion}</div>
+          )}
+          {result.flagWarning && (
+            <div style={styles.flagWarning}>
+              <strong>Check photo ID.</strong> This membership has {result.flagWarning.count} flagged check-in
+              {result.flagWarning.count === 1 ? "" : "s"}
+              {result.flagWarning.confirmed > 0 && ` (${result.flagWarning.confirmed} confirmed)`} - latest:{" "}
+              {result.flagWarning.latestReason.toLowerCase()} on {result.flagWarning.latestFlaggedAt}.
+            </div>
+          )}
+          {(result.flagWarning || result.checkIn?.suspicion) && (
+            <div style={styles.resultActions}>
+              {result.action === "checkin" &&
+                (result.checkIn.flag ? (
+                  <span style={styles.resultFlagged}>Flagged: {result.checkIn.flag.reason}</span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setFlagTarget(result.checkIn)}
+                    style={styles.resultButton}
+                  >
+                    Flag this attempt
+                  </button>
+                ))}
+              <button type="button" onClick={() => setResult(null)} style={styles.resultButtonGhost}>
+                Dismiss
+              </button>
+            </div>
+          )}
         </div>
       )}
 
-      <h2 style={styles.recentTitle}>Recent Check-Ins</h2>
-      {recent.length === 0 ? (
+      <div style={styles.tabs} role="tablist">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "recent"}
+          onClick={() => setTab("recent")}
+          style={tab === "recent" ? styles.tabActive : styles.tab}
+        >
+          Recent Check-Ins
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "flags"}
+          onClick={() => setTab("flags")}
+          style={tab === "flags" ? styles.tabActive : styles.tab}
+        >
+          Flagged Attempts
+          {openFlags > 0 && <span style={styles.countBadge}>{openFlags}</span>}
+        </button>
+      </div>
+
+      {tab === "flags" ? (
+        <FlaggedCheckIns
+          refreshKey={flagsVersion}
+          onResolved={() => {
+            loadOpenFlags();
+            loadRecent();
+          }}
+        />
+      ) : recent.length === 0 ? (
         <p style={styles.emptyText}>No check-ins yet.</p>
       ) : (
         <div style={styles.recentList}>
           {recent.map((c) => (
-            <div key={c.id} style={styles.recentRow}>
-              <span style={styles.recentName}>{c.memberName}</span>
+            <div key={c.id} style={c.suspicion && !c.flag ? { ...styles.recentRow, ...styles.recentRowReview } : styles.recentRow}>
+              <div style={styles.recentMain}>
+                <span style={styles.recentName}>{c.memberName}</span>
+                {c.suspicion && !c.flag && (
+                  <span style={styles.reviewChip} title={c.suspicion}>
+                    Review
+                  </span>
+                )}
+              </div>
               <span style={c.result === "Allowed" ? styles.badgeAllowed : styles.badgeDenied}>
                 {c.result === "Allowed" ? (c.duration ? `Checked out (${c.duration})` : "Checked in") : `Denied (${c.reason})`}
               </span>
               <span style={styles.recentTime}>{c.checkedOutAt || c.checkedInAt}</span>
+              {c.flag ? (
+                <span style={styles.flaggedChip} title={c.flag.note || c.flag.reason}>
+                  Flagged{c.flag.status !== "Open" ? ` · ${c.flag.status}` : ""}
+                </span>
+              ) : (
+                <button type="button" onClick={() => setFlagTarget(c)} style={styles.flagButton}>
+                  Flag
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -287,8 +391,110 @@ const styles = {
   },
   resultHeadline: { fontSize: 20, fontWeight: 800 },
   resultDetail: { fontSize: 14, marginTop: 4, opacity: 0.95 },
-  recentTitle: { fontSize: 15, fontWeight: 700, margin: "0 0 10px" },
+  resultSuspicion: { fontSize: 13, fontWeight: 700, marginTop: 8 },
+  flagWarning: {
+    marginTop: 12,
+    padding: "10px 12px",
+    borderRadius: 8,
+    background: "#fff4e0",
+    color: "#8a5a00",
+    fontSize: 13,
+    lineHeight: 1.45,
+  },
+  resultActions: { display: "flex", alignItems: "center", gap: 8, marginTop: 12 },
+  resultButton: {
+    padding: "7px 12px",
+    fontSize: 13,
+    fontWeight: 700,
+    border: "none",
+    borderRadius: 8,
+    background: "#fff",
+    color: "#b3261e",
+    cursor: "pointer",
+  },
+  resultButtonGhost: {
+    padding: "7px 12px",
+    fontSize: 13,
+    fontWeight: 700,
+    border: "1px solid rgba(255,255,255,0.7)",
+    borderRadius: 8,
+    background: "transparent",
+    color: "#fff",
+    cursor: "pointer",
+  },
+  resultFlagged: { fontSize: 13, fontWeight: 700 },
+  tabs: { display: "flex", gap: 4, borderBottom: "1px solid #e4e4e8", marginBottom: 12 },
+  tab: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    padding: "8px 12px",
+    fontSize: 14,
+    fontWeight: 700,
+    border: "none",
+    borderBottom: "2px solid transparent",
+    background: "transparent",
+    color: "#666",
+    cursor: "pointer",
+  },
+  tabActive: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    padding: "8px 12px",
+    fontSize: 14,
+    fontWeight: 700,
+    border: "none",
+    borderBottom: "2px solid #124096",
+    background: "transparent",
+    color: "#124096",
+    cursor: "pointer",
+  },
+  countBadge: {
+    minWidth: 18,
+    height: 18,
+    padding: "0 5px",
+    borderRadius: 999,
+    fontSize: 11,
+    lineHeight: "18px",
+    textAlign: "center",
+    ...BUTTON_COLORS.red,
+  },
   emptyText: { fontSize: 13, color: "#888" },
+  recentMain: { display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 },
+  recentRowReview: { background: "#fffaf0" },
+  reviewChip: {
+    fontSize: 11,
+    fontWeight: 700,
+    padding: "2px 8px",
+    borderRadius: 999,
+    background: "#fff4e0",
+    color: "#8a5a00",
+    cursor: "help",
+    whiteSpace: "nowrap",
+  },
+  flaggedChip: {
+    width: 64,
+    textAlign: "center",
+    fontSize: 11,
+    fontWeight: 700,
+    padding: "3px 0",
+    borderRadius: 6,
+    background: "#fdeceb",
+    color: "#b3261e",
+    whiteSpace: "nowrap",
+  },
+  flagButton: {
+    width: 64,
+    padding: "3px 0",
+    fontSize: 12,
+    fontWeight: 700,
+    border: "1px solid #d0d0d5",
+    borderRadius: 6,
+    background: "#fff",
+    color: "#444",
+    cursor: "pointer",
+  },
   recentList: {
     border: "1px solid #e4e4e8",
     borderRadius: 10,
@@ -302,7 +508,7 @@ const styles = {
     borderBottom: "1px solid #f0f0f2",
     fontSize: 13,
   },
-  recentName: { fontWeight: 600, flex: 1 },
+  recentName: { fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   recentTime: { color: "#888", whiteSpace: "nowrap" },
   badgeAllowed: {
     fontSize: 11,

@@ -3,10 +3,15 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from administration.permissions import authorize
+from audit.log import record
+from audit.models import AuditLog
 from members.models import Member
 from members.serializers import MemberSerializer
-from .models import CheckIn
-from .serializers import CheckInCreateSerializer, CheckInSerializer
+from .models import CheckIn, CheckInFlag
+from .serializers import (
+    CheckInCreateSerializer, CheckInFlagCreateSerializer, CheckInFlagResolveSerializer, CheckInSerializer,
+    FlaggedAttemptSerializer,
+)
 
 
 def _open_session(member):
@@ -26,6 +31,21 @@ def _lookup_member(membership_id):
 def _is_replaced_card(member, validated_data):
     card_number = validated_data.get("cardNumber")
     return card_number is not None and card_number != member.access_card_number
+
+
+# Shown on every check-in by a member with Open or Confirmed flags, so the
+# desk checks photo ID before letting them in. None when there's nothing to warn about.
+def _flag_warning(member):
+    flags = CheckInFlag.objects.filter(check_in__member=member).exclude(status=CheckInFlag.Status.DISMISSED)
+    latest = flags.first()
+    if latest is None:
+        return None
+    return {
+        "count": flags.count(),
+        "confirmed": flags.filter(status=CheckInFlag.Status.CONFIRMED).count(),
+        "latestReason": latest.reason,
+        "latestFlaggedAt": timezone.localtime(latest.flagged_at).strftime("%Y-%m-%d"),
+    }
 
 
 # GET  /api/checkins          - most recent check-ins (default 20, ?limit= to adjust)
@@ -77,7 +97,11 @@ def checkin_list(request):
             check_in = CheckIn.objects.create(member=member, result=CheckIn.Result.ALLOWED)
 
         return Response(
-            {"member": MemberSerializer(member).data, "checkIn": CheckInSerializer(check_in).data},
+            {
+                "member": MemberSerializer(member).data,
+                "checkIn": CheckInSerializer(check_in).data,
+                "flagWarning": _flag_warning(member),
+            },
             status=201,
         )
 
@@ -87,7 +111,7 @@ def checkin_list(request):
         limit = 20
     limit = max(1, min(limit, 100))
 
-    recent = CheckIn.objects.select_related("member").all()[:limit]
+    recent = CheckIn.objects.select_related("member", "flag__flagged_by", "flag__resolved_by")[:limit]
     return Response({"results": CheckInSerializer(recent, many=True).data})
 
 
@@ -136,3 +160,96 @@ def checkout(request):
     session.save(update_fields=["checked_out_at"])
 
     return Response({"member": MemberSerializer(member).data, "checkIn": CheckInSerializer(session).data})
+
+
+# POST /api/checkins/<id>/flag - mark a check-in attempt as suspicious.
+# Body: { reason, note? }. 400 if the attempt is already flagged.
+#
+# User story: "As a receptionist, I want to flag a suspicious or duplicate
+# check in attempt, so that I can prevent membership sharing or fraudulent access."
+@api_view(["POST"])
+def flag_checkin(request, checkin_id):
+    account, denied = authorize(request, "manage_members")
+    if denied:
+        return denied
+
+    check_in = CheckIn.objects.select_related("member").filter(id=checkin_id).first()
+    if check_in is None:
+        return Response({"error": f"Check-in {checkin_id} not found."}, status=404)
+
+    serializer = CheckInFlagCreateSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response({"error": serializer.errors}, status=400)
+
+    flag, created = CheckInFlag.objects.get_or_create(
+        check_in=check_in, defaults={**serializer.validated_data, "flagged_by": account},
+    )
+    if not created:
+        return Response({"error": "This check-in attempt is already flagged."}, status=400)
+
+    member = check_in.member
+    record(
+        request, AuditLog.Action.CHECKIN_FLAGGED, actor=account, target=member,
+        summary=f"Flagged a check-in attempt by {member.name} ({flag.reason.lower()})",
+        details={
+            "checkInId": check_in.id, "attempt": check_in.reason or check_in.result,
+            "reason": flag.reason, "note": flag.note,
+        },
+    )
+    return Response(FlaggedAttemptSerializer(flag).data, status=201)
+
+
+# GET /api/checkins/flags?status=Open|Confirmed|Dismissed|all (default Open)
+# The flagged attempts to review, newest first, plus how many are still open.
+@api_view(["GET"])
+def flag_list(request):
+    _, denied = authorize(request, "manage_members")
+    if denied:
+        return denied
+
+    status = request.query_params.get("status", CheckInFlag.Status.OPEN)
+    flags = CheckInFlag.objects.select_related("check_in__member", "flagged_by", "resolved_by")
+    if status != "all":
+        if status not in CheckInFlag.Status.values:
+            return Response({"error": f'Invalid status "{status}".'}, status=400)
+        flags = flags.filter(status=status)
+
+    return Response({
+        "results": FlaggedAttemptSerializer(flags[:100], many=True).data,
+        "openCount": CheckInFlag.objects.filter(status=CheckInFlag.Status.OPEN).count(),
+    })
+
+
+# POST /api/checkins/flags/<id>/resolve - Body: { outcome: Confirmed|Dismissed, note? }
+# Confirmed keeps warning the desk at this member's check-ins; Dismissed (a
+# false alarm) stops warning. A flag can only be resolved once.
+@api_view(["POST"])
+def resolve_flag(request, flag_id):
+    account, denied = authorize(request, "manage_members")
+    if denied:
+        return denied
+
+    flag = CheckInFlag.objects.select_related("check_in__member", "flagged_by").filter(id=flag_id).first()
+    if flag is None:
+        return Response({"error": f"Flag {flag_id} not found."}, status=404)
+    if flag.status != CheckInFlag.Status.OPEN:
+        return Response({"error": f"This flag was already {flag.status.lower()}."}, status=400)
+
+    serializer = CheckInFlagResolveSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response({"error": serializer.errors}, status=400)
+
+    flag.status = serializer.validated_data["outcome"]
+    flag.resolution_note = serializer.validated_data["note"]
+    flag.resolved_by = account
+    flag.resolved_at = timezone.now()
+    flag.save(update_fields=["status", "resolution_note", "resolved_by", "resolved_at"])
+
+    member = flag.check_in.member
+    verdict = "Confirmed" if flag.status == CheckInFlag.Status.CONFIRMED else "Dismissed"
+    record(
+        request, AuditLog.Action.CHECKIN_FLAG_RESOLVED, actor=account, target=member,
+        summary=f"{verdict} a flagged check-in by {member.name} ({flag.reason.lower()})",
+        details={"flagId": flag.id, "outcome": flag.status, "note": flag.resolution_note},
+    )
+    return Response(FlaggedAttemptSerializer(flag).data)
