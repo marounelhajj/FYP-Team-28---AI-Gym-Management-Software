@@ -5,6 +5,8 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from administration.permissions import authorize
+from audit.log import record
+from audit.models import AuditLog
 from billing.serializers import PaymentSerializer
 from plans.models import MembershipPlan
 
@@ -83,6 +85,13 @@ def member_list(request):
         member = serializer.save()
         data = MemberSerializer(member).data
         data["firstPayment"] = PaymentSerializer(member.first_payment).data
+        payment = member.first_payment
+        record(
+            request, AuditLog.Action.MEMBER_REGISTERED, actor=account, target=member,
+            summary=f"Registered walk-in member {member.name} on {member.membership_plan} "
+                    f"(paid ${payment.amount:.2f} by {payment.method})",
+            details={"plan": member.membership_plan, "amount": f"{payment.amount:.2f}", "method": payment.method},
+        )
         return Response(data, status=201)
 
     _freeze_lapsed_members()
@@ -196,7 +205,7 @@ def member_detail(request, member_id):
 # currently-subscribed member.
 @api_view(["POST"])
 def member_cancel(request, member_id):
-    _, denied = authorize(request, "manage_members")
+    account, denied = authorize(request, "manage_members")
     if denied:
         return denied
 
@@ -205,8 +214,13 @@ def member_cancel(request, member_id):
     except Member.DoesNotExist:
         return Response({"error": f"Member {member_id} not found"}, status=404)
 
+    previous = member.status
     member.status = Member.Status.CANCELLED
     member.save(update_fields=["status"])
+    record(
+        request, AuditLog.Action.MEMBER_CANCELLED, actor=account, target=member,
+        summary=f"Cancelled {member.name}'s membership at the front desk", details={"previousStatus": previous},
+    )
     return Response(MemberSerializer(member).data)
 
 
@@ -246,6 +260,7 @@ def my_freeze(request):
 
     member.status = Member.Status.FROZEN
     member.save(update_fields=["status"])
+    record(request, AuditLog.Action.MEMBER_FROZEN, actor=member, target=member, summary=f"{member.name} froze their membership")
     return Response(MemberSerializer(member).data)
 
 
@@ -275,6 +290,7 @@ def my_resume(request):
 
     member.status = Member.Status.ACTIVE
     member.save(update_fields=["status"])
+    record(request, AuditLog.Action.MEMBER_RESUMED, actor=member, target=member, summary=f"{member.name} resumed their membership")
     return Response(MemberSerializer(member).data)
 
 
@@ -288,8 +304,13 @@ def my_cancel(request):
     if denied:
         return denied
 
+    previous = member.status
     member.status = Member.Status.CANCELLED
     member.save(update_fields=["status"])
+    record(
+        request, AuditLog.Action.MEMBER_CANCELLED, actor=member, target=member,
+        summary=f"{member.name} cancelled their membership in the app", details={"previousStatus": previous},
+    )
     return Response(MemberSerializer(member).data)
 
 
@@ -339,5 +360,12 @@ def member_access_card(request, member_id):
         AccessCardReissue.objects.create(
             member=member, card_number=member.access_card_number, reissued_by=account,
             reason=serializer.validated_data["reason"], note=serializer.validated_data["note"],
+        )
+        record(
+            request, AuditLog.Action.ACCESS_CARD_REISSUED, actor=account, target=member,
+            summary=f"Reissued {member.name}'s access card (card {member.access_card_number}, "
+                    f"{serializer.validated_data['reason'].lower()})",
+            details={"cardNumber": member.access_card_number, "reason": serializer.validated_data["reason"],
+                     "note": serializer.validated_data["note"]},
         )
     return Response(_access_card_data(member), status=201)

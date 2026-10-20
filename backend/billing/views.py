@@ -2,6 +2,8 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from administration.permissions import authorize
+from audit.log import record
+from audit.models import AuditLog
 from members.models import Member
 from members.serializers import MemberSerializer
 
@@ -36,6 +38,25 @@ def _get_member_from_session(request):
     if member is None:
         return None, Response({"error": "Not authenticated."}, status=401)
     return member, None
+
+
+# Saves the payment method on file and audit-logs the change as the masked
+# one-line summary ("Card ending 4242 (exp 09/2028)") - never the raw fields.
+def _set_payment_method(request, member, actor, validated_data, updated_by):
+    before = payment_method_on_file(member)
+    before_summary = PaymentMethodSerializer(before).data["summary"] if before else None
+    on_file, _ = PaymentMethod.objects.update_or_create(
+        member=member, defaults={**validated_data, "updated_by": updated_by},
+    )
+    after_summary = PaymentMethodSerializer(on_file).data["summary"]
+    if before_summary != after_summary:
+        who = f"{member.name} changed their" if actor is member else f"Changed {member.name}'s"
+        record(
+            request, AuditLog.Action.PAYMENT_METHOD_UPDATED, actor=actor, target=member,
+            summary=f"{who} payment method to {after_summary}",
+            details={"changes": {"paymentMethod": [before_summary, after_summary]}},
+        )
+    return on_file
 
 
 def _quote_data(quote):
@@ -83,9 +104,7 @@ def member_payment_method(request, member_id):
     if not serializer.is_valid():
         return Response({"error": serializer.errors}, status=400)
 
-    on_file, _ = PaymentMethod.objects.update_or_create(
-        member=member, defaults={**serializer.validated_data, "updated_by": account},
-    )
+    on_file = _set_payment_method(request, member, account, serializer.validated_data, updated_by=account)
     return Response(PaymentMethodSerializer(on_file).data)
 
 
@@ -140,6 +159,13 @@ def member_payment(request, member_id):
     payment = Payment.record(
         member, data["membershipPlan"], data["method"], data["duration"], note=note, recorded_by=account,
     )
+    record(
+        request, AuditLog.Action.PAYMENT_RECORDED, actor=account, target=member,
+        summary=f"{note}: {member.name} paid ${payment.amount:.2f} by {payment.method} "
+                f"for {member.membership_plan} (valid until {payment.expires_at})",
+        details={"type": note, "plan": member.membership_plan, "amount": f"{payment.amount:.2f}",
+                 "method": payment.method, "duration": payment.duration, "expiresAt": str(payment.expires_at)},
+    )
     response_data = MemberSerializer(member).data
     response_data["payment"] = PaymentSerializer(payment).data
     return Response(response_data, status=201)
@@ -173,9 +199,7 @@ def my_payment_method(request):
     if not serializer.is_valid():
         return Response({"error": serializer.errors}, status=400)
 
-    on_file, _ = PaymentMethod.objects.update_or_create(
-        member=member, defaults={**serializer.validated_data, "updated_by": None},
-    )
+    on_file = _set_payment_method(request, member, member, serializer.validated_data, updated_by=None)
     return Response(PaymentMethodSerializer(on_file).data)
 
 
