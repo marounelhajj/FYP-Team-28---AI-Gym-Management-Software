@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from billing.serializers import PaymentSerializer
 from . import qr
 from .models import Member
-from .serializers import MemberSerializer, MemberSignupSerializer
+from .serializers import MemberProfileUpdateSerializer, MemberSerializer, MemberSignupSerializer
 
 # Member sign-in/sign-up. Separate session key ("member_id") from staff
 # ("staff_account_id" in administration/auth_views.py) so the two account
@@ -69,8 +69,14 @@ def logout(request):
     return Response({"ok": True})
 
 
-# GET /api/members/me
-@api_view(["GET"])
+# GET   /api/members/me - the logged-in member's own profile.
+# PATCH /api/members/me - edit it themselves (name/email/phone only - see
+#       MemberProfileUpdateSerializer).
+#
+# User story (PATCH): "As a member, I want to update my saved payment
+# method and personal profile information myself in the app, so that I
+# don't need to visit the front desk for routine changes."
+@api_view(["GET", "PATCH"])
 def me(request):
     member_id = request.session.get("member_id")
     if not member_id:
@@ -81,6 +87,13 @@ def me(request):
     except Member.DoesNotExist:
         request.session.flush()
         return Response({"error": "Not authenticated."}, status=401)
+
+    if request.method == "PATCH":
+        serializer = MemberProfileUpdateSerializer(member, data=request.data, partial=True)
+        if not serializer.is_valid():
+            return Response({"error": serializer.errors}, status=400)
+        member = serializer.save()
+        return Response(_session_payload(member))
 
     member.refresh_expiry_status()
     return Response(_session_payload(member))

@@ -392,3 +392,83 @@ class AccessCardReissueTests(TestCase):
 
     def test_unknown_member(self):
         self.assertEqual(self.client.get("/api/members/9999/access-card").status_code, 404)
+
+
+# User story: "As a member, I want to update my saved payment method and
+# personal profile information myself in the app, so that I don't need to
+# visit the front desk for routine changes."
+class MemberSelfServiceProfileTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.lea = Member(
+            name="Lea Haddad", email="lea@example.com", phone="70100000", branch="Hamra",
+            join_date="2026-01-05", username="lea",
+        )
+        cls.lea.set_password(PASSWORD)
+        cls.lea.save()
+        cls.sami = Member(
+            name="Sami Khoury", email="sami@example.com", phone="70200000", branch="Jnah",
+            join_date="2026-01-05", username="sami",
+        )
+        cls.sami.set_password(PASSWORD)
+        cls.sami.save()
+
+    def setUp(self):
+        self.client.post("/api/members/login", {"username": "lea", "password": PASSWORD},
+                          content_type="application/json")
+
+    def patch_me(self, **body):
+        return self.client.patch("/api/members/me", body, content_type="application/json")
+
+    def test_member_can_update_their_own_contact_info(self):
+        res = self.patch_me(email="lea.haddad@example.com", phone="70999999")
+        self.assertEqual(res.status_code, 200, res.content)
+        body = res.json()
+        self.assertEqual(body["email"], "lea.haddad@example.com")
+        self.assertEqual(body["phone"], "70999999")
+        self.assertEqual(body["name"], "Lea Haddad")  # untouched field is unchanged
+
+        self.lea.refresh_from_db()
+        self.assertEqual(self.lea.email, "lea.haddad@example.com")
+
+    def test_partial_update_only_touches_given_fields(self):
+        res = self.patch_me(name="Lea H. Haddad")
+        self.assertEqual(res.status_code, 200)
+        self.lea.refresh_from_db()
+        self.assertEqual(self.lea.name, "Lea H. Haddad")
+        self.assertEqual(self.lea.phone, "70100000")
+
+    def test_branch_plan_and_status_are_not_editable_here(self):
+        res = self.patch_me(branch="Zalka", membershipPlan="Premium", status="Cancelled")
+        self.assertEqual(res.status_code, 200)
+        self.lea.refresh_from_db()
+        self.assertEqual(self.lea.branch, "Hamra")  # unchanged - extra fields are silently ignored
+
+    def test_name_and_phone_cannot_be_blanked_out(self):
+        res = self.patch_me(name="   ")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("name", res.json()["error"])
+        res = self.patch_me(phone="  ")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("phone", res.json()["error"])
+
+    def test_requires_a_member_session(self):
+        self.client.post("/api/members/logout")
+        self.assertEqual(self.patch_me(name="Nope").status_code, 401)
+
+    def test_cannot_edit_another_members_profile_through_their_own_session(self):
+        # There's no member id in the PATCH /api/members/me request at all -
+        # it can only ever touch whoever is logged in.
+        self.patch_me(name="Lea Changed")
+        self.sami.refresh_from_db()
+        self.assertEqual(self.sami.name, "Sami Khoury")
+
+    def test_staff_session_is_not_a_member_session(self):
+        self.client.post("/api/members/logout")
+        role = Role.objects.create(name="front desk", permissions=["manage_members"])
+        account = StaffAccount(full_name="Dana Desk", email="desk@gym.com", username="desk",
+                               job_title=StaffAccount.JobTitle.RECEPTIONIST, role=role)
+        account.set_password(PASSWORD)
+        account.save()
+        staff_login(self.client, "desk", PASSWORD)
+        self.assertEqual(self.patch_me(name="Nope").status_code, 401)

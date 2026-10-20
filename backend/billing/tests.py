@@ -236,3 +236,79 @@ class RenewalAndPaymentMethodTests(TestCase):
     def test_unknown_member(self):
         self.assertEqual(self.client.get("/api/members/9999/billing").status_code, 404)
         self.assertEqual(self.put_method(Member(id=9999), method="Cash").status_code, 404)
+
+
+# User story: "As a member, I want to update my saved payment method and
+# personal profile information myself in the app, so that I don't need to
+# visit the front desk for routine changes." Self-service counterpart to
+# RenewalAndPaymentMethodTests.test_update_payment_method above - same
+# PaymentMethod model and validation, but through the member's own session
+# at /api/members/me/payment-method instead of a receptionist's.
+class SelfServicePaymentMethodTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.lea = Member(
+            name="Lea Haddad", email="lea@example.com", phone="1", branch="Hamra",
+            join_date=timezone.localdate(), username="lea",
+        )
+        cls.lea.set_password(PASSWORD)
+        cls.lea.save()
+
+    def setUp(self):
+        self.client.post("/api/members/login", {"username": "lea", "password": PASSWORD},
+                          content_type="application/json")
+        self.today = timezone.localdate()
+
+    def get_method(self):
+        return self.client.get("/api/members/me/payment-method")
+
+    def put_method(self, **body):
+        return self.client.put("/api/members/me/payment-method", body, content_type="application/json")
+
+    def test_nothing_on_file_reads_as_null(self):
+        self.assertIsNone(self.get_method().json()["paymentMethod"])
+
+    def test_member_can_add_their_own_card(self):
+        res = self.put_method(
+            method="Card", cardHolderName="Lea Haddad", cardLast4="4242",
+            cardExpiryMonth=8, cardExpiryYear=self.today.year + 2,
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        body = res.json()
+        self.assertEqual(body["summary"], f"Card ending 4242 (exp 08/{self.today.year + 2})")
+        self.assertIsNone(body["updatedBy"])  # no staff member touched this - the member did it themselves
+
+        self.assertEqual(self.get_method().json()["paymentMethod"]["cardLast4"], "4242")
+        self.assertEqual(PaymentMethod.objects.get(member=self.lea).updated_by, None)
+
+    def test_same_validation_as_the_receptionist_version(self):
+        res = self.put_method(method="Card", cardHolderName="Lea Haddad", cardLast4="42")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("cardLast4", res.json()["error"])
+
+    def test_replacing_clears_the_previous_methods_details(self):
+        self.put_method(method="Card", cardHolderName="Lea Haddad", cardLast4="4242",
+                         cardExpiryMonth=8, cardExpiryYear=self.today.year + 2)
+        res = self.put_method(method="Bank Transfer", bankName="Bank Audi", bankAccountLast4="9876")
+        self.assertEqual(res.status_code, 200)
+        on_file = PaymentMethod.objects.get(member=self.lea)
+        self.assertEqual(on_file.card_last4, "")
+
+    def test_requires_a_member_session(self):
+        self.client.post("/api/members/logout")
+        self.assertEqual(self.get_method().status_code, 401)
+        self.assertEqual(self.put_method(method="Cash").status_code, 401)
+
+    def test_staff_session_is_not_a_member_session(self):
+        self.client.post("/api/members/logout")
+        _staff("desk", "Dana Desk", ["manage_members"])
+        staff_login(self.client, "desk", PASSWORD)
+        self.assertEqual(self.get_method().status_code, 401)
+
+    def test_member_only_ever_touches_their_own_payment_method(self):
+        other = Member(name="Sami Khoury", email="sami@example.com", phone="2", branch="Jnah",
+                       join_date=self.today, username="sami")
+        other.set_password(PASSWORD)
+        other.save()
+        self.put_method(method="Cash")
+        self.assertIsNone(PaymentMethod.objects.filter(member=other).first())
