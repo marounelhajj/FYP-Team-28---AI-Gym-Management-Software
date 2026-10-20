@@ -12,6 +12,7 @@ urlpatterns = [
     path("/logout", auth_views.logout),
     path("/me", auth_views.me),
     path("/me/qr", auth_views.my_qr),
+    path("/me/payment-method", billing_views.my_payment_method),
     path("/<int:member_id>/billing", billing_views.member_billing),
     path("/<int:member_id>/payment-method", billing_views.member_payment_method),
     path("/<int:member_id>/renewal-quote", billing_views.member_renewal_quote),

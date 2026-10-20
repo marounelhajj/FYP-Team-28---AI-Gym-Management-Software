@@ -49,3 +49,41 @@ export async function fetchMyQrCode() {
   if (!res.ok) throw await parseError(res);
   return res.json();
 }
+
+
+// PATCH /api/members/me - a member editing their own name/email/phone.
+//
+// User story: "As a member, I want to update my saved payment method and
+// personal profile information myself in the app, so that I don't need to
+// visit the front desk for routine changes."
+export async function updateMyProfile(data) {
+  const res = await fetch("/api/members/me", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw await parseError(res);
+  return res.json();
+}
+
+// GET /api/members/me/payment-method - the logged-in member's own payment
+// method on file, or null if nothing's on file yet.
+export async function fetchMyPaymentMethod() {
+  const res = await fetch("/api/members/me/payment-method");
+  if (!res.ok) throw await parseError(res);
+  const body = await res.json();
+  return body.paymentMethod;
+}
+
+// PUT /api/members/me/payment-method - add or replace it themselves. Same
+// shape as api/members.js's updatePaymentMethod (the receptionist
+// version), just scoped to the logged-in member instead of a member id.
+export async function updateMyPaymentMethod(data) {
+  const res = await fetch("/api/members/me/payment-method", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw await parseError(res);
+  return res.json();
+}

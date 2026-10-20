@@ -68,6 +68,38 @@ class WaiverSignatureFields(serializers.Serializer):
         }
 
 
+# PATCH /api/members/me - a member editing their own contact info.
+#
+# User story: "As a member, I want to update my saved payment method and
+# personal profile information myself in the app, so that I don't need to
+# visit the front desk for routine changes."
+#
+# Deliberately narrow to name/email/phone: branch, plan, and status change
+# through staff/billing flows (a plan or branch switch has pricing
+# implications a member shouldn't be able to trigger unsupervised).
+class MemberProfileUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Member
+        fields = ["name", "email", "phone"]
+        extra_kwargs = {
+            "name": {"required": False},
+            "email": {"required": False},
+            "phone": {"required": False},
+        }
+
+    def validate_name(self, value):
+        value = " ".join(value.split())
+        if not value:
+            raise serializers.ValidationError("Name can't be blank.")
+        return value
+
+    def validate_phone(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("Phone can't be blank.")
+        return value
+
+
 class MemberSerializer(serializers.ModelSerializer):
     membershipPlan = serializers.CharField(source="membership_plan")
     joinDate = serializers.DateField(source="join_date", format="%Y-%m-%d")

@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
-import { fetchMyQrCode } from "../../api/memberAuth.js";
+import { fetchMyPaymentMethod, fetchMyQrCode } from "../../api/memberAuth.js";
 import { BUTTON_COLORS } from "../../styles/buttonColors.js";
+import MemberPaymentMethodForm from "./MemberPaymentMethodForm.jsx";
+import MemberProfileForm from "./MemberProfileForm.jsx";
 
 const STATUS_STYLES = {
   Active: BUTTON_COLORS.green,
@@ -12,9 +14,18 @@ const STATUS_STYLES = {
 // prove the signup/login loop actually works end-to-end. The real member
 // portal (class booking, AI plans, billing, chatbot, etc.) is a separate,
 // much larger set of backlog stories for a future pass.
-export default function MemberDashboard({ member }) {
+// User story (profile + payment method editing): "As a member, I want to
+// update my saved payment method and personal profile information myself
+// in the app, so that I don't need to visit the front desk for routine
+// changes."
+export default function MemberDashboard({ member: initialMember }) {
+  const [member, setMember] = useState(initialMember);
   const statusStyle = STATUS_STYLES[member.status] || { background: "#eee", color: "#333" };
   const [qr, setQr] = useState(null);
+  const [paymentMethod, setPaymentMethod] = useState(null);
+  const [showProfileForm, setShowProfileForm] = useState(false);
+  const [showPaymentForm, setShowPaymentForm] = useState(false);
+  const [savedNotice, setSavedNotice] = useState(null);
 
   // Check-in QR code (SCRUM-33): shown at the front desk instead of
   // reading out the membership ID.
@@ -24,10 +35,45 @@ export default function MemberDashboard({ member }) {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    fetchMyPaymentMethod()
+      .then(setPaymentMethod)
+      .catch(() => {});
+  }, []);
+
+  // Auto-dismiss the "saved" banner after a few seconds, same pattern as
+  // the receptionist's Member Directory.
+  useEffect(() => {
+    if (!savedNotice) return;
+    const timer = setTimeout(() => setSavedNotice(null), 4000);
+    return () => clearTimeout(timer);
+  }, [savedNotice]);
+
+  function handleProfileSaved(updated) {
+    setMember(updated);
+    setShowProfileForm(false);
+    setSavedNotice("Your profile was updated.");
+  }
+
+  function handlePaymentMethodSaved(saved) {
+    setPaymentMethod(saved);
+    setShowPaymentForm(false);
+    setSavedNotice("Your payment method was updated.");
+  }
+
   return (
     <div style={styles.page}>
-      <h1 style={styles.title}>Welcome, {member.name.split(" ")[0]}</h1>
-      <p style={styles.subtitle}>Your membership at a glance.</p>
+      <div style={styles.header}>
+        <div>
+          <h1 style={styles.title}>Welcome, {member.name.split(" ")[0]}</h1>
+          <p style={styles.subtitle}>Your membership at a glance.</p>
+        </div>
+        <button onClick={() => setShowProfileForm(true)} style={styles.editButton}>
+          Edit profile
+        </button>
+      </div>
+
+      {savedNotice && <div style={styles.successBox}>{savedNotice}</div>}
 
       <div style={styles.card}>
         <Row label="Name" value={member.name} />
@@ -61,9 +107,34 @@ export default function MemberDashboard({ member }) {
         </div>
       )}
 
+      <div style={styles.paymentCard}>
+        <div style={styles.paymentCardHeader}>
+          <span style={styles.paymentCardTitle}>Payment method</span>
+          <button onClick={() => setShowPaymentForm(true)} style={styles.smallButton}>
+            {paymentMethod ? "Update" : "Add"}
+          </button>
+        </div>
+        <div style={styles.paymentCardValue}>
+          {paymentMethod ? paymentMethod.summary : "Not on file - add one so renewals are one click."}
+        </div>
+      </div>
+
       <p style={styles.note}>
-        Class booking, billing, and the AI chatbot are coming in a future update.
+        Class booking and the AI chatbot are coming in a future update.
       </p>
+
+      {showProfileForm && (
+        <MemberProfileForm member={member} onClose={() => setShowProfileForm(false)} onSaved={handleProfileSaved} />
+      )}
+
+      {showPaymentForm && (
+        <MemberPaymentMethodForm
+          member={member}
+          current={paymentMethod}
+          onClose={() => setShowPaymentForm(false)}
+          onSaved={handlePaymentMethodSaved}
+        />
+      )}
     </div>
   );
 }
@@ -85,8 +156,52 @@ const styles = {
     padding: "32px 20px",
     color: "#1a1a1a",
   },
+  header: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 16,
+    marginBottom: 20,
+  },
   title: { fontSize: 24, fontWeight: 700, margin: 0 },
-  subtitle: { fontSize: 14, color: "#666", marginTop: 4, marginBottom: 24 },
+  subtitle: { fontSize: 14, color: "#666", marginTop: 4 },
+  editButton: {
+    flexShrink: 0,
+    padding: "10px 16px",
+    fontSize: 14,
+    border: "1px solid #d0d0d5",
+    borderRadius: 8,
+    background: "#fff",
+    fontWeight: 600,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+  },
+  successBox: {
+    background: "#e6f4ea",
+    color: "#1e7a34",
+    padding: "10px 14px",
+    borderRadius: 8,
+    fontSize: 14,
+    marginBottom: 14,
+  },
+  paymentCard: {
+    marginTop: 16,
+    padding: 16,
+    border: "1px solid #e4e4e8",
+    borderRadius: 10,
+    background: "#fff",
+  },
+  paymentCardHeader: { display: "flex", justifyContent: "space-between", alignItems: "center" },
+  paymentCardTitle: { fontSize: 14, fontWeight: 700 },
+  paymentCardValue: { fontSize: 13, color: "#666", marginTop: 6 },
+  smallButton: {
+    padding: "6px 12px",
+    fontSize: 13,
+    border: "1px solid #d0d0d5",
+    borderRadius: 6,
+    background: "#f5f5f7",
+    cursor: "pointer",
+  },
   card: {
     border: "1px solid #e4e4e8",
     borderRadius: 10,

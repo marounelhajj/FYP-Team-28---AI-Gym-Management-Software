@@ -24,6 +24,20 @@ def _get_member(member_id):
     return member, None
 
 
+# Member-session counterpart of _get_member above - looks the member up
+# from request.session["member_id"] (set by members.auth_views.login/signup)
+# instead of a URL id, and never a staff session (separate session key, same
+# separation members.auth_views already keeps between member and staff).
+def _get_member_from_session(request):
+    member_id = request.session.get("member_id")
+    if not member_id:
+        return None, Response({"error": "Not authenticated."}, status=401)
+    member = Member.objects.filter(id=member_id).first()
+    if member is None:
+        return None, Response({"error": "Not authenticated."}, status=401)
+    return member, None
+
+
 def _quote_data(quote):
     return {
         "amount": f"{quote.amount:.2f}",
@@ -129,3 +143,37 @@ def member_payment(request, member_id):
     response_data = MemberSerializer(member).data
     response_data["payment"] = PaymentSerializer(payment).data
     return Response(response_data, status=201)
+
+
+# GET /api/members/me/payment-method - the logged-in member's own payment method on file.
+# PUT /api/members/me/payment-method - add or replace it themselves.
+#
+# User story: "As a member, I want to update my saved payment method and
+# personal profile information myself in the app, so that I don't need to
+# visit the front desk for routine changes." Self-service counterpart to
+# member_payment_method above: same model and serializers, but
+# authenticated by the member's own session instead of a staff permission,
+# and updated_by is left null (no staff member performed this edit).
+@api_view(["GET", "PUT"])
+def my_payment_method(request):
+    member, denied = _get_member_from_session(request)
+    if denied:
+        return denied
+
+    if request.method == "GET":
+        on_file = payment_method_on_file(member)
+        # Wrapped (not a bare Response(None)) because DRF's JSONRenderer
+        # turns a top-level None into an EMPTY body, not JSON "null" - which
+        # breaks response.json() on both the test client and fetch() in the
+        # browser. member_billing above avoids this the same way, nesting
+        # paymentMethod inside a dict instead of returning it bare.
+        return Response({"paymentMethod": PaymentMethodSerializer(on_file).data if on_file else None})
+
+    serializer = PaymentMethodWriteSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response({"error": serializer.errors}, status=400)
+
+    on_file, _ = PaymentMethod.objects.update_or_create(
+        member=member, defaults={**serializer.validated_data, "updated_by": None},
+    )
+    return Response(PaymentMethodSerializer(on_file).data)
