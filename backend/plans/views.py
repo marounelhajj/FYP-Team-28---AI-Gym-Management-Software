@@ -3,6 +3,8 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from administration.permissions import authorize
+from audit.log import changes, record
+from audit.models import AuditLog
 from members.models import Member
 
 from .models import BranchPromotion, MembershipPlan
@@ -22,6 +24,15 @@ MANAGE_PROMOTIONS_PERMISSION = "manage_branch_promotions"
 # requires a logged-in, active staff account whose role grants at least one
 # of `permissions`. Returns (account, None) if allowed, else (None, error).
 _require_permission = authorize
+
+
+def _plan_snapshot(plan):
+    return dict(MembershipPlanSerializer(plan).data)
+
+
+def _promotion_snapshot(promotion):
+    data = dict(BranchPromotionSerializer(promotion).data)
+    return {k: v for k, v in data.items() if k not in ("status", "effectivePrice", "discountAmount", "createdBy")}
 
 
 def _validate_branch(branch):
@@ -50,13 +61,19 @@ def _validate_branch(branch):
 @api_view(["GET", "POST"])
 def plan_list(request):
     if request.method == "POST":
-        _, denied = _require_permission(request, MANAGE_PLANS_PERMISSION)
+        account, denied = _require_permission(request, MANAGE_PLANS_PERMISSION)
         if denied:
             return denied
         serializer = MembershipPlanWriteSerializer(data=request.data)
         if not serializer.is_valid():
             return Response({"error": serializer.errors}, status=400)
         plan = serializer.save()
+        record(
+            request, AuditLog.Action.PLAN_CREATED, actor=account, target=plan, branch="",
+            summary=f"Created plan {plan.name} at ${plan.price:.2f} ({plan.billing_cycle})",
+            details={"price": f"{plan.price:.2f}", "billingCycle": plan.billing_cycle,
+                     "maxPromoDiscountPercent": f"{plan.max_promo_discount_percent:.2f}"},
+        )
         return Response(MembershipPlanSerializer(plan).data, status=201)
 
     queryset = MembershipPlan.objects.all()
@@ -79,13 +96,20 @@ def plan_detail(request, plan_id):
         return Response({"error": f"Plan {plan_id} not found"}, status=404)
 
     if request.method == "PATCH":
-        _, denied = _require_permission(request, MANAGE_PLANS_PERMISSION)
+        account, denied = _require_permission(request, MANAGE_PLANS_PERMISSION)
         if denied:
             return denied
         serializer = MembershipPlanWriteSerializer(plan, data=request.data, partial=True)
         if not serializer.is_valid():
             return Response({"error": serializer.errors}, status=400)
+        before = _plan_snapshot(plan)
         plan = serializer.save()
+        changed = changes(before, _plan_snapshot(plan), ignore=("updatedAt", "monthlyEquivalent"))
+        if changed:
+            record(
+                request, AuditLog.Action.PLAN_UPDATED, actor=account, target=plan, branch="",
+                summary=f"Edited plan {plan.name} ({', '.join(sorted(changed))})", details={"changes": changed},
+            )
 
     return Response(MembershipPlanSerializer(plan).data)
 
@@ -124,6 +148,11 @@ def promotion_list(request):
         if not serializer.is_valid():
             return Response({"error": serializer.errors}, status=400)
         promotion = serializer.save(created_by=account)
+        record(
+            request, AuditLog.Action.PROMOTION_CREATED, actor=account, target=promotion,
+            summary=f"Created promotion {promotion.name} on {promotion.plan.name} at {promotion.branch}",
+            details=_promotion_snapshot(promotion),
+        )
         return Response(BranchPromotionSerializer(promotion).data, status=201)
 
     branch = request.query_params.get("branch")
@@ -152,13 +181,21 @@ def promotion_detail(request, promotion_id):
         return Response({"error": f"Promotion {promotion_id} not found"}, status=404)
 
     if request.method == "PATCH":
-        _, denied = _require_permission(request, MANAGE_PROMOTIONS_PERMISSION, MANAGE_PLANS_PERMISSION)
+        account, denied = _require_permission(request, MANAGE_PROMOTIONS_PERMISSION, MANAGE_PLANS_PERMISSION)
         if denied:
             return denied
         serializer = BranchPromotionWriteSerializer(promotion, data=request.data, partial=True)
         if not serializer.is_valid():
             return Response({"error": serializer.errors}, status=400)
+        before = _promotion_snapshot(promotion)
         promotion = serializer.save()
+        changed = changes(before, _promotion_snapshot(promotion))
+        if changed:
+            record(
+                request, AuditLog.Action.PROMOTION_UPDATED, actor=account, target=promotion,
+                summary=f"Edited promotion {promotion.name} at {promotion.branch} ({', '.join(sorted(changed))})",
+                details={"changes": changed},
+            )
 
     return Response(BranchPromotionSerializer(promotion).data)
 

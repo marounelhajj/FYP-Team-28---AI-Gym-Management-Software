@@ -8,6 +8,9 @@ from django.utils import timezone
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
+from audit.log import record
+from audit.models import AuditLog
+
 from . import totp
 from .models import StaffAccount, StaffBackupCode
 from .permissions import authorize
@@ -78,6 +81,13 @@ def _is_locked(account):
     return account.two_factor_locked_until is not None and account.two_factor_locked_until > timezone.now()
 
 
+def _record_failed_login(request, username, reason, account=None):
+    record(
+        request, AuditLog.Action.STAFF_LOGIN_FAILED, target=account, actor_username=username,
+        summary=f"Failed sign-in for {username or '(blank username)'}: {reason}", details={"reason": reason},
+    )
+
+
 def _use_backup_code(account, code):
     match = account.backup_codes.filter(code_hash=totp.hash_backup_code(code), used_at__isnull=True).first()
     if match is None:
@@ -103,18 +113,22 @@ def login(request):
     try:
         account = StaffAccount.objects.select_related("role").get(username=username)
     except StaffAccount.DoesNotExist:
+        _record_failed_login(request, username, "unknown username")
         return Response({"error": "Invalid username or password."}, status=401)
 
     if not check_password(password, account.password_hash):
+        _record_failed_login(request, username, "wrong password", account)
         return Response({"error": "Invalid username or password."}, status=401)
 
     if not account.is_active:
+        _record_failed_login(request, username, "account deactivated", account)
         return Response(
             {"error": "This account has been deactivated. Contact your system administrator."},
             status=401,
         )
 
     if _is_locked(account):
+        _record_failed_login(request, username, "locked out after repeated wrong codes", account)
         return _locked_response(account)
 
     request.session.pop("member_id", None)
@@ -166,12 +180,19 @@ def verify_two_factor(request):
                 account.failed_2fa_attempts = 0
                 account.two_factor_locked_until = timezone.now() + LOCKOUT
                 account.save(update_fields=["failed_2fa_attempts", "two_factor_locked_until"])
+                record(
+                    request, AuditLog.Action.STAFF_2FA_LOCKED, target=account, actor_username=account.username,
+                    summary=f"{account.username} locked out for {LOCKOUT.seconds // 60} minutes after "
+                            f"{MAX_FAILED_ATTEMPTS} wrong two-factor codes",
+                )
                 return _locked_response(account)
             account.save(update_fields=["failed_2fa_attempts"])
+            _record_failed_login(request, account.username, "wrong two-factor code", account)
             return Response({"error": "Invalid code."}, status=401)
 
         if step is not None:
             account.totp_last_used_step = step
+        method = "enrolled two-factor" if enrolling else ("authenticator code" if step is not None else "backup code")
         account.failed_2fa_attempts = 0
         account.two_factor_locked_until = None
 
@@ -184,6 +205,10 @@ def verify_two_factor(request):
                 StaffBackupCode(account=account, code_hash=totp.hash_backup_code(c)) for c in backup_codes
             )
         account.save()
+        record(
+            request, AuditLog.Action.STAFF_LOGIN, actor=account, target=account,
+            summary=f"{account.username} signed in ({method})", details={"method": method},
+        )
 
     _clear_pending(request)
     # New session key now that the account is fully authenticated, so a
@@ -203,7 +228,7 @@ def verify_two_factor(request):
 # already has stops working until it does (see permissions.get_staff_account).
 @api_view(["POST"])
 def reset_two_factor(request, staff_id):
-    _, denied = authorize(request, "manage_staff_accounts")
+    admin, denied = authorize(request, "manage_staff_accounts")
     if denied:
         return denied
 
@@ -220,6 +245,10 @@ def reset_two_factor(request, staff_id):
         account.two_factor_locked_until = None
         account.save()
         account.backup_codes.all().delete()
+        record(
+            request, AuditLog.Action.STAFF_2FA_RESET, actor=admin, target=account,
+            summary=f"Reset two-factor sign-in for {account.username}",
+        )
     return Response(StaffAccountSerializer(account).data)
 
 

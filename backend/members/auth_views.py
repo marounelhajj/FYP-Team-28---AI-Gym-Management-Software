@@ -2,6 +2,8 @@ from django.contrib.auth.hashers import check_password
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
+from audit.log import changes, record
+from audit.models import AuditLog
 from billing.serializers import PaymentSerializer
 from . import qr
 from .models import Member
@@ -17,6 +19,10 @@ def _session_payload(member):
     return MemberSerializer(member).data
 
 
+def _profile_snapshot(member):
+    return {"name": member.name, "email": member.email, "phone": member.phone}
+
+
 # POST /api/members/signup
 # Body: { name, email, phone, branch, membershipPlan, username, password,
 #         paymentAmount, paymentMethod, paymentDuration }
@@ -30,6 +36,12 @@ def signup(request):
     if not serializer.is_valid():
         return Response({"error": serializer.errors}, status=400)
     member = serializer.save()
+    payment = member.first_payment
+    record(
+        request, AuditLog.Action.MEMBER_SIGNED_UP, actor=member, target=member,
+        summary=f"{member.name} signed up online on {member.membership_plan} (paid ${payment.amount:.2f})",
+        details={"plan": member.membership_plan, "amount": f"{payment.amount:.2f}", "method": payment.method},
+    )
 
     request.session.pop("staff_account_id", None)
     request.session["member_id"] = member.id
@@ -92,7 +104,15 @@ def me(request):
         serializer = MemberProfileUpdateSerializer(member, data=request.data, partial=True)
         if not serializer.is_valid():
             return Response({"error": serializer.errors}, status=400)
+        before = _profile_snapshot(member)
         member = serializer.save()
+        changed = changes(before, _profile_snapshot(member))
+        if changed:
+            record(
+                request, AuditLog.Action.MEMBER_PROFILE_UPDATED, actor=member, target=member,
+                summary=f"{member.name} edited their profile ({', '.join(sorted(changed))})",
+                details={"changes": changed},
+            )
         return Response(_session_payload(member))
 
     member.refresh_expiry_status()

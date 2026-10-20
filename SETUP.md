@@ -140,6 +140,37 @@ first."*
   create plans as the general manager.
 - Tests: `python manage.py test members`
 
+### Audit log (SCRUM-124)
+
+Story: *"As a system administrator, I want sensitive actions to be written
+to an audit log automatically, so that there is a permanent record of who
+did what."*
+
+- Lives in its own app, `backend/audit/`. One `AuditLog` row per action:
+  when, who (staff account or member, with their name, username and role
+  copied onto the row so it still reads right after a rename or
+  deactivation), what it was done to, the branch it concerns, a one-line
+  summary, `details` (changed fields as `{field: [old, new]}`, a failure
+  reason, an amount...) and the IP address.
+- **Permanent:** entries can't be edited or deleted. `save()` on an
+  existing row, `delete()`, and queryset `update()`/`delete()` all raise
+  `AuditLogImmutable`, and the Django admin view is read-only.
+- **Written by the server, never the client.** Views call
+  `audit.log.record(request, action, actor=..., target=..., summary=...)`
+  right after the action succeeds. To log a new kind of action, add it to
+  `AuditLog.Action` and call `record()` from your view.
+- Logged today: staff sign-ins, failed sign-ins (unknown username, wrong
+  password, deactivated account, wrong 2FA code), 2FA lockouts and resets;
+  staff accounts created/edited/deactivated/reactivated (password resets
+  are flagged, never stored); roles created/edited (permissions
+  added/removed); plans and branch promotions created/edited; walk-in
+  registrations and online signups; renewals and reactivations; payment
+  method changes (masked summary only); access card reissues; member
+  profile edits, freezes, resumes and cancellations (staff or the member
+  themselves). Reads aren't logged.
+- After pulling: `python manage.py migrate` (new `audit` app).
+- Tests: `python manage.py test audit`
+
 ## Folder structure
 
 ```
