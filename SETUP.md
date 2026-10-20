@@ -171,6 +171,28 @@ did what."*
 - After pulling: `python manage.py migrate` (new `audit` app).
 - Tests: `python manage.py test audit`
 
+### Searching the audit log (SCRUM-125)
+
+Story: *"As a general manager, I want to search and filter the audit log by
+user, action type, branch and date range, so that I can investigate a
+specific incident."*
+
+- **Audit Log** tab for anyone with `view_audit_log`: the General Manager
+  (as its own tab) and the System Administrator (inside the Admin Console).
+  Migration `audit/0002` adds `view_audit_log` to an existing "General
+  Manager" role; `seed_staff` includes it for new databases.
+- `GET /api/audit-log` - newest first, paginated (`limit` default 50, max
+  200, `offset`). Filters, all combinable:
+  - `user` - part of the username or name (also matches the username typed
+    in a failed sign-in)
+  - `action` - one action (`plan.updated`) or a whole group (`plan`)
+  - `branch` - Hamra | Achrafieh | Jnah | Zalka
+  - `dateFrom` / `dateTo` - YYYY-MM-DD, both inclusive
+- `GET /api/audit-log/meta` - action types (grouped), branches, and the
+  users who appear in the log, for the filter dropdowns.
+- Click a row to see its details: old and new values, what was affected,
+  and the IP address.
+
 ## Folder structure
 
 ```
@@ -216,6 +238,7 @@ account takes effect immediately, even for sessions already open.
 | `/api/members`, `/api/members/<id>` (read/register) | `manage_members` |
 | `POST/PATCH /api/plans` | `manage_membership_plans` |
 | `POST/PATCH /api/plans/promotions` | `manage_branch_promotions` or `manage_membership_plans` |
+| `GET /api/audit-log`, `/api/audit-log/meta` | `view_audit_log` |
 
 Not logged in -> `401`; logged in without the permission -> `403`. Public:
 `/api/plans` reads, `/api/members/meta`, member sign-up/login.
