@@ -242,6 +242,41 @@ first release, so that the models have a dataset to learn from later."*
 - After pulling: `python manage.py migrate` (new `training` app).
 - Tests: `python manage.py test training`
 
+### Live branch headcount (SCRUM-127)
+
+Story: *"As a branch manager, I want to view live headcount for my branch on
+a dashboard, so that I can see how full the gym is right now."*
+
+- **Live Headcount** tab for anyone with `view_branch_headcount`. Shows how
+  many members are inside right now: allowed check-ins at that branch that
+  haven't checked out.
+- **Branch on every check-in.** `CheckIn.branch` is the receptionist's
+  branch when their account has one, otherwise the member's home branch.
+  Migration `checkins/0004` fills it in for older check-ins from the member.
+- **Auto check-out after 4 hours.** Anyone still checked in 4 hours after
+  checking in is checked out automatically (`checked_out_at` = check-in +
+  4h, `auto_checked_out = true`). It runs lazily on check-in, check-out and
+  headcount reads (`checkins.models.close_stale_sessions`). This also
+  fixes members being refused as "Already checked in" on their next visit
+  after forgetting to check out.
+- **Updates on its own:** the screen polls every 15 seconds (the project has
+  no WebSocket or server-sent events setup), and refreshes straight away when
+  the tab is shown again or the browser comes back online.
+- **If the feed drops,** it keeps showing the last known count, greyed out,
+  with "Reconnecting · last updated HH:MM", and retries every 5 seconds.
+- `GET /api/headcount/live?branch=` - `{branch, count, asOf, branches,
+  canChooseBranch, autoCheckoutHours, refreshSeconds}`.
+- **Who sees what (checked on the server):** without `view_all_branches`,
+  you only ever get the branch on your own staff account (asking for another
+  is `403`, and an account with no branch gets `403` too). With
+  `view_all_branches` (General Manager) you can pick any branch. Migration
+  `headcount/0001` grants `view_branch_headcount` to "Branch Manager" and both
+  to "General Manager"; `seed_staff` sets `kabboud` and `dsarkis` to Hamra.
+  On an existing database, set the branch manager's branch in Admin
+  Console -> Staff Accounts.
+- After pulling: `python manage.py migrate`.
+- Tests: `python manage.py test headcount checkins`
+
 ## Folder structure
 
 ```
@@ -289,6 +324,7 @@ account takes effect immediately, even for sessions already open.
 | `POST/PATCH /api/plans/promotions` | `manage_branch_promotions` or `manage_membership_plans` |
 | `GET /api/audit-log`, `/api/audit-log/meta`, `/api/audit-log/export` | `view_audit_log` |
 | `GET /api/training-events` | `view_training_data` |
+| `GET /api/headcount/live` | `view_branch_headcount` (+ `view_all_branches` to pick any branch) |
 
 Not logged in -> `401`; logged in without the permission -> `403`. Public:
 `/api/plans` reads, `/api/members/meta`, member sign-up/login.

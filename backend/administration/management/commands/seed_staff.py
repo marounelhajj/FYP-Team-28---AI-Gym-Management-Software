@@ -19,12 +19,18 @@ ROLES = [
     {
         "name": "General Manager",
         "description": "Cross-branch oversight: organization-wide membership plans, pricing, and reporting.",
-        "permissions": ["manage_membership_plans", "manage_branch_promotions", "view_financial_reports", "view_audit_log"],
+        "permissions": [
+            "manage_membership_plans", "manage_branch_promotions", "view_financial_reports", "view_audit_log",
+            "view_branch_headcount", "view_all_branches",
+        ],
     },
     {
         "name": "Branch Manager",
         "description": "Runs day-to-day branch operations: scheduling, budget, local staff, and local promotions.",
-        "permissions": ["manage_members", "manage_class_schedule", "manage_branch_promotions", "view_financial_reports"],
+        "permissions": [
+            "manage_members", "manage_class_schedule", "manage_branch_promotions", "view_financial_reports",
+            "view_branch_headcount",
+        ],
     },
     {
         "name": "Receptionist",
@@ -41,8 +47,8 @@ ROLES = [
 STAFF_ACCOUNTS = [
     {"full_name": "Maya Fakhoury", "email": "maya.fakhoury@gym.com", "username": "mfakhoury", "job_title": "System Administrator", "role": "System Administrator"},
     {"full_name": "Rami Haddad", "email": "rami.haddad@gym.com", "username": "rhaddad", "job_title": "General Manager", "role": "General Manager"},
-    {"full_name": "Karim Abboud", "email": "karim.abboud@gym.com", "username": "kabboud", "job_title": "Branch Manager", "role": "Branch Manager"},
-    {"full_name": "Dana Sarkis", "email": "dana.sarkis@gym.com", "username": "dsarkis", "job_title": "Receptionist", "role": "Receptionist"},
+    {"full_name": "Karim Abboud", "email": "karim.abboud@gym.com", "username": "kabboud", "job_title": "Branch Manager", "role": "Branch Manager", "branch": "Hamra"},
+    {"full_name": "Dana Sarkis", "email": "dana.sarkis@gym.com", "username": "dsarkis", "job_title": "Receptionist", "role": "Receptionist", "branch": "Hamra"},
     {"full_name": "Fadi Ghosn", "email": "fadi.ghosn@gym.com", "username": "fghosn", "job_title": "Receptionist", "role": "Receptionist", "is_active": False},
     {"full_name": "Nadine Khalil", "email": "nadine.khalil@gym.com", "username": "nkhalil", "job_title": "Marketing Staff", "role": "Marketing Staff"},
 ]

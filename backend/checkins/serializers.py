@@ -29,6 +29,7 @@ class CheckInSerializer(serializers.ModelSerializer):
     memberName = serializers.CharField(source="member.name", read_only=True)
     checkedInAt = serializers.DateTimeField(source="checked_in_at", format=DATETIME)
     checkedOutAt = serializers.DateTimeField(source="checked_out_at", format=DATETIME, allow_null=True)
+    autoCheckedOut = serializers.BooleanField(source="auto_checked_out", read_only=True)
     duration = serializers.SerializerMethodField()
     suspicion = serializers.SerializerMethodField()
     flag = serializers.SerializerMethodField()
@@ -36,7 +37,8 @@ class CheckInSerializer(serializers.ModelSerializer):
     class Meta:
         model = CheckIn
         fields = [
-            "id", "memberId", "memberName", "result", "reason", "checkedInAt", "checkedOutAt", "duration",
+            "id", "memberId", "memberName", "branch", "result", "reason", "checkedInAt", "checkedOutAt",
+            "autoCheckedOut", "duration",
             "suspicion", "flag",
         ]
 

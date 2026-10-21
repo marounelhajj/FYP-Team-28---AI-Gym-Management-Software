@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     'checkins',
     'audit',
     'training',
+    'headcount',
 ]
 
 MIDDLEWARE = [

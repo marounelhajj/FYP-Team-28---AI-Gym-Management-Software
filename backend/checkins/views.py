@@ -9,7 +9,7 @@ from members.models import Member
 from members.serializers import MemberSerializer
 from training.events import log_training_event
 from training.models import TrainingEvent
-from .models import CheckIn, CheckInFlag
+from .models import CheckIn, CheckInFlag, close_stale_sessions
 from .serializers import (
     CheckInCreateSerializer, CheckInFlagCreateSerializer, CheckInFlagResolveSerializer, CheckInSerializer,
     FlaggedAttemptSerializer,
@@ -20,6 +20,12 @@ def _open_session(member):
     return CheckIn.objects.filter(
         member=member, result=CheckIn.Result.ALLOWED, checked_out_at__isnull=True,
     ).order_by("-checked_in_at").first()
+
+
+# Where the member is entering: the receptionist's branch when their
+# account has one, otherwise the member's home branch.
+def _desk_branch(account, member):
+    return account.branch or member.branch
 
 
 def _lookup_member(membership_id):
@@ -86,22 +92,26 @@ def checkin_list(request):
             return error
 
         member.refresh_expiry_status()
+        close_stale_sessions()
+        branch = _desk_branch(account, member)
 
         if _is_replaced_card(member, serializer.validated_data):
-            check_in = CheckIn.objects.create(member=member, result=CheckIn.Result.DENIED, reason="Replaced card")
+            check_in = CheckIn.objects.create(
+                member=member, branch=branch, result=CheckIn.Result.DENIED, reason="Replaced card",
+            )
         elif member.status != Member.Status.ACTIVE:
-            check_in = CheckIn.objects.create(member=member, result=CheckIn.Result.DENIED, reason=member.status)
+            check_in = CheckIn.objects.create(
+                member=member, branch=branch, result=CheckIn.Result.DENIED, reason=member.status,
+            )
         elif _open_session(member):
             check_in = CheckIn.objects.create(
-                member=member, result=CheckIn.Result.DENIED, reason="Already checked in",
+                member=member, branch=branch, result=CheckIn.Result.DENIED, reason="Already checked in",
             )
         else:
-            check_in = CheckIn.objects.create(member=member, result=CheckIn.Result.ALLOWED)
+            check_in = CheckIn.objects.create(member=member, branch=branch, result=CheckIn.Result.ALLOWED)
             # Training data (SCRUM-73): only real visits, not refused attempts.
-            # The branch is the desk's when the receptionist has one, since a
-            # member can visit a branch other than their home branch.
             log_training_event(
-                TrainingEvent.EventType.CHECK_IN, member=member, branch=account.branch or member.branch,
+                TrainingEvent.EventType.CHECK_IN, member=member, branch=branch,
                 occurred_at=check_in.checked_in_at,
                 payload={
                     "checkInId": check_in.id,
@@ -155,6 +165,7 @@ def checkout(request):
         return error
 
     member.refresh_expiry_status()
+    close_stale_sessions()
 
     if _is_replaced_card(member, serializer.validated_data):
         return Response(
