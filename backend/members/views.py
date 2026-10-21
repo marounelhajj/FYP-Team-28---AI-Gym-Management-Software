@@ -9,6 +9,8 @@ from audit.log import record
 from audit.models import AuditLog
 from billing.serializers import PaymentSerializer
 from plans.models import MembershipPlan
+from training.events import log_training_event
+from training.models import TrainingEvent
 
 from . import qr
 from .models import AccessCardReissue, Member
@@ -221,6 +223,10 @@ def member_cancel(request, member_id):
         request, AuditLog.Action.MEMBER_CANCELLED, actor=account, target=member,
         summary=f"Cancelled {member.name}'s membership at the front desk", details={"previousStatus": previous},
     )
+    log_training_event(
+        TrainingEvent.EventType.CANCELLATION, member=member,
+        payload={"previousStatus": previous, "channel": "front_desk"},
+    )
     return Response(MemberSerializer(member).data)
 
 
@@ -310,6 +316,9 @@ def my_cancel(request):
     record(
         request, AuditLog.Action.MEMBER_CANCELLED, actor=member, target=member,
         summary=f"{member.name} cancelled their membership in the app", details={"previousStatus": previous},
+    )
+    log_training_event(
+        TrainingEvent.EventType.CANCELLATION, member=member, payload={"previousStatus": previous, "channel": "app"},
     )
     return Response(MemberSerializer(member).data)
 
