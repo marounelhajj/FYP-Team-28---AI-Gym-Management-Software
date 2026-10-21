@@ -244,6 +244,29 @@ a dashboard, so that I can see how full the gym is right now."*
 - After pulling: `python manage.py migrate`.
 - Tests: `python manage.py test headcount checkins`
 
+### Headcount by hour (SCRUM-129)
+
+Story: *"As a branch manager, I want to view headcount by hour for the
+current day, so that I can see when my peaks actually fall."*
+
+- **Today by hour** chart under the live count on the Live Headcount tab.
+  The bars show today, hour by hour: how many different members were inside
+  at any point in that hour (from check-ins and check-outs, the same data
+  as the live count). The orange line is the average for the same weekday
+  over the last 6 weeks, counting only weeks since the branch's first
+  check-in. A one-line summary names today's busiest hour so far and the
+  weekday's usual peak.
+- Hover a column, or focus the chart and use the arrow keys, to see an
+  hour's numbers. "Show as a table" lists them all.
+- `GET /api/headcount/hourly?branch=` - `{branch, date, weekday,
+  currentHour, weeksCompared, asOf, timeZone, hours: [{hour, today,
+  weekdayAverage}]}`. **Counts only:** no member ids or names. Same
+  permission and branch rule as `/api/headcount/live`.
+- Hours follow the server's `TIME_ZONE` (UTC today); the chart says so when
+  the viewer's clock differs. Setting `TIME_ZONE = "Asia/Beirut"` would
+  line the hours up with the gyms.
+- Tests: `python manage.py test headcount`
+
 ## Folder structure
 
 ```
@@ -290,7 +313,7 @@ account takes effect immediately, even for sessions already open.
 | `POST/PATCH /api/plans` | `manage_membership_plans` |
 | `POST/PATCH /api/plans/promotions` | `manage_branch_promotions` or `manage_membership_plans` |
 | `GET /api/audit-log`, `/api/audit-log/meta`, `/api/audit-log/export` | `view_audit_log` |
-| `GET /api/headcount/live` | `view_branch_headcount` (+ `view_all_branches` to pick any branch) |
+| `GET /api/headcount/live`, `/api/headcount/hourly` | `view_branch_headcount` (+ `view_all_branches` to pick any branch) |
 
 Not logged in -> `401`; logged in without the permission -> `403`. Public:
 `/api/plans` reads, `/api/members/meta`, member sign-up/login.
