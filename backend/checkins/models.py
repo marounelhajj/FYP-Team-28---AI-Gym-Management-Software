@@ -1,5 +1,15 @@
+from datetime import timedelta
+
 from django.db import models
+from django.db.models import DateTimeField, ExpressionWrapper, F, Value
 from django.utils import timezone
+
+from members.models import Member
+
+# A member who never checks out is checked out automatically this long after
+# they checked in (SCRUM-127), so live headcount doesn't grow forever and
+# they aren't refused as "Already checked in" on their next visit.
+AUTO_CHECKOUT_AFTER = timedelta(hours=4)
 
 
 class CheckIn(models.Model):
@@ -16,12 +26,32 @@ class CheckIn(models.Model):
     # Null while the member is still inside - that's what makes a row an
     # "open session". Only ever set on an Allowed row, by checking out.
     checked_out_at = models.DateTimeField(null=True, blank=True)
+    # True when close_stale_sessions() closed it, not the front desk.
+    auto_checked_out = models.BooleanField(default=False)
+    # The branch they entered (SCRUM-127): the receptionist's branch when
+    # their account has one, otherwise the member's home branch.
+    branch = models.CharField(max_length=30, choices=Member.Branch.choices, blank=True)
 
     class Meta:
         ordering = ["-checked_in_at"]
+        indexes = [models.Index(fields=["branch", "checked_in_at"], name="checkin_branch_time_idx")]
 
     def __str__(self):
         return f"{self.member.name} - {self.result} @ {self.checked_in_at}"
+
+
+# Closes every open session older than AUTO_CHECKOUT_AFTER, as if the member
+# had checked out exactly that long after checking in. Runs lazily (there's
+# no Celery/cron in this project) wherever an accurate "who is inside" is
+# needed: checking in or out, and reading the headcount. One bulk UPDATE.
+def close_stale_sessions(now=None):
+    now = now or timezone.now()
+    return CheckIn.objects.filter(
+        result=CheckIn.Result.ALLOWED, checked_out_at__isnull=True, checked_in_at__lte=now - AUTO_CHECKOUT_AFTER,
+    ).update(
+        checked_out_at=ExpressionWrapper(F("checked_in_at") + Value(AUTO_CHECKOUT_AFTER), output_field=DateTimeField()),
+        auto_checked_out=True,
+    )
 
 
 # User story: "As a receptionist, I want to flag a suspicious or duplicate

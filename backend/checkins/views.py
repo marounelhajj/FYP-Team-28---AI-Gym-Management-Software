@@ -7,7 +7,7 @@ from audit.log import record
 from audit.models import AuditLog
 from members.models import Member
 from members.serializers import MemberSerializer
-from .models import CheckIn, CheckInFlag
+from .models import CheckIn, CheckInFlag, close_stale_sessions
 from .serializers import (
     CheckInCreateSerializer, CheckInFlagCreateSerializer, CheckInFlagResolveSerializer, CheckInSerializer,
     FlaggedAttemptSerializer,
@@ -18,6 +18,12 @@ def _open_session(member):
     return CheckIn.objects.filter(
         member=member, result=CheckIn.Result.ALLOWED, checked_out_at__isnull=True,
     ).order_by("-checked_in_at").first()
+
+
+# Where the member is entering: the receptionist's branch when their
+# account has one, otherwise the member's home branch.
+def _desk_branch(account, member):
+    return account.branch or member.branch
 
 
 def _lookup_member(membership_id):
@@ -70,7 +76,7 @@ def _flag_warning(member):
 # control entry."
 @api_view(["GET", "POST"])
 def checkin_list(request):
-    _, denied = authorize(request, "manage_members")
+    account, denied = authorize(request, "manage_members")
     if denied:
         return denied
 
@@ -84,17 +90,23 @@ def checkin_list(request):
             return error
 
         member.refresh_expiry_status()
+        close_stale_sessions()
+        branch = _desk_branch(account, member)
 
         if _is_replaced_card(member, serializer.validated_data):
-            check_in = CheckIn.objects.create(member=member, result=CheckIn.Result.DENIED, reason="Replaced card")
+            check_in = CheckIn.objects.create(
+                member=member, branch=branch, result=CheckIn.Result.DENIED, reason="Replaced card",
+            )
         elif member.status != Member.Status.ACTIVE:
-            check_in = CheckIn.objects.create(member=member, result=CheckIn.Result.DENIED, reason=member.status)
+            check_in = CheckIn.objects.create(
+                member=member, branch=branch, result=CheckIn.Result.DENIED, reason=member.status,
+            )
         elif _open_session(member):
             check_in = CheckIn.objects.create(
-                member=member, result=CheckIn.Result.DENIED, reason="Already checked in",
+                member=member, branch=branch, result=CheckIn.Result.DENIED, reason="Already checked in",
             )
         else:
-            check_in = CheckIn.objects.create(member=member, result=CheckIn.Result.ALLOWED)
+            check_in = CheckIn.objects.create(member=member, branch=branch, result=CheckIn.Result.ALLOWED)
 
         return Response(
             {
@@ -142,6 +154,7 @@ def checkout(request):
         return error
 
     member.refresh_expiry_status()
+    close_stale_sessions()
 
     if _is_replaced_card(member, serializer.validated_data):
         return Response(
