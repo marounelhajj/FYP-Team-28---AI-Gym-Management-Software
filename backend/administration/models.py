@@ -17,6 +17,7 @@ PERMISSION_CHOICES = [
     ("view_financial_reports", "View financial reports"),
     ("manage_marketing_campaigns", "Manage marketing campaigns"),
     ("view_audit_log", "View audit log"),
+    ("view_training_data", "View AI training data"),
 ]
 PERMISSION_KEYS = {key for key, _ in PERMISSION_CHOICES}
 

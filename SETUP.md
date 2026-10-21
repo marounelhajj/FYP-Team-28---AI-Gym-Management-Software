@@ -209,6 +209,39 @@ that I can share evidence in a dispute or review."*
 - Every export is itself logged (`audit_log.exported`: who, which filters,
   how many rows), so there's a record of each copy that left the system.
 
+### AI training data (SCRUM-73)
+
+Story: *"As a system administrator, I want check-ins, cancellations,
+no-shows, and trainer accept/reject decisions logged as training data from
+first release, so that the models have a dataset to learn from later."*
+
+- Lives in its own app, `backend/training/`. One append-only
+  `TrainingEvent` row per event: `event_type` (`check_in`, `cancellation`,
+  `no_show`, `trainer_accept`, `trainer_reject`), `occurred_at` (UTC),
+  member, branch, optional trainer, optional `session_id` (class session or
+  PT booking) and a small JSON `payload`. Indexed on (branch, time) and
+  (member, time). Rows can't be edited; they can only be deleted for a
+  member's data deletion request.
+- **Always on**, no setting to enable. Written today: every allowed
+  check-in (branch = the receptionist's branch if they have one, otherwise
+  the member's) and every cancellation (front desk and in the app).
+  Refused check-in attempts aren't training events.
+- **Not wired yet:** `no_show`, `trainer_accept`, `trainer_reject`. There
+  are no bookings or coach requests in the app yet; `training/events.py`
+  has a TODO showing the call to add when they land.
+- **Never breaks the action:** `log_training_event(...)` catches and logs
+  any error, so the check-in or cancellation still succeeds.
+- **Deletion:** `training.events.delete_training_events_for_member(member_id)`
+  removes a member's events (for SCRUM-62, member data deletion). Deleting
+  a member also deletes their events.
+- `GET /api/training-events` - newest first, paginated (`limit` default
+  100, max 500, `offset`). Filters, all combinable: `eventType`, `branch`,
+  `memberId`, `dateFrom` / `dateTo` (YYYY-MM-DD, inclusive). Needs
+  `view_training_data`, which migration `training/0002` adds to the
+  "System Administrator" role.
+- After pulling: `python manage.py migrate` (new `training` app).
+- Tests: `python manage.py test training`
+
 ## Folder structure
 
 ```
@@ -255,6 +288,7 @@ account takes effect immediately, even for sessions already open.
 | `POST/PATCH /api/plans` | `manage_membership_plans` |
 | `POST/PATCH /api/plans/promotions` | `manage_branch_promotions` or `manage_membership_plans` |
 | `GET /api/audit-log`, `/api/audit-log/meta`, `/api/audit-log/export` | `view_audit_log` |
+| `GET /api/training-events` | `view_training_data` |
 
 Not logged in -> `401`; logged in without the permission -> `403`. Public:
 `/api/plans` reads, `/api/members/meta`, member sign-up/login.

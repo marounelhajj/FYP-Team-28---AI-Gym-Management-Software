@@ -7,6 +7,8 @@ from audit.log import record
 from audit.models import AuditLog
 from members.models import Member
 from members.serializers import MemberSerializer
+from training.events import log_training_event
+from training.models import TrainingEvent
 from .models import CheckIn, CheckInFlag
 from .serializers import (
     CheckInCreateSerializer, CheckInFlagCreateSerializer, CheckInFlagResolveSerializer, CheckInSerializer,
@@ -70,7 +72,7 @@ def _flag_warning(member):
 # control entry."
 @api_view(["GET", "POST"])
 def checkin_list(request):
-    _, denied = authorize(request, "manage_members")
+    account, denied = authorize(request, "manage_members")
     if denied:
         return denied
 
@@ -95,6 +97,17 @@ def checkin_list(request):
             )
         else:
             check_in = CheckIn.objects.create(member=member, result=CheckIn.Result.ALLOWED)
+            # Training data (SCRUM-73): only real visits, not refused attempts.
+            # The branch is the desk's when the receptionist has one, since a
+            # member can visit a branch other than their home branch.
+            log_training_event(
+                TrainingEvent.EventType.CHECK_IN, member=member, branch=account.branch or member.branch,
+                occurred_at=check_in.checked_in_at,
+                payload={
+                    "checkInId": check_in.id,
+                    "method": "qr" if "cardNumber" in serializer.validated_data else "membership_id",
+                },
+            )
 
         return Response(
             {
