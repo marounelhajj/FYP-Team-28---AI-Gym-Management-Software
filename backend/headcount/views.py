@@ -124,7 +124,9 @@ def hourly_counts(branch, days, now):
 # branch rule and permission as /api/headcount/live.
 #
 # 200 + {"branch", "date", "weekday", "currentHour", "weeksCompared", "asOf",
-#        "hours": [{"hour": 0-23, "today": int|null, "weekdayAverage": float|null}]}
+#        "timeZone", "hours": [{"hour": 0-23, "today": int|null, "weekdayAverage": float|null}]}
+# Hours are in the server's TIME_ZONE ("timeZone"), so the chart can say so
+# when the viewer's clock is different.
 # "today" is null for hours that haven't started yet; "weekdayAverage" is
 # null when there are no past weeks to compare with. Aggregated counts only:
 # no member ids or names anywhere in the response.
@@ -175,5 +177,6 @@ def hourly_headcount(request):
         "currentHour": current_hour,
         "weeksCompared": len(past_days),
         "asOf": now,
+        "timeZone": timezone.get_current_timezone_name(),
         "hours": hours,
     })

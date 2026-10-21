@@ -137,7 +137,7 @@ class HourlyHeadcountTests(TestCase):
         staff_login(self.client, "hamrabm", PASSWORD)
         body = self.get().json()
         self.assertEqual(
-            set(body), {"branch", "date", "weekday", "currentHour", "weeksCompared", "asOf", "hours"},
+            set(body), {"branch", "date", "weekday", "currentHour", "weeksCompared", "asOf", "timeZone", "hours"},
         )
         self.assertTrue(all(set(h) == {"hour", "today", "weekdayAverage"} for h in body["hours"]))
         raw = json.dumps(body)
