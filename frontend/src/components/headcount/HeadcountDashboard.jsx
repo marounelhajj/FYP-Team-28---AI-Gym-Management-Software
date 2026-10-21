@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import HourlyChart from "./HourlyChart.jsx";
 import { useLiveHeadcount } from "./useLiveHeadcount.js";
 
 // User story (SCRUM-127): "As a branch manager, I want to view live
@@ -134,25 +135,30 @@ export default function HeadcountDashboard() {
             <div>{error}</div>
           </div>
         ) : (
-          <div className="hc-pad" style={styles.body}>
-            <div style={styles.countRow} aria-live="polite" aria-atomic="true">
-              <span
-                key={count ?? "none"}
-                className={count === undefined ? undefined : "hc-bump"}
-                style={{ ...styles.count, opacity: stale ? 0.5 : 1 }}
-              >
-                {count ?? "–"}
-              </span>
-              <span style={styles.countLabel}>
-                {count === 1 ? "member" : "members"} inside now
-                {stale && <span style={styles.staleNote}>Last known count, not live</span>}
-              </span>
+          <>
+            <div className="hc-pad" style={styles.body}>
+              <div style={styles.countRow} aria-live="polite" aria-atomic="true">
+                <span
+                  key={count ?? "none"}
+                  className={count === undefined ? undefined : "hc-bump"}
+                  style={{ ...styles.count, opacity: stale ? 0.5 : 1 }}
+                >
+                  {count ?? "–"}
+                </span>
+                <span style={styles.countLabel}>
+                  {count === 1 ? "member" : "members"} inside now
+                  {stale && <span style={styles.staleNote}>Last known count, not live</span>}
+                </span>
+              </div>
+              <p style={styles.footnote}>
+                Counted from check-ins and check-outs at this branch. Anyone still checked in after{" "}
+                {data?.autoCheckoutHours ?? 4} hours is checked out automatically.
+              </p>
             </div>
-            <p style={styles.footnote}>
-              Counted from check-ins and check-outs at this branch. Anyone still checked in after{" "}
-              {data?.autoCheckoutHours ?? 4} hours is checked out automatically.
-            </p>
-          </div>
+            <div className="hc-pad">
+              <HourlyChart branch={branch} />
+            </div>
+          </>
         )}
       </section>
     </div>
@@ -168,6 +174,8 @@ const CSS = `
 .hc-bump { display: inline-block; animation: hc-bump 420ms cubic-bezier(0.34, 1.56, 0.64, 1); transform-origin: left bottom; }
 .hc-live-dot { animation: hc-breathe 2.4s ease-in-out infinite; }
 .hc-spinner { animation: hc-spin 0.9s linear infinite; }
+@keyframes hc-grow { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+.hc-grow path { transform-box: fill-box; transform-origin: bottom; animation: hc-grow 520ms cubic-bezier(0.16, 1, 0.3, 1); }
 .hc-pill { transition: transform 260ms cubic-bezier(0.16, 1, 0.3, 1); }
 .hc-press { transition: transform 120ms ease, color 200ms ease; }
 .hc-press:active { transform: scale(0.96); }
@@ -180,7 +188,7 @@ const CSS = `
   .hc-tray-option { padding: 0 2px; font-size: 14px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .hc-bump, .hc-live-dot, .hc-spinner { animation: none; }
+  .hc-bump, .hc-live-dot, .hc-spinner, .hc-grow path { animation: none; }
   .hc-pill, .hc-press { transition: none; }
   .hc-press:active { transform: none; }
 }
