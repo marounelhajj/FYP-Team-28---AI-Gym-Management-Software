@@ -7,6 +7,8 @@ from audit.log import record
 from audit.models import AuditLog
 from members.models import Member
 from members.serializers import MemberSerializer
+from training.events import log_training_event
+from training.models import TrainingEvent
 from .models import CheckIn, CheckInFlag, close_stale_sessions
 from .serializers import (
     CheckInCreateSerializer, CheckInFlagCreateSerializer, CheckInFlagResolveSerializer, CheckInSerializer,
@@ -107,6 +109,15 @@ def checkin_list(request):
             )
         else:
             check_in = CheckIn.objects.create(member=member, branch=branch, result=CheckIn.Result.ALLOWED)
+            # Training data (SCRUM-73): only real visits, not refused attempts.
+            log_training_event(
+                TrainingEvent.EventType.CHECK_IN, member=member, branch=branch,
+                occurred_at=check_in.checked_in_at,
+                payload={
+                    "checkInId": check_in.id,
+                    "method": "qr" if "cardNumber" in serializer.validated_data else "membership_id",
+                },
+            )
 
         return Response(
             {
