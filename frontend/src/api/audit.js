@@ -51,3 +51,20 @@ export async function fetchAuditLogMeta() {
   if (!res.ok) throw await parseError(res);
   return res.json();
 }
+
+// User story: "As a general manager, I want to view a history of
+// membership freezes and cancellations by branch, so that I can spot
+// patterns affecting retention." Same branch/date filters as the audit
+// log itself (reused server-side via filtered_entries), scoped down to
+// just the two retention-relevant actions.
+export async function fetchRetentionReport({ branch, dateFrom, dateTo } = {}, { limit = 50, offset = 0 } = {}) {
+  const params = new URLSearchParams();
+  if (branch) params.set("branch", branch);
+  if (dateFrom) params.set("dateFrom", dateFrom);
+  if (dateTo) params.set("dateTo", dateTo);
+  params.set("limit", limit);
+  params.set("offset", offset);
+  const res = await fetch(`/api/audit-log/retention?${params.toString()}`);
+  if (!res.ok) throw await parseError(res);
+  return res.json();
+}

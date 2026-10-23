@@ -421,3 +421,97 @@ class AuditLogExportTests(TestCase):
         staff_login(self.client, "desk", PASSWORD)
         self.assertEqual(self.client.get("/api/audit-log/export").status_code, 403)
         self.assertFalse(AuditLog.objects.filter(action=AuditLog.Action.AUDIT_LOG_EXPORTED).exists())
+
+
+# User story: "As a general manager, I want to view a history of membership
+# freezes and cancellations by branch, so that I can spot patterns
+# affecting retention."
+#
+# A focused read of the audit log, not a second place anything is logged -
+# the entries themselves are already written by members.views.my_freeze/
+# my_resume/my_cancel/member_cancel (see AuditLogTests above). This class
+# only covers the new GET /api/audit-log/retention endpoint.
+class RetentionReportTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.gm = _staff("gm", "Rami GM", ["view_audit_log"], role_name="General Manager")
+        _staff("desk", "Dana Desk", ["manage_members"], branch="Hamra", role_name="Receptionist")
+        now = timezone.now()
+
+        def entry(days_ago, action, branch, summary="x"):
+            return AuditLog.objects.create(
+                created_at=now - timedelta(days=days_ago), action=action, actor_type=AuditLog.ActorType.MEMBER,
+                actor_username="member", actor_name="A Member", branch=branch, summary=summary,
+            )
+
+        cls.hamra_freeze = entry(5, AuditLog.Action.MEMBER_FROZEN, "Hamra", "Lea froze their membership")
+        cls.hamra_cancel = entry(3, AuditLog.Action.MEMBER_CANCELLED, "Hamra", "Sami cancelled their membership")
+        cls.jnah_cancel = entry(1, AuditLog.Action.MEMBER_CANCELLED, "Jnah", "Omar cancelled their membership")
+        # Noise this report must ignore: a resume (not asked for), and an
+        # unrelated action, even one that happens to be on a branch too.
+        entry(2, AuditLog.Action.MEMBER_RESUMED, "Hamra", "Lea resumed their membership")
+        entry(4, AuditLog.Action.ACCESS_CARD_REISSUED, "Hamra", "Card reissued")
+
+    def setUp(self):
+        staff_login(self.client, "gm", PASSWORD)
+
+    def report(self, query=""):
+        res = self.client.get(f"/api/audit-log/retention{query}")
+        self.assertEqual(res.status_code, 200, res.content)
+        return res.json()
+
+    def test_every_branch_is_listed_even_at_zero(self):
+        body = self.report()
+        by_branch = {b["branch"]: b for b in body["branches"]}
+        self.assertEqual(set(by_branch), {"Hamra", "Achrafieh", "Jnah", "Zalka"})
+        self.assertEqual(by_branch["Achrafieh"], {"branch": "Achrafieh", "frozen": 0, "cancelled": 0, "total": 0})
+
+    def test_counts_split_frozen_and_cancelled_per_branch(self):
+        body = self.report()
+        by_branch = {b["branch"]: b for b in body["branches"]}
+        self.assertEqual(by_branch["Hamra"], {"branch": "Hamra", "frozen": 1, "cancelled": 1, "total": 2})
+        self.assertEqual(by_branch["Jnah"], {"branch": "Jnah", "frozen": 0, "cancelled": 1, "total": 1})
+
+    def test_totals_sum_every_branch(self):
+        body = self.report()
+        self.assertEqual(body["totals"], {"frozen": 1, "cancelled": 2, "total": 3})
+
+    def test_resumes_and_unrelated_actions_are_excluded(self):
+        body = self.report()
+        actions = {e["action"] for e in body["events"]["results"]}
+        self.assertEqual(actions, {"member.frozen", "member.cancelled"})
+        self.assertEqual(body["events"]["total"], 3)
+
+    def test_events_are_newest_first(self):
+        body = self.report()
+        self.assertEqual(
+            [e["id"] for e in body["events"]["results"]],
+            [self.jnah_cancel.id, self.hamra_cancel.id, self.hamra_freeze.id],
+        )
+
+    def test_branch_filter_narrows_both_counts_and_events(self):
+        body = self.report("?branch=Hamra")
+        self.assertEqual([b["branch"] for b in body["branches"]], ["Hamra", "Achrafieh", "Jnah", "Zalka"])
+        self.assertEqual(body["totals"], {"frozen": 1, "cancelled": 1, "total": 2})
+        self.assertEqual({e["id"] for e in body["events"]["results"]}, {self.hamra_freeze.id, self.hamra_cancel.id})
+
+    def test_date_range_filter(self):
+        today = timezone.localdate()
+        since = today - timedelta(days=2)
+        body = self.report(f"?dateFrom={since}")
+        self.assertEqual(body["totals"], {"frozen": 0, "cancelled": 1, "total": 1})
+        self.assertEqual([e["id"] for e in body["events"]["results"]], [self.jnah_cancel.id])
+
+    def test_invalid_branch_is_rejected(self):
+        self.assertEqual(self.client.get("/api/audit-log/retention?branch=Paris").status_code, 400)
+
+    def test_pagination_on_events(self):
+        res = self.client.get("/api/audit-log/retention?limit=1&offset=1").json()
+        self.assertEqual(res["events"]["total"], 3)
+        self.assertEqual([e["id"] for e in res["events"]["results"]], [self.hamra_cancel.id])
+
+    def test_requires_view_audit_log(self):
+        self.client.post("/api/auth/logout")
+        self.assertEqual(self.client.get("/api/audit-log/retention").status_code, 401)
+        staff_login(self.client, "desk", PASSWORD)
+        self.assertEqual(self.client.get("/api/audit-log/retention").status_code, 403)

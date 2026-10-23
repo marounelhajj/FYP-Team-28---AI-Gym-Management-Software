@@ -1,8 +1,9 @@
 import csv
 import json
+from collections import defaultdict
 from datetime import date, datetime, time, timedelta
 
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.http import StreamingHttpResponse
 from django.utils import timezone
 from rest_framework.decorators import api_view
@@ -142,6 +143,79 @@ def filtered_entries(params):
         return None, Response({"error": "dateFrom must be on or before dateTo."}, status=400)
 
     return queryset, None
+
+
+# The two actions this report is about - a focused read of the audit log
+# for retention, not a third place that logs anything new. "Resumed" is
+# deliberately left out: the story asks about freezes and cancellations,
+# and a resume isn't a retention signal the way those two are.
+RETENTION_ACTIONS = [AuditLog.Action.MEMBER_FROZEN, AuditLog.Action.MEMBER_CANCELLED]
+
+
+# GET /api/audit-log/retention?branch=&dateFrom=&dateTo=&limit=&offset=
+#
+# Freezes and cancellations, broken down by branch, plus the underlying
+# events (same filters and shape as GET /api/audit-log, reused via
+# filtered_entries so "branch"/"dateFrom"/"dateTo" behave identically -
+# "user" and "action" are simply not sent by this screen's filter bar).
+# Every branch is always listed, even at zero, so a quiet branch is as
+# visible as a noisy one.
+#
+# 200 + {"branches": [{"branch", "frozen", "cancelled", "total"}, ...],
+#        "totals": {"frozen", "cancelled", "total"},
+#        "events": {"total", "limit", "offset", "results"}}
+#
+# User story: "As a general manager, I want to view a history of membership
+# freezes and cancellations by branch, so that I can spot patterns
+# affecting retention."
+@api_view(["GET"])
+def retention_report(request):
+    _, denied = authorize(request, VIEW_PERMISSION)
+    if denied:
+        return denied
+
+    queryset, error = filtered_entries(request.query_params)
+    if error:
+        return error
+    queryset = queryset.filter(action__in=RETENTION_ACTIONS)
+
+    counts = defaultdict(lambda: {"frozen": 0, "cancelled": 0})
+    for row in queryset.values("branch", "action").annotate(count=Count("id")):
+        key = "frozen" if row["action"] == AuditLog.Action.MEMBER_FROZEN else "cancelled"
+        counts[row["branch"]][key] = row["count"]
+
+    branches = []
+    totals = {"frozen": 0, "cancelled": 0}
+    for branch in Member.Branch.values:
+        bucket = counts[branch]
+        branches.append({
+            "branch": branch, "frozen": bucket["frozen"], "cancelled": bucket["cancelled"],
+            "total": bucket["frozen"] + bucket["cancelled"],
+        })
+        totals["frozen"] += bucket["frozen"]
+        totals["cancelled"] += bucket["cancelled"]
+    totals["total"] = totals["frozen"] + totals["cancelled"]
+
+    try:
+        limit = int(request.query_params.get("limit", 50))
+    except ValueError:
+        limit = 50
+    limit = max(1, min(limit, 200))
+    try:
+        offset = max(0, int(request.query_params.get("offset", 0)))
+    except ValueError:
+        offset = 0
+
+    events = queryset.order_by("-created_at", "-id")
+    total_events = events.count()
+    return Response({
+        "branches": branches,
+        "totals": totals,
+        "events": {
+            "total": total_events, "limit": limit, "offset": offset,
+            "results": AuditLogSerializer(events[offset : offset + limit], many=True).data,
+        },
+    })
 
 
 # GET /api/audit-log/meta
