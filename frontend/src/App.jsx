@@ -8,6 +8,8 @@ import PlanManager from "./components/plans/PlanManager.jsx";
 import PromotionManager from "./components/plans/PromotionManager.jsx";
 import AuditLog from "./components/audit/AuditLog.jsx";
 import RetentionReport from "./components/audit/RetentionReport.jsx";
+import FinancialReport from "./components/finance/FinancialReport.jsx";
+import ExpenseLedger from "./components/finance/ExpenseLedger.jsx";
 import HeadcountDashboard from "./components/headcount/HeadcountDashboard.jsx";
 import LoginPage from "./components/LoginPage.jsx";
 import WelcomeScreen from "./components/WelcomeScreen.jsx";
@@ -55,6 +57,12 @@ function availableScreens(account) {
   }
   if (has("view_audit_log")) {
     screens.push({ key: "retention", label: "Retention", render: () => <RetentionReport /> });
+  }
+  if (has("view_financial_reports")) {
+    screens.push({ key: "finance", label: "Financial Report", render: () => <FinancialReport /> });
+  }
+  if (has("manage_billing")) {
+    screens.push({ key: "expenses", label: "Expenses", render: () => <ExpenseLedger /> });
   }
   // A role allowed to manage staff accounts on top of its own screens -
   // e.g. a General Manager managing staff and trainer profiles per branch

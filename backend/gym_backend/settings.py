@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     'audit',
     'training',
     'headcount',
+    'finance',
 ]
 
 MIDDLEWARE = [

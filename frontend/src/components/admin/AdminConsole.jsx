@@ -3,6 +3,8 @@ import StaffAccounts from "./StaffAccounts.jsx";
 import RoleManager from "./RoleManager.jsx";
 import AuditLog from "../audit/AuditLog.jsx";
 import RetentionReport from "../audit/RetentionReport.jsx";
+import FinancialReport from "../finance/FinancialReport.jsx";
+import ExpenseLedger from "../finance/ExpenseLedger.jsx";
 import AccessDenied from "../AccessDenied.jsx";
 
 // Each tab needs its own permission, so a role that only has one of the two
@@ -12,6 +14,8 @@ const TABS = [
   { key: "roles", label: "Roles & Permissions", permission: "manage_roles", render: () => <RoleManager /> },
   { key: "audit", label: "Audit Log", permission: "view_audit_log", render: () => <AuditLog /> },
   { key: "retention", label: "Retention", permission: "view_audit_log", render: () => <RetentionReport /> },
+  { key: "finance", label: "Financial Report", permission: "view_financial_reports", render: () => <FinancialReport /> },
+  { key: "expenses", label: "Expenses", permission: "manage_billing", render: () => <ExpenseLedger /> },
 ];
 
 // System Administrator persona shell. Deliberately styled very differently
@@ -23,10 +27,9 @@ const TABS = [
 // a General Manager who manages branch staff, see App.jsx), so the admin
 // banner is left out.
 export default function AdminConsole({ permissions = [], embedded = false }) {
-  // Embedded, the audit log and retention report are already their own top-level tabs (App.jsx).
-  const tabs = TABS.filter(
-    (t) => permissions.includes(t.permission) && !(embedded && (t.key === "audit" || t.key === "retention")),
-  );
+  // Embedded, these screens are already their own top-level tabs (App.jsx).
+  const EMBEDDED_ELSEWHERE = new Set(["audit", "retention", "finance", "expenses"]);
+  const tabs = TABS.filter((t) => permissions.includes(t.permission) && !(embedded && EMBEDDED_ELSEWHERE.has(t.key)));
   const [tabKey, setTabKey] = useState(null);
   const activeTab = tabs.find((t) => t.key === tabKey) || tabs[0];
 
