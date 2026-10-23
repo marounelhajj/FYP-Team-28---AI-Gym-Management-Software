@@ -7,6 +7,7 @@ import CheckIn from "./components/CheckIn.jsx";
 import PlanManager from "./components/plans/PlanManager.jsx";
 import PromotionManager from "./components/plans/PromotionManager.jsx";
 import AuditLog from "./components/audit/AuditLog.jsx";
+import RetentionReport from "./components/audit/RetentionReport.jsx";
 import HeadcountDashboard from "./components/headcount/HeadcountDashboard.jsx";
 import LoginPage from "./components/LoginPage.jsx";
 import WelcomeScreen from "./components/WelcomeScreen.jsx";
@@ -51,6 +52,9 @@ function availableScreens(account) {
   }
   if (has("view_audit_log")) {
     screens.push({ key: "audit", label: "Audit Log", render: () => <AuditLog /> });
+  }
+  if (has("view_audit_log")) {
+    screens.push({ key: "retention", label: "Retention", render: () => <RetentionReport /> });
   }
   // A role allowed to manage staff accounts on top of its own screens -
   // e.g. a General Manager managing staff and trainer profiles per branch

@@ -2,6 +2,7 @@ import { useState } from "react";
 import StaffAccounts from "./StaffAccounts.jsx";
 import RoleManager from "./RoleManager.jsx";
 import AuditLog from "../audit/AuditLog.jsx";
+import RetentionReport from "../audit/RetentionReport.jsx";
 import AccessDenied from "../AccessDenied.jsx";
 
 // Each tab needs its own permission, so a role that only has one of the two
@@ -10,6 +11,7 @@ const TABS = [
   { key: "staff", label: "Staff Accounts", permission: "manage_staff_accounts", render: () => <StaffAccounts /> },
   { key: "roles", label: "Roles & Permissions", permission: "manage_roles", render: () => <RoleManager /> },
   { key: "audit", label: "Audit Log", permission: "view_audit_log", render: () => <AuditLog /> },
+  { key: "retention", label: "Retention", permission: "view_audit_log", render: () => <RetentionReport /> },
 ];
 
 // System Administrator persona shell. Deliberately styled very differently
@@ -21,8 +23,10 @@ const TABS = [
 // a General Manager who manages branch staff, see App.jsx), so the admin
 // banner is left out.
 export default function AdminConsole({ permissions = [], embedded = false }) {
-  // Embedded, the audit log is already its own top-level tab (App.jsx).
-  const tabs = TABS.filter((t) => permissions.includes(t.permission) && !(embedded && t.key === "audit"));
+  // Embedded, the audit log and retention report are already their own top-level tabs (App.jsx).
+  const tabs = TABS.filter(
+    (t) => permissions.includes(t.permission) && !(embedded && (t.key === "audit" || t.key === "retention")),
+  );
   const [tabKey, setTabKey] = useState(null);
   const activeTab = tabs.find((t) => t.key === tabKey) || tabs[0];
 
