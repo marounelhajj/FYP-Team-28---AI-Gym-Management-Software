@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     'headcount',
     'finance',
     'doors',
+    'retail',
 ]
 
 MIDDLEWARE = [

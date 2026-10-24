@@ -21,6 +21,8 @@ PERMISSION_CHOICES = [
     ("view_branch_headcount", "View live branch headcount"),
     ("view_all_branches", "See every branch (not just their own)"),
     ("manage_doors", "Manage door readers"),
+    ("process_sales", "Process retail sales (point of sale)"),
+    ("manage_retail_products", "Manage retail products & stock"),
 ]
 PERMISSION_KEYS = {key for key, _ in PERMISSION_CHOICES}
 

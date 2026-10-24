@@ -10,6 +10,7 @@ from rest_framework.response import Response
 from administration.permissions import authorize
 from billing.models import Payment
 from members.models import Member
+from retail.models import Sale
 
 from .models import Expense
 from .serializers import ExpenseSerializer, ExpenseWriteSerializer
@@ -78,14 +79,15 @@ def _parsed_date_range(params):
 # GET /api/finance/report?branch=&dateFrom=&dateTo=
 #
 # Revenue (the sum of billing.Payment.amount, grouped by the paying
-# member's branch) and expenses (this app's own Expense model - see
+# member's branch, plus retail sales at that branch - split out in
+# "revenueBySource") and expenses (this app's own Expense model - see
 # models.py for why that's the one new thing this story needed) for every
 # branch the caller may see, plus the net (revenue - expenses) and an
 # expense breakdown by category. Every branch the caller can see is
 # always listed, even at zero, so a quiet branch is as visible as a busy
 # one (same idea as audit.views.retention_report).
 #
-# 200 + {"dateFrom", "dateTo", "branches": [{"branch", "revenue",
+# 200 + {"dateFrom", "dateTo", "branches": [{"branch", "revenue", "revenueBySource",
 #        "expenses", "net", "expensesByCategory"}, ...], "totals"}.
 # Amounts are strings ("1234.56"), same convention as billing's
 # PaymentSerializer, so they round-trip without float error.
@@ -118,9 +120,21 @@ def financial_report(request):
     if date_to:
         expenses = expenses.filter(incurred_on__lte=date_to)
 
-    revenue_by_branch = defaultdict(lambda: Decimal("0"))
+    # Retail (point of sale) counts too, at the branch the sale was rung up -
+    # voided sales don't.
+    sales = Sale.objects.filter(branch__in=branches, voided_at__isnull=True)
+    if date_from:
+        sales = sales.filter(sold_at__gte=_day_start(date_from))
+    if date_to:
+        sales = sales.filter(sold_at__lt=_day_start(date_to + timedelta(days=1)))
+
+    membership_by_branch = defaultdict(lambda: Decimal("0"))
     for row in payments.values("member__branch").annotate(total=Sum("amount")):
-        revenue_by_branch[row["member__branch"]] = row["total"]
+        membership_by_branch[row["member__branch"]] = row["total"]
+    retail_by_branch = defaultdict(lambda: Decimal("0"))
+    for row in sales.values("branch").annotate(total=Sum("total")):
+        retail_by_branch[row["branch"]] = row["total"]
+    revenue_by_branch = {b: membership_by_branch[b] + retail_by_branch[b] for b in branches}
 
     expense_by_branch = defaultdict(lambda: Decimal("0"))
     category_by_branch = defaultdict(dict)
@@ -136,6 +150,10 @@ def financial_report(request):
         results.append({
             "branch": branch,
             "revenue": f"{revenue:.2f}",
+            "revenueBySource": {
+                "memberships": f"{membership_by_branch[branch]:.2f}",
+                "retail": f"{retail_by_branch[branch]:.2f}",
+            },
             "expenses": f"{branch_expenses:.2f}",
             "net": f"{revenue - branch_expenses:.2f}",
             "expensesByCategory": category_by_branch[branch],

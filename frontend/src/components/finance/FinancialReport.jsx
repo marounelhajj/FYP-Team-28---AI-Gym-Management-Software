@@ -19,6 +19,16 @@ function CompareBar({ value, max, color }) {
   );
 }
 
+// Memberships vs. front-desk retail sales (the Shop screen).
+function RevenueBreakdown({ revenueBySource }) {
+  if (!revenueBySource || Number(revenueBySource.retail) === 0) return null;
+  return (
+    <div style={styles.cellSub}>
+      Memberships: ${revenueBySource.memberships} · Retail: ${revenueBySource.retail}
+    </div>
+  );
+}
+
 function CategoryBreakdown({ expensesByCategory }) {
   const entries = Object.entries(expensesByCategory || {});
   if (entries.length === 0) return null;
@@ -31,7 +41,8 @@ function CategoryBreakdown({ expensesByCategory }) {
 
 // General Manager (and System Administrator, from the Admin Console) view
 // of revenue and expenses by branch - revenue is billing.Payment.amount,
-// summed by the paying member's branch; expenses come from the Expense
+// summed by the paying member's branch, plus retail sales rung up at that
+// branch (voided ones excluded); expenses come from the Expense
 // ledger (see the "Expenses" screen, manage_billing). A Branch Manager
 // (view_financial_reports only, no view_all_branches) only ever sees
 // their own branch - enforced server-side, this screen just has no
@@ -149,6 +160,7 @@ export default function FinancialReport() {
                   <td style={styles.td}>
                     {money(b.revenue)}
                     <CompareBar value={b.revenue} max={maxRevenue} color="#0f6e2b" />
+                    <RevenueBreakdown revenueBySource={b.revenueBySource} />
                   </td>
                   <td style={styles.td}>
                     {money(b.expenses)}

@@ -64,6 +64,12 @@ class AuditLog(models.Model):
         DOOR_CREATED = "door.created", "Door reader added"
         DOOR_UPDATED = "door.updated", "Door reader edited"
         DOOR_KEY_ROTATED = "door.key_rotated", "Door reader key replaced"
+        # Retail (point of sale)
+        RETAIL_SALE = "retail.sale", "Retail sale"
+        RETAIL_SALE_VOIDED = "retail.sale_voided", "Retail sale voided"
+        RETAIL_PRODUCT_CREATED = "retail.product_created", "Retail product added"
+        RETAIL_PRODUCT_UPDATED = "retail.product_updated", "Retail product edited"
+        RETAIL_STOCK_ADJUSTED = "retail.stock_adjusted", "Retail stock changed"
         # The log itself (SCRUM-126) - who took a copy of which entries.
         AUDIT_LOG_EXPORTED = "audit_log.exported", "Audit log exported"
 

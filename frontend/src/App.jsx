@@ -11,6 +11,8 @@ import RetentionReport from "./components/audit/RetentionReport.jsx";
 import FinancialReport from "./components/finance/FinancialReport.jsx";
 import ExpenseLedger from "./components/finance/ExpenseLedger.jsx";
 import HeadcountDashboard from "./components/headcount/HeadcountDashboard.jsx";
+import PointOfSale from "./components/retail/PointOfSale.jsx";
+import ProductManager from "./components/retail/ProductManager.jsx";
 import LoginPage from "./components/LoginPage.jsx";
 import WelcomeScreen from "./components/WelcomeScreen.jsx";
 import MemberLoginPage from "./components/member/MemberLoginPage.jsx";
@@ -47,6 +49,13 @@ function availableScreens(account) {
   if (has("manage_members")) {
     screens.push({ key: "members", label: "Member Directory", render: () => <MemberDirectory /> });
     screens.push({ key: "checkin", label: "Check-In", render: () => <CheckIn /> });
+  }
+  // Point of sale at the front desk, and the catalog/stock behind it.
+  if (has("process_sales")) {
+    screens.push({ key: "shop", label: "Shop", render: () => <PointOfSale /> });
+  }
+  if (has("manage_retail_products")) {
+    screens.push({ key: "retail", label: "Retail Products", render: () => <ProductManager /> });
   }
   // SCRUM-127: Branch Managers see their own branch, General Managers any.
   if (has("view_branch_headcount")) {

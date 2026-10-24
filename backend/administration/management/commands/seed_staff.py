@@ -22,7 +22,7 @@ ROLES = [
         "description": "Cross-branch oversight: organization-wide membership plans, pricing, and reporting.",
         "permissions": [
             "manage_membership_plans", "manage_branch_promotions", "view_financial_reports", "view_audit_log",
-            "view_branch_headcount", "view_all_branches",
+            "view_branch_headcount", "view_all_branches", "manage_retail_products",
         ],
     },
     {
@@ -30,13 +30,13 @@ ROLES = [
         "description": "Runs day-to-day branch operations: scheduling, budget, local staff, and local promotions.",
         "permissions": [
             "manage_members", "manage_class_schedule", "manage_branch_promotions", "view_financial_reports",
-            "view_branch_headcount",
+            "view_branch_headcount", "process_sales", "manage_retail_products",
         ],
     },
     {
         "name": "Receptionist",
         "description": "Front-desk operations: member check-in, registration, and directory lookups.",
-        "permissions": ["manage_members"],
+        "permissions": ["manage_members", "process_sales"],
     },
     {
         "name": "Marketing Staff",

@@ -93,7 +93,8 @@ class FinancialReportTests(TestCase):
         by_branch = self.by_branch(body)
         self.assertEqual(set(by_branch), {"Hamra", "Achrafieh", "Jnah", "Zalka"})
         self.assertEqual(by_branch["Achrafieh"], {
-            "branch": "Achrafieh", "revenue": "0.00", "expenses": "0.00", "net": "0.00", "expensesByCategory": {},
+            "branch": "Achrafieh", "revenue": "0.00", "revenueBySource": {"memberships": "0.00", "retail": "0.00"},
+            "expenses": "0.00", "net": "0.00", "expensesByCategory": {},
         })
 
     def test_revenue_is_summed_from_payments_by_the_members_branch(self):
