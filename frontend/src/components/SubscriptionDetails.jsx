@@ -74,6 +74,18 @@ export default function SubscriptionDetails({ member, onClose, onCancelled, onRe
             <Row label="Member since" value={current.joinDate} />
             <Row label="Subscription expires" value={current.subscriptionExpiresAt || "—"} />
             <Row
+              label="Door access"
+              value={
+                !current.doorAccess.granted ? (
+                  <span style={styles.accessBlocked}>Blocked: {current.doorAccess.message}</span>
+                ) : billing?.doorDeskOnly ? (
+                  <span style={styles.accessDeskOnly}>Front desk only - flagged check-in, check photo ID</span>
+                ) : (
+                  <span style={styles.accessGranted}>{current.doorAccess.message}</span>
+                )
+              }
+            />
+            <Row
               label="Waiver"
               value={
                 current.waiver
@@ -284,6 +296,9 @@ const styles = {
   },
   rowLabel: { color: "#666" },
   rowValue: { fontWeight: 600, textAlign: "right" },
+  accessGranted: { color: "#1d5e2f" },
+  accessBlocked: { color: "#b3261e" },
+  accessDeskOnly: { color: "#8a5a00" },
   statusBadge: {
     display: "inline-flex",
     alignItems: "center",

@@ -31,6 +31,8 @@ class CheckIn(models.Model):
     # The branch they entered (SCRUM-127): the receptionist's branch when
     # their account has one, otherwise the member's home branch.
     branch = models.CharField(max_length=30, choices=Member.Branch.choices, blank=True)
+    # The door reader that scanned the card; null when done at the front desk.
+    door = models.ForeignKey("doors.Door", on_delete=models.SET_NULL, null=True, blank=True, related_name="check_ins")
 
     class Meta:
         ordering = ["-checked_in_at"]
@@ -38,6 +40,13 @@ class CheckIn(models.Model):
 
     def __str__(self):
         return f"{self.member.name} - {self.result} @ {self.checked_in_at}"
+
+
+# The member's current visit (let in, not out yet), or None if they aren't inside.
+def open_session(member):
+    return CheckIn.objects.filter(
+        member=member, result=CheckIn.Result.ALLOWED, checked_out_at__isnull=True,
+    ).order_by("-checked_in_at").first()
 
 
 # Closes every open session older than AUTO_CHECKOUT_AFTER, as if the member
@@ -92,3 +101,10 @@ class CheckInFlag(models.Model):
 
     def __str__(self):
         return f"{self.reason} - {self.check_in} ({self.status})"
+
+
+# A member's Open or Confirmed flags. While they have any, the front desk is
+# told to check their photo ID, and door readers send them to the desk
+# instead of opening (an unattended door can't check ID).
+def active_flags(member):
+    return CheckInFlag.objects.filter(check_in__member=member).exclude(status=CheckInFlag.Status.DISMISSED)

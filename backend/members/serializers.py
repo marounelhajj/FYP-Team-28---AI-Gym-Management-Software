@@ -3,6 +3,7 @@ from rest_framework import serializers
 from billing.models import Payment
 from plans.models import MembershipPlan
 
+from .access import door_access
 from .models import AccessCardReissue, Member, Waiver
 from .waiver import WAIVER_VERSION
 
@@ -109,17 +110,28 @@ class MemberSerializer(serializers.ModelSerializer):
         model = Member
         fields = [
             "id", "name", "email", "phone", "status", "branch", "membershipPlan",
-            "joinDate", "subscriptionExpiresAt", "waiver",
+            "joinDate", "subscriptionExpiresAt", "waiver", "doorAccess",
         ]
 
     # null for a member with no signed waiver on file.
     waiver = serializers.SerializerMethodField()
+    # Whether their card opens the doors right now, and why not (members/access.py).
+    doorAccess = serializers.SerializerMethodField()
 
     def get_waiver(self, obj):
         try:
             return WaiverSerializer(obj.waiver).data
         except Waiver.DoesNotExist:
             return None
+
+    def get_doorAccess(self, obj):
+        access = door_access(obj)
+        return {
+            "granted": access.granted,
+            "reason": access.reason,
+            "message": access.message,
+            "validUntil": access.valid_until,
+        }
 
 
 # Used by POST /api/members to register a new walk-in member.

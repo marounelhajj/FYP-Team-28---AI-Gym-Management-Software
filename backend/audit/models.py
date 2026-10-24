@@ -60,6 +60,10 @@ class AuditLog(models.Model):
         # Front desk
         CHECKIN_FLAGGED = "checkin.flagged", "Check-in attempt flagged"
         CHECKIN_FLAG_RESOLVED = "checkin.flag_resolved", "Check-in flag resolved"
+        # Door readers
+        DOOR_CREATED = "door.created", "Door reader added"
+        DOOR_UPDATED = "door.updated", "Door reader edited"
+        DOOR_KEY_ROTATED = "door.key_rotated", "Door reader key replaced"
         # The log itself (SCRUM-126) - who took a copy of which entries.
         AUDIT_LOG_EXPORTED = "audit_log.exported", "Audit log exported"
 

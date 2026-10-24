@@ -256,7 +256,8 @@ class SubscriptionStatusTests(TestCase):
     def test_check_in_is_refused_without_a_valid_subscription(self):
         res = self.client.post("/api/checkins", {"membershipId": self.never_paid.id}, content_type="application/json")
         self.assertEqual(res.json()["checkIn"]["result"], "Denied")
-        self.assertEqual(res.json()["checkIn"]["reason"], "Frozen")
+        self.assertEqual(res.json()["checkIn"]["reason"], "No subscription")
+        self.assertEqual(res.json()["member"]["status"], "Frozen")
 
     def test_member_sees_frozen_on_their_own_account(self):
         self.client.post("/api/auth/logout")

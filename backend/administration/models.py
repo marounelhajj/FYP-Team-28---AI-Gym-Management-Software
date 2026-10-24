@@ -20,6 +20,7 @@ PERMISSION_CHOICES = [
     ("view_training_data", "View AI training data"),
     ("view_branch_headcount", "View live branch headcount"),
     ("view_all_branches", "See every branch (not just their own)"),
+    ("manage_doors", "Manage door readers"),
 ]
 PERMISSION_KEYS = {key for key, _ in PERMISSION_CHOICES}
 

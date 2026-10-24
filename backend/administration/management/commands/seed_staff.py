@@ -13,7 +13,7 @@ ROLES = [
         "permissions": [
             "manage_members", "manage_staff_accounts", "manage_roles",
             "manage_class_schedule", "manage_billing", "view_financial_reports",
-            "manage_marketing_campaigns", "view_audit_log", "view_training_data",
+            "manage_marketing_campaigns", "view_audit_log", "view_training_data", "manage_doors",
         ],
     },
     {

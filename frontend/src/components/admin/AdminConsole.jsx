@@ -6,6 +6,7 @@ import RetentionReport from "../audit/RetentionReport.jsx";
 import FinancialReport from "../finance/FinancialReport.jsx";
 import ExpenseLedger from "../finance/ExpenseLedger.jsx";
 import AccessDenied from "../AccessDenied.jsx";
+import DoorManager from "./DoorManager.jsx";
 
 // Each tab needs its own permission, so a role that only has one of the two
 // (e.g. manage_roles without manage_staff_accounts) sees just that tab.
@@ -16,6 +17,7 @@ const TABS = [
   { key: "retention", label: "Retention", permission: "view_audit_log", render: () => <RetentionReport /> },
   { key: "finance", label: "Financial Report", permission: "view_financial_reports", render: () => <FinancialReport /> },
   { key: "expenses", label: "Expenses", permission: "manage_billing", render: () => <ExpenseLedger /> },
+  { key: "doors", label: "Doors", permission: "manage_doors", render: () => <DoorManager /> },
 ];
 
 // System Administrator persona shell. Deliberately styled very differently

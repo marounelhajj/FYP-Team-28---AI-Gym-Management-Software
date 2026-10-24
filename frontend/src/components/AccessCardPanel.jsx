@@ -170,7 +170,20 @@ export default function AccessCardPanel({ memberId, onClose }) {
 
             <div style={styles.previewFooter}>
               <span style={styles.muted}>
-                Only this card works right now. {member.status !== "Active" && "The member can't check in until they renew."}
+                Only this card works.{" "}
+                {!member.doorAccess.granted ? (
+                  <span style={{ color: "#b3261e", fontWeight: 600 }}>
+                    Won't open the doors: {member.doorAccess.message}
+                  </span>
+                ) : data.doorDeskOnly ? (
+                  <span style={{ color: "#8a5a00", fontWeight: 600 }}>
+                    Doors send them to the front desk (flagged check-in).
+                  </span>
+                ) : (
+                  <span style={{ color: "#1d5e2f", fontWeight: 600 }}>
+                    Opens the doors - {member.doorAccess.message.toLowerCase()}
+                  </span>
+                )}
               </span>
               <button type="button" onClick={handlePrint} style={styles.secondaryButton}>
                 Print card

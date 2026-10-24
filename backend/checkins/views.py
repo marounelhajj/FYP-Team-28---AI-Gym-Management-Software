@@ -5,21 +5,16 @@ from rest_framework.response import Response
 from administration.permissions import authorize
 from audit.log import record
 from audit.models import AuditLog
+from members.access import door_access
 from members.models import Member
 from members.serializers import MemberSerializer
 from training.events import log_training_event
 from training.models import TrainingEvent
-from .models import CheckIn, CheckInFlag, close_stale_sessions
+from .models import CheckIn, CheckInFlag, active_flags, close_stale_sessions, open_session
 from .serializers import (
     CheckInCreateSerializer, CheckInFlagCreateSerializer, CheckInFlagResolveSerializer, CheckInSerializer,
     FlaggedAttemptSerializer,
 )
-
-
-def _open_session(member):
-    return CheckIn.objects.filter(
-        member=member, result=CheckIn.Result.ALLOWED, checked_out_at__isnull=True,
-    ).order_by("-checked_in_at").first()
 
 
 # Where the member is entering: the receptionist's branch when their
@@ -44,7 +39,7 @@ def _is_replaced_card(member, validated_data):
 # Shown on every check-in by a member with Open or Confirmed flags, so the
 # desk checks photo ID before letting them in. None when there's nothing to warn about.
 def _flag_warning(member):
-    flags = CheckInFlag.objects.filter(check_in__member=member).exclude(status=CheckInFlag.Status.DISMISSED)
+    flags = active_flags(member)
     latest = flags.first()
     if latest is None:
         return None
@@ -94,16 +89,13 @@ def checkin_list(request):
         member.refresh_expiry_status()
         close_stale_sessions()
         branch = _desk_branch(account, member)
+        access = door_access(member, serializer.validated_data.get("cardNumber"))
 
-        if _is_replaced_card(member, serializer.validated_data):
+        if not access.granted:
             check_in = CheckIn.objects.create(
-                member=member, branch=branch, result=CheckIn.Result.DENIED, reason="Replaced card",
+                member=member, branch=branch, result=CheckIn.Result.DENIED, reason=access.reason,
             )
-        elif member.status != Member.Status.ACTIVE:
-            check_in = CheckIn.objects.create(
-                member=member, branch=branch, result=CheckIn.Result.DENIED, reason=member.status,
-            )
-        elif _open_session(member):
+        elif open_session(member):
             check_in = CheckIn.objects.create(
                 member=member, branch=branch, result=CheckIn.Result.DENIED, reason="Already checked in",
             )
@@ -123,6 +115,7 @@ def checkin_list(request):
             {
                 "member": MemberSerializer(member).data,
                 "checkIn": CheckInSerializer(check_in).data,
+                "access": {"granted": access.granted, "message": access.message},
                 "flagWarning": _flag_warning(member),
             },
             status=201,
@@ -134,7 +127,7 @@ def checkin_list(request):
         limit = 20
     limit = max(1, min(limit, 100))
 
-    recent = CheckIn.objects.select_related("member", "flag__flagged_by", "flag__resolved_by")[:limit]
+    recent = CheckIn.objects.select_related("member", "door", "flag__flagged_by", "flag__resolved_by")[:limit]
     return Response({"results": CheckInSerializer(recent, many=True).data})
 
 
@@ -173,7 +166,7 @@ def checkout(request):
             status=400,
         )
 
-    session = _open_session(member)
+    session = open_session(member)
     if not session:
         return Response({"error": f"{member.name} hasn't checked in."}, status=400)
 

@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     'training',
     'headcount',
     'finance',
+    'doors',
 ]
 
 MIDDLEWARE = [

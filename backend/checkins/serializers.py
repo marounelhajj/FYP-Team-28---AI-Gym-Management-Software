@@ -33,13 +33,15 @@ class CheckInSerializer(serializers.ModelSerializer):
     duration = serializers.SerializerMethodField()
     suspicion = serializers.SerializerMethodField()
     flag = serializers.SerializerMethodField()
+    # Name of the door reader it came through; null for the front desk.
+    door = serializers.CharField(source="door.name", default=None)
 
     class Meta:
         model = CheckIn
         fields = [
             "id", "memberId", "memberName", "branch", "result", "reason", "checkedInAt", "checkedOutAt",
             "autoCheckedOut", "duration",
-            "suspicion", "flag",
+            "suspicion", "flag", "door",
         ]
 
     def get_suspicion(self, obj):

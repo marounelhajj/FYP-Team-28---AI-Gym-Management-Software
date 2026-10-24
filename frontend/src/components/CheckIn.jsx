@@ -196,7 +196,7 @@ export default function CheckIn() {
                       : result.checkIn.reason === "Replaced card"
                         ? `This is an old card for ${result.member.name} (#${result.member.id}). It was replaced and `
                           + "no longer works - ask for the new card, or reissue one."
-                        : `${result.member.name}'s membership is ${result.checkIn.reason}.`}
+                        : `${result.member.name}: ${result.access?.message || result.checkIn.reason}`}
                   </div>
                 </>
               )
@@ -293,7 +293,10 @@ export default function CheckIn() {
               <span style={c.result === "Allowed" ? styles.badgeAllowed : styles.badgeDenied}>
                 {c.result === "Allowed" ? (c.duration ? `Checked out (${c.duration})` : "Checked in") : `Denied (${c.reason})`}
               </span>
-              <span style={styles.recentTime}>{c.checkedOutAt || c.checkedInAt}</span>
+              <span style={styles.recentTime}>
+                {c.checkedOutAt || c.checkedInAt}
+                {c.door && <span style={styles.recentDoor}>{c.door}</span>}
+              </span>
               {c.flag ? (
                 <span style={styles.flaggedChip} title={c.flag.note || c.flag.reason}>
                   Flagged{c.flag.status !== "Open" ? ` · ${c.flag.status}` : ""}
@@ -474,11 +477,12 @@ const styles = {
     whiteSpace: "nowrap",
   },
   flaggedChip: {
-    width: 64,
+    minWidth: 64,
+    boxSizing: "border-box",
     textAlign: "center",
     fontSize: 11,
     fontWeight: 700,
-    padding: "3px 0",
+    padding: "3px 6px",
     borderRadius: 6,
     background: "#fdeceb",
     color: "#b3261e",
@@ -509,7 +513,8 @@ const styles = {
     fontSize: 13,
   },
   recentName: { fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-  recentTime: { color: "#888", whiteSpace: "nowrap" },
+  recentTime: { display: "flex", flexDirection: "column", alignItems: "flex-end", color: "#888", whiteSpace: "nowrap" },
+  recentDoor: { fontSize: 11, color: "#124096", fontWeight: 600 },
   badgeAllowed: {
     fontSize: 11,
     fontWeight: 700,

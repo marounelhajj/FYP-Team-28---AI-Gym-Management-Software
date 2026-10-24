@@ -8,6 +8,7 @@ from administration.permissions import authorize
 from audit.log import record
 from audit.models import AuditLog
 from billing.serializers import PaymentSerializer
+from checkins.models import active_flags
 from plans.models import MembershipPlan
 from training.events import log_training_event
 from training.models import TrainingEvent
@@ -338,6 +339,8 @@ def _access_card_data(member):
             "qrCode": qr.svg_data_uri(payload),
         },
         "history": AccessCardReissueSerializer(reissues, many=True).data,
+        # Door readers send this member to the front desk (flagged check-in).
+        "doorDeskOnly": active_flags(member).exists(),
     }
 
 

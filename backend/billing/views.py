@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from administration.permissions import authorize
 from audit.log import record
 from audit.models import AuditLog
+from checkins.models import active_flags
 from members.models import Member
 from members.serializers import MemberSerializer
 
@@ -87,6 +88,8 @@ def member_billing(request, member_id):
         "paymentMethod": PaymentMethodSerializer(on_file).data if on_file else None,
         "payments": PaymentSerializer(payments[:RECENT_PAYMENTS], many=True).data,
         "paymentCount": payments.count(),
+        # Staff-only: door readers send this member to the front desk (flagged check-in).
+        "doorDeskOnly": active_flags(member).exists(),
     })
 
 
