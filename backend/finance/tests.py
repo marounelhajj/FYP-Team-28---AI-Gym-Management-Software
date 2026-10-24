@@ -217,3 +217,19 @@ class ExpenseRecordingTests(TestCase):
         staff_login(self.client, "gm", PASSWORD)
         self.assertEqual(self.client.get("/api/finance/expenses").status_code, 403)
         self.assertEqual(self.record(branch="Hamra", category="Rent", amount="1").status_code, 403)
+
+
+# The System Administrator role isn't tied to a branch but can open both
+# finance screens, so it must see every branch rather than be refused.
+class SystemAdministratorFinanceTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        from administration.management.commands.seed_staff import ROLES
+
+        permissions = next(r["permissions"] for r in ROLES if r["name"] == "System Administrator")
+        _staff("admin", "Maya Admin", permissions, role_name="System Administrator")
+
+    def test_report_and_expenses_load_for_a_branchless_administrator(self):
+        staff_login(self.client, "admin", PASSWORD)
+        self.assertEqual(self.client.get("/api/finance/report").status_code, 200)
+        self.assertEqual(self.client.get("/api/finance/expenses").status_code, 200)
