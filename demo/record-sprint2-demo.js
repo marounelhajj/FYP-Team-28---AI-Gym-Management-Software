@@ -334,6 +334,13 @@ class Demo {
     await sleep(900);
   }
 
+  // Form fields whose <label> is a sibling of the input rather than linked to it.
+  field(label) {
+    return this.page.locator(
+      `xpath=//label[contains(normalize-space(), "${label}")]/following-sibling::*[self::input or self::select or self::textarea][1]`
+    );
+  }
+
   button(name, exact = true) {
     return this.page.getByRole("button", { name, exact });
   }
@@ -363,8 +370,8 @@ class Demo {
     await this.goto("/");
     await this.click(this.button("Login or sign up here"), 700);
     await this.see(this.page.getByRole("heading", { name: "Member Login" }));
-    await this.type(this.page.getByLabel("Username"), c.username);
-    await this.type(this.page.getByLabel("Password"), c.password, 25);
+    await this.type(this.field("Username"), c.username);
+    await this.type(this.field("Password"), c.password, 25);
     await this.click(this.button("Login"));
     if (expectOk) await this.see(this.page.getByRole("heading", { name: /^Welcome,/ }));
   }
@@ -575,7 +582,7 @@ async function recordStories(d) {
     await d.see(page.getByRole("cell", { name: sami.name }));
     await d.click(d.button("Subscribe"), 900);
     await d.see(page.getByRole("heading", { name: "Subscribe", exact: true }));
-    await d.choose(page.locator("select").first(), "Basic");
+    await d.choose(page.locator("select").filter({ hasText: "Select a plan" }), "Basic");
     await d.click(d.radio("1 Month"), 600);
     await d.click(d.radio("Cash"), 900);
     await d.click(page.getByRole("button", { name: /^Subscribe & charge/ }), 1200);
@@ -587,8 +594,8 @@ async function recordStories(d) {
     await d.see(page.getByRole("heading", { name: "Subscription Details" }));
     await d.click(page.getByRole("button", { name: /^(Update|Add payment method)$/ }), 800);
     await d.click(d.radio("Card"), 500);
-    await d.type(page.getByLabel("Name on card"), nour.name);
-    await d.type(page.getByLabel("Card number"), "1881");
+    await d.type(d.field("Name on card"), nour.name);
+    await d.type(d.field("Card number"), "1881");
     await d.choose(page.getByLabel("Expiry month"), "9");
     await d.choose(page.getByLabel("Expiry year"), String(new Date().getFullYear() + 3));
     await d.click(d.button("Save payment method"), 1000);
@@ -679,12 +686,12 @@ async function recordStories(d) {
   }, async () => {
     await d.click(d.button("Edit profile"), 900);
     await d.see(page.getByRole("heading", { name: "Edit Your Profile" }));
-    await d.type(page.getByLabel("Phone"), "+961 71 555 019");
+    await d.type(d.field("Phone"), "+961 71 555 019");
     await d.click(d.button("Save changes"), 1000);
     await d.see(page.getByText("Your profile was updated."));
     await d.reveal(page.getByText("Your profile was updated."), 1500);
     await d.click(d.button("Update"), 900);
-    await d.type(page.getByLabel("Name on card"), "Lea Haddad");
+    await d.type(d.field("Name on card"), "Lea Haddad");
     await d.type(page.getByLabel("Last 4 digits of the card"), "9921");
     await d.choose(page.getByLabel("Expiry month"), "6");
     await d.choose(page.getByLabel("Expiry year"), String(new Date().getFullYear() + 3));
@@ -727,8 +734,8 @@ async function recordStories(d) {
     await d.click(d.button("Permanently delete my data"), 1500);
     await d.see(page.getByRole("heading", { name: "Member Login" }));
     await d.say("They're signed out, and the deleted account can no longer log in.");
-    await d.type(page.getByLabel("Username"), creds.members.deleteLogin.username);
-    await d.type(page.getByLabel("Password"), creds.members.deleteLogin.password, 25);
+    await d.type(d.field("Username"), creds.members.deleteLogin.username);
+    await d.type(d.field("Password"), creds.members.deleteLogin.password, 25);
     await d.click(d.button("Login"), 900);
     await d.see(page.getByText("Invalid username or password."));
     await d.reveal(page.getByText("Invalid username or password."), 2200);
