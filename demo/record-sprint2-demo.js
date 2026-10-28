@@ -266,8 +266,8 @@ class Demo {
     } catch (error) {
       log(`  SKIPPED ${def.key}: ${error.message.split("\n")[0]}`);
       this.skipped.push({ key: def.key, title: def.title, reason: error.message.split("\n")[0] });
-      await this.page.screenshot({ path: path.join(DATA, `failed-${def.key}.png`) }).catch(() => {});
-      await this.page.goto(APP, { waitUntil: "domcontentloaded" }).catch(() => {});
+      await this.page.screenshot({ path: path.join(DATA, `failed-${def.key}.png`), timeout: 8000 }).catch(() => {});
+      await this.page.goto(APP, { waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => {});
     }
     await this.store("demoCaption", null).catch(() => {});
   }
@@ -801,6 +801,7 @@ function duration(file) {
     });
     await context.addInitScript(installOverlay);
     const page = await context.newPage();
+    page.setDefaultTimeout(30000);
     page.on("pageerror", (e) => log(`  page error: ${e.message}`));
     demo = new Demo(page, creds);
 
