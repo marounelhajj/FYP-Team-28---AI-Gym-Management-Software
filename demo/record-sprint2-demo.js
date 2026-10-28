@@ -315,6 +315,15 @@ class Demo {
     await sleep(600);
   }
 
+  // Starts waiting for the browser download before the click that causes it, and never leaves a
+  // rejected promise behind if the click fails.
+  async download(action) {
+    const pending = this.page.waitForEvent("download", { timeout: 30000 });
+    pending.catch(() => {});
+    await action();
+    return pending;
+  }
+
   async reveal(locator, hold = 1500) {
     await this.moveTo(locator);
     await sleep(hold);
@@ -374,12 +383,15 @@ const GM = "General Manager";
 const BM = "Branch Manager";
 const REC = "Receptionist";
 const MEMBER = "Member";
+const ONLY = (process.argv.find((a) => a.startsWith("--only=")) || "").slice(7).split(",").filter(Boolean);
+const want = (persona) => ONLY.length === 0 || ONLY.includes(persona);
 
 async function recordStories(d) {
   const { page, creds } = d;
   const named = creds.named;
 
   // =========================== System Administrator ==========================
+  if (want("admin")) {
   await d.staffLogin("mfakhoury");
 
   await d.story({
@@ -397,30 +409,30 @@ async function recordStories(d) {
     key: "SCRUM-125", role: ADMIN, title: "Search and filter the audit log",
     sentence: "To investigate an incident, filter by action type, branch, user and date range.",
   }, async () => {
+    await d.click(d.button("Audit Log"), 700);
     await d.choose(page.locator("select").filter({ hasText: "All actions" }), { label: "Membership cancelled" });
     await d.choose(page.locator("select").filter({ hasText: "All branches" }), "Hamra");
     await d.reveal(page.locator("table tbody tr").first(), 1800);
     await d.say("Only Hamra's membership cancellations remain. Add a name to narrow it further.");
-    await d.click(d.button("Clear"), 900);
+    await d.click(d.button("Clear filters"), 900);
     await d.type(page.getByPlaceholder("Name or username"), "Dana");
     await sleep(1800);
-    await d.click(d.button("Clear"), 700);
+    await d.click(d.button("Clear filters"), 700);
   });
 
   await d.story({
     key: "SCRUM-126", role: ADMIN, title: "Export a filtered audit log as CSV",
     sentence: "The filtered view can be exported as a CSV file to share as evidence in a dispute or review.",
   }, async () => {
+    await d.click(d.button("Audit Log"), 700);
     await d.choose(page.locator("select").filter({ hasText: "All branches" }), "Jnah");
     await sleep(1000);
-    const download = page.waitForEvent("download", { timeout: 30000 });
-    await d.click(d.button("Export CSV"), 600);
-    const file = await download;
+    const file = await d.download(() => d.click(d.button("Export CSV"), 600));
     log(`  downloaded ${file.suggestedFilename()}`);
     await d.see(page.getByText("Downloaded", { exact: false }));
     await d.reveal(page.getByText("Downloaded", { exact: false }), 1800);
     await d.say("The export itself is written to the log, so there is a record of who took a copy.");
-    await d.click(d.button("Clear"), 700);
+    await d.click(d.button("Clear filters"), 700);
   });
 
   await d.story({
@@ -435,8 +447,10 @@ async function recordStories(d) {
   });
 
   await d.logout();
+  }
 
   // ============================== General Manager ============================
+  if (want("gm")) {
   await d.staffLogin("rhaddad");
 
   await d.story({
@@ -474,8 +488,10 @@ async function recordStories(d) {
   });
 
   await d.logout();
+  }
 
   // ============================== Branch Manager =============================
+  if (want("bm")) {
   await d.staffLogin("kabboud");
 
   await d.story({
@@ -530,8 +546,10 @@ async function recordStories(d) {
   });
 
   await d.logout();
+  }
 
   // ================================ Receptionist =============================
+  if (want("rec")) {
   await d.staffLogin("dsarkis");
   const sami = named.renewal;
   const nour = named.flag;
@@ -641,8 +659,10 @@ async function recordStories(d) {
   });
 
   await d.logout();
+  }
 
   // ================================== Member =================================
+  if (want("member")) {
   await d.memberLogin("memberLogin");
 
   await d.story({
@@ -688,16 +708,16 @@ async function recordStories(d) {
   });
 
   await d.logout();
+  }
 
+  if (want("delete")) {
   await d.memberLogin("deleteLogin");
   await d.story({
     key: "SCRUM-62", role: MEMBER, title: "Export or delete my personal data",
     sentence: "A member can download everything held about them, or ask for their personal data to be deleted.",
   }, async () => {
     await d.reveal(page.getByRole("heading", { name: /Your data/ }), 1200);
-    const download = page.waitForEvent("download", { timeout: 30000 });
-    await d.click(d.button("Download my data"), 800);
-    const file = await download;
+    const file = await d.download(() => d.click(d.button("Download my data"), 800));
     log(`  downloaded ${file.suggestedFilename()}`);
     await d.reveal(page.getByText("Downloaded fitness-zone-my-data", { exact: false }), 2200);
     await d.say("Deleting needs the password and the word DELETE. Payments and waivers stay on file, anonymized.");
@@ -713,6 +733,7 @@ async function recordStories(d) {
     await d.see(page.getByText("Invalid username or password."));
     await d.reveal(page.getByText("Invalid username or password."), 2200);
   });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -761,6 +782,7 @@ function duration(file) {
   fs.mkdirSync(VIDEO_DIR, { recursive: true });
 
   const stop = await startServers();
+  process.on("exit", stop);
   let browser;
   let demo;
   try {
