@@ -596,8 +596,8 @@ async function recordStories(d) {
     await d.click(d.radio("Card"), 500);
     await d.type(d.field("Name on card"), nour.name);
     await d.type(d.field("Card number"), "1881");
-    await d.choose(page.getByLabel("Expiry month"), "9");
-    await d.choose(page.getByLabel("Expiry year"), String(new Date().getFullYear() + 3));
+    await d.choose(page.locator("select").filter({ hasText: "MM" }), "9");
+    await d.choose(page.locator("select").filter({ hasText: "YYYY" }), String(new Date().getFullYear() + 3));
     await d.click(d.button("Save payment method"), 1000);
     await d.see(page.getByText("Payment method updated."));
     await d.reveal(page.getByText("Payment method updated."), 1800);
@@ -623,7 +623,7 @@ async function recordStories(d) {
     await d.click(d.button("Check In"), 900);
     await d.see(page.getByText(`Welcome, ${nour.name}`, { exact: false }));
     await d.click(page.getByRole("tab", { name: /Recent Check-Ins/ }), 900);
-    await d.click(page.getByRole("row", { name: new RegExp(nour.name) }).getByRole("button", { name: "Flag" }), 900);
+    await d.click(d.button("Flag").first(), 900);
     await d.see(page.getByRole("heading", { name: "Flag Check-In Attempt" }));
     await d.click(d.radio("Membership sharing"), 600);
     await d.type(page.getByLabel("Note (optional)"), "Different person at the desk than on the card photo");
@@ -637,7 +637,7 @@ async function recordStories(d) {
     key: "SCRUM-32", role: REC, title: "Reissue a lost access card or QR code",
     sentence: `${dana.name} lost their card: the receptionist issues a new one, and the old code stops working at once.`,
   }, async () => {
-    await d.click(page.getByRole("tab", { name: /Check-In/ }), 700).catch(() => {});
+    await d.click(d.button("Check-In"), 700);
     await d.type(page.getByLabel("Membership ID"), String(dana.id));
     await d.click(d.button("Reissue card"), 900);
     await d.see(page.getByRole("heading", { name: "Access Card" }));
