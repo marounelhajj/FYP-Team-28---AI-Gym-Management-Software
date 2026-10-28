@@ -90,7 +90,9 @@ WSGI_APPLICATION = 'gym_backend.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        # GYM_DB_PATH points the app at a different SQLite file (the Sprint 2
+        # demo uses its own, so recording never touches your dev data).
+        'NAME': os.environ.get('GYM_DB_PATH') or BASE_DIR / 'db.sqlite3',
     }
 }
 
