@@ -595,7 +595,7 @@ async function recordStories(d) {
     await d.click(page.getByRole("button", { name: /^(Update|Add payment method)$/ }), 800);
     await d.click(d.radio("Card"), 500);
     await d.type(d.field("Name on card"), nour.name);
-    await d.type(d.field("Card number"), "1881");
+    await d.type(page.locator('input[placeholder*="1234"]').first(), "1881");
     await d.choose(page.locator("select").filter({ hasText: "MM" }), "9");
     await d.choose(page.locator("select").filter({ hasText: "YYYY" }), String(new Date().getFullYear() + 3));
     await d.click(d.button("Save payment method"), 1000);
@@ -625,7 +625,7 @@ async function recordStories(d) {
     await d.click(page.getByRole("tab", { name: /Recent Check-Ins/ }), 900);
     await d.click(d.button("Flag").first(), 900);
     await d.see(page.getByRole("heading", { name: "Flag Check-In Attempt" }));
-    await d.click(d.radio("Membership sharing"), 600);
+    await d.click(page.getByRole("radio", { name: /Membership sharing/ }), 600);
     await d.type(page.getByLabel("Note (optional)"), "Different person at the desk than on the card photo");
     await d.click(d.button("Flag attempt"), 1200);
     await d.click(page.getByRole("tab", { name: /Flagged Attempts/ }), 900);
