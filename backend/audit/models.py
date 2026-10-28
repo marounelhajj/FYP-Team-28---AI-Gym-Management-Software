@@ -57,6 +57,9 @@ class AuditLog(models.Model):
         PAYMENT_RECORDED = "payment.recorded", "Payment recorded"
         PAYMENT_METHOD_UPDATED = "payment_method.updated", "Payment method changed"
         ACCESS_CARD_REISSUED = "access_card.reissued", "Access card reissued"
+        # Privacy requests (SCRUM-62)
+        MEMBER_DATA_EXPORTED = "member.data_exported", "Member data exported"
+        MEMBER_DATA_DELETED = "member.data_deleted", "Member data deleted"
         # Front desk
         CHECKIN_FLAGGED = "checkin.flagged", "Check-in attempt flagged"
         CHECKIN_FLAG_RESOLVED = "checkin.flag_resolved", "Check-in flag resolved"

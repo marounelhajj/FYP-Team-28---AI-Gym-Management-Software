@@ -98,6 +98,39 @@ export async function fetchMyBilling() {
   return res.json();
 }
 
+// GET /api/members/me/export - downloads the logged-in member's own data as
+// a JSON file (SCRUM-62). Resolves to the filename that was saved.
+export async function downloadMyData() {
+  const res = await fetch("/api/members/me/export");
+  if (!res.ok) throw await parseError(res);
+  const blob = await res.blob();
+  const match = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "");
+  const filename = match ? match[1] : "fitness-zone-my-data.json";
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  return filename;
+}
+
+// POST /api/members/me/delete - erases/anonymizes the logged-in member's
+// personal data and ends their session (SCRUM-62). The server needs both the
+// account password and the word DELETE.
+export async function deleteMyData(password, confirm) {
+  const res = await fetch("/api/members/me/delete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password, confirm }),
+  });
+  if (!res.ok) throw await parseError(res);
+  return res.json();
+}
+
 // POST /api/members/me/{freeze,resume,cancel} - pause, un-pause, or end
 // the logged-in member's own membership. No body on any of the three;
 // each resolves to the updated member (same shape as fetchCurrentMember).
