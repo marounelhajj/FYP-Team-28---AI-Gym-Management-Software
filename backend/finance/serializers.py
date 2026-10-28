@@ -30,7 +30,10 @@ class ExpenseWriteSerializer(serializers.Serializer):
             raise serializers.ValidationError("Amount must be greater than zero.")
         return value
 
+    # Defaults only apply to a new expense; a partial edit (PATCH) leaves
+    # whatever it doesn't mention alone.
     def validate(self, attrs):
-        attrs.setdefault("incurred_on", timezone.localdate())
-        attrs.setdefault("note", "")
+        if not self.partial:
+            attrs.setdefault("incurred_on", timezone.localdate())
+            attrs.setdefault("note", "")
         return attrs

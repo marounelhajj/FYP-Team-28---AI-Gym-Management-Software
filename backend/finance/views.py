@@ -9,6 +9,7 @@ from rest_framework.response import Response
 
 from administration.permissions import authorize
 from billing.models import Payment
+from headcount.views import resolve_branch
 from members.models import Member
 from retail.models import Sale
 
@@ -247,3 +248,153 @@ def finance_meta(request):
         "branches": branches,
         "categories": [choice.value for choice in Expense.Category],
     })
+
+
+# --- Branch Finances (SCRUM-26) -------------------------------------------
+
+MAX_CUSTOM_RANGE_DAYS = 366
+# Up to this many days the chart has one point per day; longer ranges are
+# grouped by month so it stays readable.
+DAILY_SERIES_MAX_DAYS = 62
+
+
+def _period_dates(params, today):
+    period = (params.get("period") or "this_month").strip()
+    if period == "this_month":
+        return period, today.replace(day=1), today, None
+    if period == "last_month":
+        end = today.replace(day=1) - timedelta(days=1)
+        return period, end.replace(day=1), end, None
+    if period == "custom":
+        if not params.get("dateFrom") or not params.get("dateTo"):
+            return None, None, None, Response({"error": "A custom period needs both dateFrom and dateTo."}, status=400)
+        date_from, date_to, error = _parsed_date_range(params)
+        if error:
+            return None, None, None, error
+        if (date_to - date_from).days >= MAX_CUSTOM_RANGE_DAYS:
+            return None, None, None, Response(
+                {"error": f"A custom period can cover at most {MAX_CUSTOM_RANGE_DAYS} days."}, status=400,
+            )
+        return period, date_from, date_to, None
+    return None, None, None, Response(
+        {"error": f'Invalid period "{period}". Must be one of: this_month, last_month, custom'}, status=400,
+    )
+
+
+def _series_keys(date_from, date_to):
+    if (date_to - date_from).days < DAILY_SERIES_MAX_DAYS:
+        keys = [date_from + timedelta(days=i) for i in range((date_to - date_from).days + 1)]
+        return "day", keys, lambda d: d.isoformat()
+    keys, cursor = [], date_from.replace(day=1)
+    while cursor <= date_to:
+        keys.append(cursor)
+        cursor = (cursor.replace(day=28) + timedelta(days=4)).replace(day=1)
+    return "month", keys, lambda d: d.strftime("%Y-%m")
+
+
+# GET /api/finance/branch?branch=&period=this_month|last_month|custom&dateFrom=&dateTo=
+#
+# One branch's revenue, expenses and net over a period (this month by
+# default), for the Branch Finances page. Same branch rule as live headcount
+# (SCRUM-127, headcount.views.resolve_branch): a Branch Manager only ever
+# gets their own branch (another one is a 403), a role with view_all_branches
+# (General Manager, System Administrator) may ask for any, defaulting to their
+# own branch or the first one.
+#
+# Revenue is split by source: first payments at signup/registration,
+# renewals (incl. reactivations) and retail sales (voided ones excluded).
+# "series" is revenue vs expenses per day, or per month for ranges longer
+# than DAILY_SERIES_MAX_DAYS days. Amounts are strings, as in /report.
+@api_view(["GET"])
+def branch_finances(request):
+    account, denied = authorize(request, REPORT_PERMISSION)
+    if denied:
+        return denied
+
+    branch, branches, error = resolve_branch(account, request.query_params.get("branch"), subject="finances")
+    if error:
+        return error
+    period, date_from, date_to, error = _period_dates(request.query_params, timezone.localdate())
+    if error:
+        return error
+
+    start, end = _day_start(date_from), _day_start(date_to + timedelta(days=1))
+    granularity, keys, label = _series_keys(date_from, date_to)
+
+    def bucket(day):
+        return label(day if granularity == "day" else day.replace(day=1))
+
+    series = {label(k): {"revenue": Decimal("0"), "expenses": Decimal("0")} for k in keys}
+    sources = {"firstPayments": Decimal("0"), "renewals": Decimal("0"), "retail": Decimal("0")}
+    categories = defaultdict(lambda: Decimal("0"))
+
+    payments = Payment.objects.filter(member__branch=branch, paid_at__gte=start, paid_at__lt=end)
+    for paid_at, amount, note in payments.values_list("paid_at", "amount", "note"):
+        sources["firstPayments" if note.startswith("First payment") else "renewals"] += amount
+        series[bucket(timezone.localtime(paid_at).date())]["revenue"] += amount
+
+    sales = Sale.objects.filter(branch=branch, voided_at__isnull=True, sold_at__gte=start, sold_at__lt=end)
+    for sold_at, total in sales.values_list("sold_at", "total"):
+        sources["retail"] += total
+        series[bucket(timezone.localtime(sold_at).date())]["revenue"] += total
+
+    expenses = Expense.objects.filter(branch=branch, incurred_on__gte=date_from, incurred_on__lte=date_to)
+    for incurred_on, category, amount in expenses.values_list("incurred_on", "category", "amount"):
+        categories[category] += amount
+        series[bucket(incurred_on)]["expenses"] += amount
+
+    revenue, total_expenses = sum(sources.values()), sum(categories.values())
+    return Response({
+        "branch": branch,
+        "branches": branches,
+        "canChooseBranch": len(branches) > 1,
+        "canManageExpenses": MANAGE_PERMISSION in account.role.permissions,
+        "period": period,
+        "dateFrom": date_from,
+        "dateTo": date_to,
+        "revenue": f"{revenue:.2f}",
+        "revenueBySource": {name: f"{amount:.2f}" for name, amount in sources.items()},
+        "expenses": f"{total_expenses:.2f}",
+        "expensesByCategory": {name: f"{amount:.2f}" for name, amount in categories.items()},
+        "net": f"{revenue - total_expenses:.2f}",
+        "granularity": granularity,
+        "series": [
+            {"date": key, "revenue": f"{values['revenue']:.2f}", "expenses": f"{values['expenses']:.2f}"}
+            for key, values in series.items()
+        ],
+    })
+
+
+# PATCH  /api/finance/expenses/<id> - edit an expense (any subset of branch,
+#        category, amount, incurredOn, note).
+# DELETE /api/finance/expenses/<id> - remove it.
+#
+# Gated on manage_billing like recording one. A caller without
+# view_all_branches only reaches expenses of their own branch: another
+# branch's expense is a 404 (its existence isn't confirmed), and moving one
+# to another branch is a 403.
+@api_view(["PATCH", "DELETE"])
+def expense_detail(request, expense_id):
+    account, denied = authorize(request, MANAGE_PERMISSION)
+    if denied:
+        return denied
+
+    sees_all = ALL_BRANCHES_PERMISSION in account.role.permissions
+    expense = Expense.objects.filter(pk=expense_id).select_related("recorded_by").first()
+    if expense is None or (not sees_all and expense.branch != account.branch):
+        return Response({"error": "Expense not found."}, status=404)
+
+    if request.method == "DELETE":
+        expense.delete()
+        return Response(status=204)
+
+    serializer = ExpenseWriteSerializer(data=request.data, partial=True)
+    if not serializer.is_valid():
+        return Response({"error": serializer.errors}, status=400)
+    data = serializer.validated_data
+    if not sees_all and data.get("branch", expense.branch) != account.branch:
+        return Response({"error": "You can only keep an expense on your own branch."}, status=403)
+    for field, value in data.items():
+        setattr(expense, field, value)
+    expense.save()
+    return Response(ExpenseSerializer(expense).data)

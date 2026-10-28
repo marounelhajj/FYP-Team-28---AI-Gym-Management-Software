@@ -22,7 +22,10 @@ WEEKS_COMPARED = 6
 # Which branch the caller may see. Enforced here, not just in the UI: a
 # Branch Manager asking for another branch gets 403, not that branch's data.
 # Returns (branch, branches_they_can_pick, None) or (None, None, error).
-def resolve_branch(account, requested):
+#
+# `subject` only words the 403 ("...see headcount for your own branch"); the
+# Branch Finances page (SCRUM-26) reuses this exact rule.
+def resolve_branch(account, requested, subject="headcount"):
     all_branches = list(Member.Branch.values)
     requested = (requested or "").strip()
     if requested and requested not in all_branches:
@@ -39,7 +42,7 @@ def resolve_branch(account, requested):
             status=403,
         )
     if requested and requested != account.branch:
-        return None, None, Response({"error": "You can only see headcount for your own branch."}, status=403)
+        return None, None, Response({"error": f"You can only see {subject} for your own branch."}, status=403)
     return account.branch, [account.branch], None
 
 
