@@ -2,7 +2,7 @@ from django.urls import path
 
 from billing import views as billing_views
 
-from . import auth_views, views
+from . import auth_views, privacy, views
 
 urlpatterns = [
     path("/meta", views.member_meta),
@@ -12,6 +12,8 @@ urlpatterns = [
     path("/logout", auth_views.logout),
     path("/me", auth_views.me),
     path("/me/qr", auth_views.my_qr),
+    path("/me/export", privacy.my_data_export),
+    path("/me/delete", privacy.my_data_delete),
     path("/me/payment-method", billing_views.my_payment_method),
     path("/me/billing", billing_views.my_billing),
     path("/me/freeze", views.my_freeze),
