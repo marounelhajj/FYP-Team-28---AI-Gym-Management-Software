@@ -30,7 +30,7 @@ ROLES = [
         "description": "Runs day-to-day branch operations: scheduling, budget, local staff, and local promotions.",
         "permissions": [
             "manage_members", "manage_class_schedule", "manage_branch_promotions", "view_financial_reports",
-            "view_branch_headcount", "process_sales", "manage_retail_products",
+            "view_branch_headcount", "process_sales", "manage_retail_products", "manage_billing",
         ],
     },
     {

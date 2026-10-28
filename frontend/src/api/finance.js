@@ -44,3 +44,28 @@ export async function recordExpense(data) {
   if (!res.ok) throw await parseError(res);
   return res.json();
 }
+
+// SCRUM-26: one branch's revenue, expenses and net for a period.
+// filters: { branch?, period: "this_month" | "last_month" | "custom", dateFrom?, dateTo? }
+export async function fetchBranchFinances(filters = {}) {
+  const params = filterParams(filters);
+  if (filters.period) params.set("period", filters.period);
+  const res = await fetch(`/api/finance/branch?${params.toString()}`);
+  if (!res.ok) throw await parseError(res);
+  return res.json();
+}
+
+export async function updateExpense(id, data) {
+  const res = await fetch(`/api/finance/expenses/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw await parseError(res);
+  return res.json();
+}
+
+export async function deleteExpense(id) {
+  const res = await fetch(`/api/finance/expenses/${id}`, { method: "DELETE" });
+  if (!res.ok) throw await parseError(res);
+}
