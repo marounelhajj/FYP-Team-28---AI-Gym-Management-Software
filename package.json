@@ -1,0 +1,13 @@
+{
+  "name": "fitness-zone-demo-tooling",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Dev-only tooling that seeds a demo database and records the Sprint 2 demo video. Not part of the app.",
+  "scripts": {
+    "demo:seed": "node demo/seed-demo.js",
+    "demo:record": "node demo/record-sprint2-demo.js"
+  },
+  "devDependencies": {
+    "playwright": "1.49.1"
+  }
+}
