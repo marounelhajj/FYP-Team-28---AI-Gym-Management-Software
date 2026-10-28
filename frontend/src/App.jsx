@@ -8,6 +8,7 @@ import PlanManager from "./components/plans/PlanManager.jsx";
 import PromotionManager from "./components/plans/PromotionManager.jsx";
 import AuditLog from "./components/audit/AuditLog.jsx";
 import RetentionReport from "./components/audit/RetentionReport.jsx";
+import BranchFinances from "./components/finance/BranchFinances.jsx";
 import FinancialReport from "./components/finance/FinancialReport.jsx";
 import ExpenseLedger from "./components/finance/ExpenseLedger.jsx";
 import HeadcountDashboard from "./components/headcount/HeadcountDashboard.jsx";
@@ -67,10 +68,16 @@ function availableScreens(account) {
   if (has("view_audit_log")) {
     screens.push({ key: "retention", label: "Retention", render: () => <RetentionReport /> });
   }
+  // SCRUM-26: every finance role gets the one-branch Branch Finances page
+  // (a Branch Manager is held to their own branch by the server). Roles that
+  // see all branches also keep the cross-branch report and the expense ledger.
   if (has("view_financial_reports")) {
+    screens.push({ key: "branchfinance", label: "Branch Finances", render: () => <BranchFinances /> });
+  }
+  if (has("view_financial_reports") && has("view_all_branches")) {
     screens.push({ key: "finance", label: "Financial Report", render: () => <FinancialReport /> });
   }
-  if (has("manage_billing")) {
+  if (has("manage_billing") && has("view_all_branches")) {
     screens.push({ key: "expenses", label: "Expenses", render: () => <ExpenseLedger /> });
   }
   // A role allowed to manage staff accounts on top of its own screens -
