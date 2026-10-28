@@ -241,7 +241,17 @@ export default function App() {
   const activeScreen = screens.find((s) => s.key === screenKey) || screens[0];
 
   let content;
-  if (!isStaff) content = <MemberDashboard member={session.data} />;
+  if (!isStaff) {
+    content = (
+      <MemberDashboard
+        member={session.data}
+        onDeleted={() => {
+          setSession(null);
+          setAuthScreen("memberLogin");
+        }}
+      />
+    );
+  }
   else if (isAdmin) content = <AdminConsole permissions={session.data.permissions} />;
   else if (activeScreen) content = activeScreen.render();
   else {

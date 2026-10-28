@@ -9,6 +9,7 @@ import {
 } from "../../api/memberAuth.js";
 import { BUTTON_COLORS } from "../../styles/buttonColors.js";
 import MemberPaymentMethodForm from "./MemberPaymentMethodForm.jsx";
+import MemberPrivacyPanel from "./MemberPrivacyPanel.jsx";
 import MemberProfileForm from "./MemberProfileForm.jsx";
 
 const STATUS_STYLES = {
@@ -31,7 +32,9 @@ const STATUS_STYLES = {
 // User story (freeze/cancel): "As a member, I want to freeze or cancel my
 // membership through the app, so that I have control over my
 // subscription without a front-desk visit."
-export default function MemberDashboard({ member: initialMember }) {
+// User story (SCRUM-62): "As a member, I want to request an export or
+// deletion of my personal data, so that I have control over my own privacy."
+export default function MemberDashboard({ member: initialMember, onDeleted }) {
   const [member, setMember] = useState(initialMember);
   const statusStyle = STATUS_STYLES[member.status] || { background: "#eee", color: "#333" };
   const [qr, setQr] = useState(null);
@@ -240,6 +243,9 @@ export default function MemberDashboard({ member: initialMember }) {
           )}
         </div>
       )}
+
+      <h2 style={styles.sectionTitle}>Your data &amp; privacy</h2>
+      <MemberPrivacyPanel onDeleted={onDeleted} />
 
       <p style={styles.note}>
         Class booking and the AI chatbot are coming in a future update.
