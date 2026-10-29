@@ -232,6 +232,7 @@ export default function App() {
     return (
       <LoginPage
         onLoggedIn={handleStaffLoggedIn}
+        onMemberLoggedIn={handleMemberLoggedIn}
         onSwitchToMember={() => setAuthScreen("memberLogin")}
         onBrowsePlans={browsePlans}
       />

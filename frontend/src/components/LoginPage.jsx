@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { login, logout, verifyTwoFactor } from "../api/auth.js";
+import { loginMember } from "../api/memberAuth.js";
 import { BUTTON_COLORS } from "../styles/buttonColors.js";
 import Logo from "./Logo.jsx";
 
@@ -13,7 +14,7 @@ import Logo from "./Logo.jsx";
 // code from the authenticator app ("verify") or, on an account's first
 // login, to scan a QR code and confirm it ("enroll"). Enrollment ends on a
 // one-time screen listing the backup codes.
-export default function LoginPage({ onLoggedIn, onSwitchToMember, onBrowsePlans }) {
+export default function LoginPage({ onLoggedIn, onMemberLoggedIn, onSwitchToMember, onBrowsePlans }) {
   const [step, setStep] = useState("password"); // password | verify | enroll | backupCodes
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -35,6 +36,17 @@ export default function LoginPage({ onLoggedIn, onSwitchToMember, onBrowsePlans 
       setEnrollment(result.enrollment || null);
       setStep(result.twoFactor === "enroll" ? "enroll" : "verify");
     } catch (err) {
+      // A gym member typed their own login here: sign them in as the member
+      // they are, rather than leaving them stuck at "unknown username".
+      if (err.memberAccount && onMemberLoggedIn) {
+        try {
+          onMemberLoggedIn(await loginMember(username, password));
+          return;
+        } catch (memberErr) {
+          setError(memberErr.message);
+          return;
+        }
+      }
       setError(err.message);
     } finally {
       setSubmitting(false);

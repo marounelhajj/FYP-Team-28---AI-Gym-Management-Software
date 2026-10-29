@@ -4,7 +4,10 @@
 
 async function parseError(res) {
   const body = await res.json().catch(() => ({}));
-  return new Error(body.error || `Request failed with status ${res.status}`);
+  const err = new Error(body.error || `Request failed with status ${res.status}`);
+  // A gym member's own login typed into the staff form (see LoginPage.jsx).
+  err.memberAccount = body.memberAccount === true;
+  return err;
 }
 
 // Step 1 of staff sign-in. Resolves to {twoFactor: "verify"}, or

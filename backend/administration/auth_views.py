@@ -10,6 +10,7 @@ from rest_framework.response import Response
 
 from audit.log import record
 from audit.models import AuditLog
+from members.models import Member
 
 from . import totp
 from .models import StaffAccount, StaffBackupCode
@@ -113,6 +114,13 @@ def login(request):
     try:
         account = StaffAccount.objects.select_related("role").get(username=username)
     except StaffAccount.DoesNotExist:
+        # A gym member who typed their own login into the staff form: say so,
+        # so the app can sign them in on the member side instead. Only when
+        # the password is theirs, so this can't be used to discover usernames.
+        member = Member.objects.filter(username=username).first() if username else None
+        if member is not None and member.password_hash and check_password(password, member.password_hash):
+            _record_failed_login(request, username, "member account used at the staff sign-in")
+            return Response({"error": "That's a gym member account.", "memberAccount": True}, status=401)
         _record_failed_login(request, username, "unknown username")
         return Response({"error": "Invalid username or password."}, status=401)
 
