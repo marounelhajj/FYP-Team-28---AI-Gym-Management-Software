@@ -121,7 +121,10 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+# Every branch is in Lebanon, so "today", class times, expiry dates and
+# check-in times are Beirut time (datetimes are still stored as UTC).
+# On Windows this needs the tzdata package (requirements.txt).
+TIME_ZONE = 'Asia/Beirut'
 
 USE_I18N = True
 

@@ -2,7 +2,7 @@ import json
 from datetime import date, datetime, timedelta, timezone as dt_timezone
 from unittest import mock
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
 from administration.models import Role, StaffAccount
 from administration.testing import staff_login
@@ -10,7 +10,9 @@ from checkins.models import CheckIn
 from members.models import Member
 
 PASSWORD = "ChangeMe123!"
-# Wednesday 21 October 2026, 15:30 (TIME_ZONE is UTC).
+# Wednesday 21 October 2026, 15:30 UTC. These tests are written in UTC hours,
+# so the class runs with TIME_ZONE = UTC; test_hours_follow_the_server_time_zone
+# checks the real setting (Beirut).
 NOW = datetime(2026, 10, 21, 15, 30, tzinfo=dt_timezone.utc)
 
 
@@ -35,6 +37,7 @@ def _visit(member, start, end=None, branch="Hamra", result=CheckIn.Result.ALLOWE
 
 # User story (SCRUM-129): "As a branch manager, I want to view headcount by
 # hour for the current day, so that I can see when my peaks actually fall."
+@override_settings(TIME_ZONE="UTC")
 class HourlyHeadcountTests(TestCase):
     @classmethod
     def setUpTestData(cls):
@@ -145,6 +148,16 @@ class HourlyHeadcountTests(TestCase):
             self.assertNotIn(member.name, raw)
             self.assertNotIn(member.email, raw)
         self.assertNotIn("member", raw.lower())
+
+    # With the real setting, 15:05 UTC is 18:05 in Beirut: still summer time
+    # (UTC+3) on 21 October - the clocks go back on the 25th.
+    @override_settings(TIME_ZONE="Asia/Beirut")
+    def test_hours_follow_the_server_time_zone(self):
+        _visit(self.members[0], at(21, 15, 5))
+        staff_login(self.client, "hamrabm", PASSWORD)
+        body = self.get().json()
+        self.assertEqual((body["timeZone"], body["currentHour"]), ("Asia/Beirut", 18))
+        self.assertEqual(self.hours(body)[18]["today"], 1)
 
     # Same branch rule as live headcount (SCRUM-127).
     def test_branch_permissions(self):
