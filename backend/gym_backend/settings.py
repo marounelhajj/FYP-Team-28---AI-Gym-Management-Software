@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     'finance',
     'doors',
     'retail',
+    'classes',
 ]
 
 MIDDLEWARE = [

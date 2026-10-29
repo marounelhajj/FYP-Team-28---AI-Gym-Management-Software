@@ -37,6 +37,7 @@ CATEGORY_LABELS = {
     "checkin": "Check-ins",
     "door": "Door readers",
     "retail": "Retail (point of sale)",
+    "class": "Class schedule",
     "audit_log": "Audit log",
 }
 

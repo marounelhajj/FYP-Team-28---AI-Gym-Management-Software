@@ -73,6 +73,15 @@ class AuditLog(models.Model):
         RETAIL_PRODUCT_CREATED = "retail.product_created", "Retail product added"
         RETAIL_PRODUCT_UPDATED = "retail.product_updated", "Retail product edited"
         RETAIL_STOCK_ADJUSTED = "retail.stock_adjusted", "Retail stock changed"
+        # Class schedule
+        CLASS_CREATED = "class.created", "Class scheduled"
+        CLASS_UPDATED = "class.updated", "Class edited"
+        CLASS_CANCELLED = "class.cancelled", "Class cancelled"
+        CLASS_TYPE_CREATED = "class.type_created", "Class type added"
+        CLASS_TYPE_UPDATED = "class.type_updated", "Class type edited"
+        PT_HOURS_ADDED = "class.pt_hours_added", "Private training hours added"
+        PT_HOURS_REMOVED = "class.pt_hours_removed", "Private training hours removed"
+        PT_SESSION_CANCELLED = "class.pt_session_cancelled", "Private training session cancelled by staff"
         # The log itself (SCRUM-126) - who took a copy of which entries.
         AUDIT_LOG_EXPORTED = "audit_log.exported", "Audit log exported"
 

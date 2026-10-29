@@ -17,14 +17,11 @@ logger = logging.getLogger(__name__)
 # carries on as normal. The savepoint keeps a failed insert from poisoning a
 # surrounding transaction.
 #
-# Wired today: check_in (checkins/views.py) and cancellation
-# (members/views.py, front desk and self-service).
+# Wired today: check_in (checkins/views.py), cancellation (members/views.py,
+# front desk and self-service) and no_show (classes/rules.settle_attendance:
+# a class booking or private training session nobody checked in for -
+# session_id is the class booking id, or "pt:<id>" for a PT session).
 #
-# TODO(no_show): there are no class or PT bookings yet. When they land, call
-#   log_training_event(TrainingEvent.EventType.NO_SHOW, member=..., branch=...,
-#                      trainer=<coach or None>, session_id=str(<booking id>))
-# from wherever a booking is marked as missed (or from the job that closes
-# sessions nobody checked into).
 # TODO(trainer_accept / trainer_reject): there is no coach-request flow yet.
 # When a coach accepts or rejects a PT request or program, call
 #   log_training_event(TrainingEvent.EventType.TRAINER_ACCEPT (or TRAINER_REJECT),

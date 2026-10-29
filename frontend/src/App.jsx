@@ -4,6 +4,7 @@ import { fetchCurrentMember, logoutMember } from "./api/memberAuth.js";
 import MemberDirectory from "./components/MemberDirectory.jsx";
 import AdminConsole from "./components/admin/AdminConsole.jsx";
 import CheckIn from "./components/CheckIn.jsx";
+import ClassSchedule from "./components/classes/ClassSchedule.jsx";
 import PlanManager from "./components/plans/PlanManager.jsx";
 import PromotionManager from "./components/plans/PromotionManager.jsx";
 import AuditLog from "./components/audit/AuditLog.jsx";
@@ -50,6 +51,11 @@ function availableScreens(account) {
   if (has("manage_members")) {
     screens.push({ key: "members", label: "Member Directory", render: () => <MemberDirectory /> });
     screens.push({ key: "checkin", label: "Check-In", render: () => <CheckIn /> });
+  }
+  // The weekly class calendar: built by whoever has manage_class_schedule
+  // (Branch Manager), and read-only for the front desk.
+  if (has("manage_class_schedule") || has("manage_members")) {
+    screens.push({ key: "classes", label: "Class Schedule", render: () => <ClassSchedule /> });
   }
   // Point of sale at the front desk, and the catalog/stock behind it.
   if (has("process_sales")) {

@@ -9,6 +9,7 @@ from audit.log import record
 from audit.models import AuditLog
 from billing.serializers import PaymentSerializer
 from checkins.models import active_flags
+from classes.rules import release_future_bookings
 from plans.models import MembershipPlan
 from training.events import log_training_event
 from training.models import TrainingEvent
@@ -220,6 +221,8 @@ def member_cancel(request, member_id):
     previous = member.status
     member.status = Member.Status.CANCELLED
     member.save(update_fields=["status"])
+    # Their class spots go back to other members.
+    release_future_bookings(member, "Membership cancelled")
     record(
         request, AuditLog.Action.MEMBER_CANCELLED, actor=account, target=member,
         summary=f"Cancelled {member.name}'s membership at the front desk", details={"previousStatus": previous},
@@ -267,6 +270,8 @@ def my_freeze(request):
 
     member.status = Member.Status.FROZEN
     member.save(update_fields=["status"])
+    # A frozen card doesn't open the doors, so their class spots are freed up.
+    release_future_bookings(member, "Membership frozen")
     record(request, AuditLog.Action.MEMBER_FROZEN, actor=member, target=member, summary=f"{member.name} froze their membership")
     return Response(MemberSerializer(member).data)
 
@@ -314,6 +319,7 @@ def my_cancel(request):
     previous = member.status
     member.status = Member.Status.CANCELLED
     member.save(update_fields=["status"])
+    release_future_bookings(member, "Membership cancelled")
     record(
         request, AuditLog.Action.MEMBER_CANCELLED, actor=member, target=member,
         summary=f"{member.name} cancelled their membership in the app", details={"previousStatus": previous},

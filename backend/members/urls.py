@@ -1,6 +1,7 @@
 from django.urls import path
 
 from billing import views as billing_views
+from classes import views as class_views
 
 from . import auth_views, privacy, views
 
@@ -19,6 +20,13 @@ urlpatterns = [
     path("/me/freeze", views.my_freeze),
     path("/me/resume", views.my_resume),
     path("/me/cancel", views.my_cancel),
+    path("/me/classes", class_views.my_classes),
+    path("/me/classes/<int:class_id>/book", class_views.book_class),
+    path("/me/classes/<int:class_id>/cancel", class_views.cancel_booking),
+    path("/me/coaches", class_views.my_coaches),
+    path("/me/pt-slots", class_views.my_pt_slots),
+    path("/me/pt-sessions", class_views.book_pt),
+    path("/me/pt-sessions/<int:session_id>/cancel", class_views.cancel_my_pt),
     path("/<int:member_id>/billing", billing_views.member_billing),
     path("/<int:member_id>/payment-method", billing_views.member_payment_method),
     path("/<int:member_id>/renewal-quote", billing_views.member_renewal_quote),

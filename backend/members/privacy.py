@@ -12,6 +12,7 @@ from audit.log import record
 from audit.models import AuditLog
 from billing.models import PaymentMethod
 from checkins.models import CheckInFlag
+from classes.rules import release_future_bookings
 from training.events import delete_training_events_for_member
 
 from .models import AccessCardReissue, Member
@@ -119,6 +120,22 @@ def build_export(member):
             {"cardNumber": r.card_number, "reason": r.reason, "note": r.note, "reissuedAt": _stamp(r.reissued_at)}
             for r in member.card_reissues.all()
         ],
+        "classBookings": [
+            {
+                "id": b.pk, "className": b.gym_class.name, "branch": b.gym_class.branch,
+                "startsAt": _stamp(b.gym_class.starts_at), "status": b.status, "bookedAt": _stamp(b.booked_at),
+                "cancelReason": b.cancel_reason, "attendance": b.attendance,
+            }
+            for b in member.class_bookings.select_related("gym_class")
+        ],
+        "ptSessions": [
+            {
+                "id": s.pk, "coach": s.coach.full_name, "branch": s.branch, "startsAt": _stamp(s.starts_at),
+                "endsAt": _stamp(s.ends_at), "status": s.status, "note": s.note, "bookedAt": _stamp(s.booked_at),
+                "cancelReason": s.cancel_reason, "attendance": s.attendance,
+            }
+            for s in member.pt_sessions.select_related("coach")
+        ],
         "retailPurchases": [
             {"id": s.pk, "total": f"{s.total:.2f}", "soldAt": _stamp(s.sold_at), "voided": s.voided_at is not None}
             for s in member.retail_purchases.all()
@@ -175,6 +192,7 @@ def anonymize_member(member):
         PaymentMethod.objects.filter(member=member).delete()
         AccessCardReissue.objects.filter(member=member).delete()
         CheckInFlag.objects.filter(check_in__member=member).update(note="", resolution_note="")
+        release_future_bookings(member, "Member data deleted")
         delete_training_events_for_member(member.pk)
         _scrub_audit_entries(member)
 

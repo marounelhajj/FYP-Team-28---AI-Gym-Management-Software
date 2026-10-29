@@ -43,6 +43,11 @@ ROLES = [
         "description": "Builds and tracks promotional campaigns and member segments.",
         "permissions": ["manage_marketing_campaigns"],
     },
+    {
+        "name": "Coach",
+        "description": "Teaches group classes - a Branch Manager assigns them to slots on the class schedule.",
+        "permissions": [],
+    },
 ]
 
 STAFF_ACCOUNTS = [
@@ -52,6 +57,12 @@ STAFF_ACCOUNTS = [
     {"full_name": "Dana Sarkis", "email": "dana.sarkis@gym.com", "username": "dsarkis", "job_title": "Receptionist", "role": "Receptionist", "branch": "Hamra"},
     {"full_name": "Fadi Ghosn", "email": "fadi.ghosn@gym.com", "username": "fghosn", "job_title": "Receptionist", "role": "Receptionist", "is_active": False},
     {"full_name": "Nadine Khalil", "email": "nadine.khalil@gym.com", "username": "nkhalil", "job_title": "Marketing Staff", "role": "Marketing Staff"},
+    # Coaches for the class schedule; Joe Karam isn't tied to one branch.
+    {"full_name": "Hadi Nasser", "email": "hadi.nasser@gym.com", "username": "hnasser", "job_title": "Coach", "role": "Coach", "branch": "Hamra"},
+    {"full_name": "Rita Aoun", "email": "rita.aoun@gym.com", "username": "raoun", "job_title": "Coach", "role": "Coach", "branch": "Hamra"},
+    {"full_name": "Omar Saleh", "email": "omar.saleh@gym.com", "username": "osaleh", "job_title": "Coach", "role": "Coach", "branch": "Hamra"},
+    {"full_name": "Lara Mansour", "email": "lara.mansour@gym.com", "username": "lmansour", "job_title": "Coach", "role": "Coach", "branch": "Jnah"},
+    {"full_name": "Joe Karam", "email": "joe.karam@gym.com", "username": "jkaram", "job_title": "Coach", "role": "Coach"},
 ]
 
 

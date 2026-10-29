@@ -8,6 +8,7 @@ import {
   resumeMyMembership,
 } from "../../api/memberAuth.js";
 import { BUTTON_COLORS } from "../../styles/buttonColors.js";
+import MemberBooking from "./MemberBooking.jsx";
 import MemberPaymentMethodForm from "./MemberPaymentMethodForm.jsx";
 import MemberPrivacyPanel from "./MemberPrivacyPanel.jsx";
 import MemberProfileForm from "./MemberProfileForm.jsx";
@@ -34,6 +35,9 @@ const STATUS_STYLES = {
 // subscription without a front-desk visit."
 // User story (SCRUM-62): "As a member, I want to request an export or
 // deletion of my personal data, so that I have control over my own privacy."
+// Booking: classes, coaches and private training, and the member's own
+// bookings (MemberBooking.jsx). Re-keyed on status, so freezing (which frees
+// future spots and sessions) reloads it.
 export default function MemberDashboard({ member: initialMember, onDeleted }) {
   const [member, setMember] = useState(initialMember);
   const statusStyle = STATUS_STYLES[member.status] || { background: "#eee", color: "#333" };
@@ -178,6 +182,9 @@ export default function MemberDashboard({ member: initialMember, onDeleted }) {
         </div>
       )}
 
+      <h2 style={styles.sectionTitle}>Book at {member.branch}</h2>
+      <MemberBooking key={member.status} />
+
       <div style={styles.paymentCard}>
         <div style={styles.paymentCardHeader}>
           <span style={styles.paymentCardTitle}>Payment method</span>
@@ -247,9 +254,7 @@ export default function MemberDashboard({ member: initialMember, onDeleted }) {
       <h2 style={styles.sectionTitle}>Your data &amp; privacy</h2>
       <MemberPrivacyPanel onDeleted={onDeleted} />
 
-      <p style={styles.note}>
-        Class booking and the AI chatbot are coming in a future update.
-      </p>
+      <p style={styles.note}>The AI chatbot is coming in a future update.</p>
 
       {showProfileForm && (
         <MemberProfileForm member={member} onClose={() => setShowProfileForm(false)} onSaved={handleProfileSaved} />
