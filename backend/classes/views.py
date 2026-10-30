@@ -9,7 +9,7 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from administration.models import StaffAccount
-from administration.permissions import authorize
+from administration.permissions import authorize, get_staff_account
 from audit.log import changes, record
 from audit.models import AuditLog
 from headcount.views import resolve_branch
@@ -461,6 +461,44 @@ def availability(request):
             {"name": name, "takenBy": taken_rooms.get(key)}
             for key, name in sorted(studios.items())
         ],
+    })
+
+
+# GET /api/classes/me/schedule?week=YYYY-MM-DD - the signed-in coach's own
+# classes and private training sessions that week (Monday to Sunday,
+# default: this week), so they can plan their working day without opening
+# the branch calendar. Any authenticated staff account can call this - it
+# only ever returns what is assigned to them, and only a Coach is ever
+# assigned to a class or PT hours in the first place (see
+# rules.coach_problem). No permission is required, same reasoning as the
+# member self-service endpoints: this is your own data, not a branch-wide
+# view.
+#
+# User story: "As a coach, I want to view my daily and weekly schedule of
+# classes and PT sessions, so that I can plan my working day."
+@api_view(["GET"])
+def my_schedule(request):
+    account = get_staff_account(request)
+    if account is None:
+        return Response({"error": "Not authenticated."}, status=401)
+    day, error = _parse_day(request.query_params.get("week"))
+    if error:
+        return error
+
+    rules.settle_attendance()
+    start, window_start, window_end = rules.week_bounds(day)
+    # Not filtered by branch: a coach without one (e.g. Joe Karam) can teach
+    # across branches, so their week should show all of it.
+    classes = _with_counts(
+        GymClass.objects.filter(coach=account, starts_at__gte=window_start, starts_at__lt=window_end),
+    )
+    sessions = rules.booked_pt().filter(coach=account, starts_at__gte=window_start, starts_at__lt=window_end)
+    return Response({
+        "coachId": account.id,
+        "coachName": account.full_name,
+        **_week_payload(start),
+        "classes": GymClassSerializer(classes, many=True).data,
+        "ptSessions": PTSessionSerializer(sessions.select_related("coach", "member"), many=True).data,
     })
 
 

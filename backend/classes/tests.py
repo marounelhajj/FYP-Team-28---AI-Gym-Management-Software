@@ -743,3 +743,65 @@ class PrivateTrainingTests(TestCase):
         self.book("11:00", note="Posture")
         export = self.client.get("/api/members/me/export").json()
         self.assertEqual([(s["coach"], s["note"], s["status"]) for s in export["ptSessions"]], [("Hadi", "Posture", "Booked")])
+
+
+# User story: "As a coach, I want to view my daily and weekly schedule of
+# classes and PT sessions, so that I can plan my working day."
+class MyScheduleTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        _staff("bm", ["manage_class_schedule", "manage_members"], branch="Hamra")
+        cls.hadi = _coach("hadi")
+        cls.rita = _coach("rita")
+        cls.lea = _member("Lea Haddad", "lea")
+        cls.sami = _member("Sami Khoury", "sami")
+        cls.day = _day(2)
+
+    def _pt_session(self, member, coach, start, day=None):
+        starts_at = local_datetime(day or self.day, time.fromisoformat(start))
+        return PTSession.objects.create(coach=coach, member=member, branch="Hamra", starts_at=starts_at,
+                                        ends_at=starts_at + timedelta(hours=1))
+
+    def schedule(self, week=None):
+        url = "/api/classes/me/schedule"
+        if week:
+            url += f"?week={week}"
+        return self.client.get(url)
+
+    def test_requires_a_staff_session(self):
+        self.assertEqual(self.schedule().status_code, 401)
+
+    def test_a_coach_sees_only_their_own_classes_and_pt_sessions(self):
+        mine = _class("Spinning", self.hadi, self.day, start="18:00")
+        _book(self.lea, mine)
+        _class("Yoga", self.rita, self.day, start="19:00")  # not Hadi's
+        self._pt_session(self.sami, self.hadi, "09:00")
+        self._pt_session(self.lea, self.rita, "10:00")  # not Hadi's
+
+        staff_login(self.client, "hadi", PASSWORD)
+        body = self.schedule(self.day).json()
+        self.assertEqual(body["coachName"], "Hadi")
+        self.assertEqual([c["name"] for c in body["classes"]], ["Spinning"])
+        self.assertEqual(body["classes"][0]["booked"], 1)
+        self.assertEqual([(s["memberName"], s["startTime"]) for s in body["ptSessions"]], [("Sami Khoury", "09:00")])
+
+    def test_no_permission_is_required_just_your_own_data(self):
+        # "bm" (a Branch Manager, not a Coach) has manage_class_schedule but
+        # no classes of their own - the endpoint still works, just empty.
+        _class("Spinning", self.hadi, self.day, start="18:00")
+        staff_login(self.client, "bm", PASSWORD)
+        body = self.schedule(self.day).json()
+        self.assertEqual((body["classes"], body["ptSessions"]), ([], []))
+
+    def test_a_cancelled_class_still_shows_so_the_coach_knows_their_day_cleared(self):
+        cancelled = _class("HIIT", self.hadi, self.day, start="17:00")
+        GymClass.objects.filter(id=cancelled.id).update(status=GymClass.Status.CANCELLED)
+        staff_login(self.client, "hadi", PASSWORD)
+        body = self.schedule(self.day).json()
+        self.assertEqual(body["classes"][0]["state"], "cancelled")
+
+    def test_the_week_runs_monday_to_sunday_around_the_given_date(self):
+        staff_login(self.client, "hadi", PASSWORD)
+        body = self.schedule(self.day).json()
+        self.assertEqual(len(body["days"]), 7)
+        self.assertTrue(body["weekStart"] <= str(self.day) <= body["weekEnd"])
