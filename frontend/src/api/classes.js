@@ -51,6 +51,24 @@ export function fetchMySchedule(week) {
   return staffRequest(`/me/schedule${query({ week })}`);
 }
 
+// --- The coach's own PT hours (self-service) ---
+
+// { coachId, coachName, branches, sessionLengths, hours, sessions }
+export function fetchMyPtHours() {
+  return staffRequest("/me/pt-hours");
+}
+
+// Body: { branch? (only needed if not tied to one branch), weekday (0 = Monday),
+// startTime, endTime, sessionMinutes }
+export function addMyPtHours(data) {
+  return staffSend("POST", "/me/pt-hours", data);
+}
+
+// Resolves to { removed, bookedSessionsKept }.
+export function removeMyPtHours(hoursId) {
+  return staffRequest(`/me/pt-hours/${hoursId}`, { method: "DELETE" });
+}
+
 // Who's already taken in a slot: { coaches: { coachId: "Boxing 18:00–19:00 at Jnah" },
 // studios: [{ name, takenBy }] } - so the form can grey them out before saving.
 export function fetchAvailability({ branch, date, startTime, durationMinutes, repeatWeeks, excludeId }) {

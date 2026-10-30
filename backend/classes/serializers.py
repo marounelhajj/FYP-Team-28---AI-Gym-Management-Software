@@ -210,10 +210,10 @@ class PTHoursSerializer(serializers.ModelSerializer):
         return WEEKDAYS[obj.weekday]
 
 
-# POST /api/classes/pt-hours
-class PTHoursCreateSerializer(serializers.Serializer):
+# Shared by the branch manager's "add PT hours for a coach" and the coach's
+# own "set my PT hours" - everything but who the hours are for.
+class _PTHoursFields(serializers.Serializer):
     branch = serializers.ChoiceField(choices=Member.Branch.choices, required=False)
-    coachId = serializers.IntegerField(min_value=1)
     weekday = serializers.IntegerField(min_value=0, max_value=6)
     startTime = serializers.TimeField(input_formats=["%H:%M"])
     endTime = serializers.TimeField(input_formats=["%H:%M"])
@@ -231,6 +231,17 @@ class PTHoursCreateSerializer(serializers.Serializer):
                 {"endTime": [f"That's shorter than one {attrs['sessionMinutes']}-minute session."]},
             )
         return attrs
+
+
+# POST /api/classes/pt-hours
+class PTHoursCreateSerializer(_PTHoursFields):
+    coachId = serializers.IntegerField(min_value=1)
+
+
+# POST /api/classes/me/pt-hours - same fields, minus coachId: it's always
+# the signed-in coach.
+class MyPTHoursCreateSerializer(_PTHoursFields):
+    pass
 
 
 class PTSessionSerializer(serializers.ModelSerializer):
