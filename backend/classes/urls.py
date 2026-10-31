@@ -9,6 +9,8 @@ urlpatterns = [
     path("/me/schedule", views.my_schedule),
     path("/me/pt-hours", views.my_pt_hours),
     path("/me/pt-hours/<int:hours_id>", views.my_pt_hours_detail),
+    path("/me/time-off", views.my_time_off),
+    path("/me/time-off/<int:time_off_id>", views.my_time_off_detail),
     path("/coaches", views.coach_list),
     path("/availability", views.availability),
     path("/pt-hours", views.pt_hours_list),

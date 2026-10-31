@@ -20,6 +20,7 @@ const SLOT_LABELS = {
   yours: "Yours",
   taken: "Booked",
   coach_busy: "Class",
+  blocked: "Unavailable",
   closed: "Closed",
   clash: "You're busy",
 };
@@ -331,6 +332,7 @@ const SLOT_STYLES = {
   yours: { borderColor: "#129638", color: "#fff", background: "#129638", cursor: "pointer" },
   taken: { background: "#ececf0", color: "#888", textDecoration: "line-through" },
   coach_busy: { background: "#ececf0", color: "#888" },
+  blocked: { background: "#ececf0", color: "#888" },
   closed: { background: "#f3f3f5", color: "#aaa" },
   clash: { background: "#fff7e0", color: "#8a5300", borderColor: "#f0d68a" },
 };

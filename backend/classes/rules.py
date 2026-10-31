@@ -9,7 +9,7 @@ from members.models import Member
 from training.events import log_training_event
 from training.models import TrainingEvent
 
-from .models import ClassBooking, GymClass, PTAvailability, PTSession
+from .models import ClassBooking, GymClass, PTAvailability, PTSession, TimeOff
 
 # The scheduling rules shared by the manager's calendar and member booking.
 
@@ -143,6 +143,22 @@ def pt_hours_clash(coach, weekday, start_time, end_time, exclude_id=None):
     ).exclude(id=exclude_id).first()
 
 
+# The coach's existing commitments (classes and booked PT sessions) that a
+# proposed time-off block would swallow - named, so the coach can go move or
+# cancel them first rather than the block silently covering them. A block
+# can never be created over something already on the calendar.
+def coach_commitments(coach, starts_at, ends_at):
+    classes = overlapping(GymClass.objects.filter(coach=coach, status=GymClass.Status.SCHEDULED), starts_at, ends_at)
+    sessions = overlapping(booked_pt().filter(coach=coach), starts_at, ends_at)
+    return [describe(c) for c in classes] + [describe_pt(s) for s in sessions]
+
+
+# An existing time-off block a proposed one would overlap, so two blocks
+# never cover the same minute twice.
+def time_off_clash(coach, starts_at, ends_at, exclude_id=None):
+    return overlapping(TimeOff.objects.filter(coach=coach), starts_at, ends_at).exclude(id=exclude_id).first()
+
+
 def eligible_coaches(branch):
     return StaffAccount.objects.filter(job_title=StaffAccount.JobTitle.COACH, is_active=True).filter(
         Q(branch=branch) | Q(branch__isnull=True) | Q(branch=""),
@@ -162,6 +178,9 @@ def slot_problems(*, branch, coach, room, starts_at, ends_at, exclude_ids=()):
     session = overlapping(booked_pt().filter(coach=coach), starts_at, ends_at).first()
     if session:
         problems.append(f"{coach.full_name} has {describe_pt(session)} with a member.")
+    block = overlapping(TimeOff.objects.filter(coach=coach), starts_at, ends_at).first()
+    if block:
+        problems.append(f"{coach.full_name} has marked that time unavailable{f': {block.reason}' if block.reason else ''}.")
     if room:
         clash = overlapping(live.filter(branch=branch, room__iexact=room), starts_at, ends_at).first()
         if clash:
@@ -223,6 +242,7 @@ def pt_slots(coach, branch, days, member=None, now=None):
     start, end = local_datetime(days[0], time.min), local_datetime(days[-1] + timedelta(days=1), time.min)
     classes = list(overlapping(GymClass.objects.filter(coach=coach, status=GymClass.Status.SCHEDULED), start, end))
     sessions = list(overlapping(booked_pt().filter(coach=coach), start, end))
+    blocks = list(overlapping(TimeOff.objects.filter(coach=coach), start, end))
     mine = []
     if member is not None:
         mine = [
@@ -247,6 +267,8 @@ def pt_slots(coach, branch, days, member=None, now=None):
                     state = "taken"
                 elif any(c.starts_at < slot_end and c.ends_at > slot_start for c in classes):
                     state = "coach_busy"
+                elif any(b.starts_at < slot_end and b.ends_at > slot_start for b in blocks):
+                    state = "blocked"
                 elif slot_start <= now + PT_NOTICE:
                     state = "closed"
                 elif any(s < slot_end and e > slot_start for s, e in mine):

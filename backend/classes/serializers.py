@@ -3,7 +3,7 @@ from rest_framework import serializers
 
 from members.models import Member
 
-from .models import ClassBooking, ClassType, GymClass, PTAvailability, PTSession
+from .models import ClassBooking, ClassType, GymClass, PTAvailability, PTSession, TimeOff
 from .rules import MAX_CAPACITY, MAX_DURATION, MAX_REPEAT_WEEKS, MIN_DURATION, PT_SESSION_LENGTHS
 
 DATETIME = "%Y-%m-%d %H:%M"
@@ -292,3 +292,34 @@ class PTBookSerializer(serializers.Serializer):
 # POST /api/classes/pt-sessions/<id>/cancel
 class StaffCancelPTSerializer(serializers.Serializer):
     reason = serializers.CharField(max_length=100, required=False, allow_blank=True, default="")
+
+
+# --- A coach's own time off ---
+
+class TimeOffSerializer(serializers.ModelSerializer):
+    coachId = serializers.IntegerField(source="coach_id")
+    startsAt = serializers.DateTimeField(source="starts_at", format=DATETIME)
+    endsAt = serializers.DateTimeField(source="ends_at", format=DATETIME)
+    state = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TimeOff
+        fields = ["id", "coachId", "startsAt", "endsAt", "reason", "state"]
+
+    def get_state(self, obj):
+        now = timezone.now()
+        if obj.ends_at <= now:
+            return "finished"
+        return "in_progress" if obj.starts_at <= now else "upcoming"
+
+
+# POST /api/classes/me/time-off
+class TimeOffCreateSerializer(serializers.Serializer):
+    startsAt = serializers.DateTimeField(input_formats=["%Y-%m-%dT%H:%M"])
+    endsAt = serializers.DateTimeField(input_formats=["%Y-%m-%dT%H:%M"])
+    reason = serializers.CharField(max_length=200, required=False, allow_blank=True, default="")
+
+    def validate(self, attrs):
+        if attrs["endsAt"] <= attrs["startsAt"]:
+            raise serializers.ValidationError({"endsAt": ["Has to be after the start."]})
+        return attrs
