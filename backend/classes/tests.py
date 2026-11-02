@@ -11,7 +11,7 @@ from members.models import Member
 from training.models import TrainingEvent
 
 from . import rules
-from .models import ClassBooking, ClassType, GymClass, PTAvailability, PTSession
+from .models import ClassBooking, ClassType, GymClass, PTAvailability, PTSession, TimeOff
 from .rules import local_datetime
 
 PASSWORD = "ChangeMe123!"
@@ -903,4 +903,131 @@ class MyPTHoursTests(TestCase):
         self.assertEqual((entry.actor_name, entry.branch), ("Hadi", "Hamra"))
         self.remove(added["id"])
         removed = AuditLog.objects.filter(action=AuditLog.Action.PT_HOURS_REMOVED).latest("id")
+        self.assertEqual(removed.actor_name, "Hadi")
+
+
+# User story: "As a coach, I want to block off time on my calendar when
+# I'm unavailable, so that members can't book me during that time."
+class MyTimeOffTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        _staff("bm", ["manage_class_schedule", "manage_members"], branch="Hamra")
+        cls.hadi = _coach("hadi", branch="Hamra")
+        cls.rita = _coach("rita", branch="Hamra")
+        cls.lea = _member("Lea Haddad", "lea")
+        cls.day = _day(2)
+
+    def _range(self, start="09:00", end="12:00", day=None):
+        day = day or self.day
+        return f"{day}T{start}", f"{day}T{end}"
+
+    def block(self, start="09:00", end="12:00", day=None, reason=""):
+        starts_at, ends_at = self._range(start, end, day)
+        return self.client.post("/api/classes/me/time-off",
+                                {"startsAt": starts_at, "endsAt": ends_at, "reason": reason},
+                                content_type="application/json")
+
+    def list_blocks(self):
+        return self.client.get("/api/classes/me/time-off")
+
+    def remove(self, block_id):
+        return self.client.delete(f"/api/classes/me/time-off/{block_id}")
+
+    def test_requires_authentication(self):
+        self.assertEqual(self.list_blocks().status_code, 401)
+        self.assertEqual(self.block().status_code, 401)
+
+    def test_only_a_coach_can_use_it(self):
+        staff_login(self.client, "bm", PASSWORD)
+        self.assertEqual(self.list_blocks().status_code, 403)
+        self.assertEqual(self.block().status_code, 403)
+
+    def test_a_coach_can_block_time_off_and_see_it_listed(self):
+        staff_login(self.client, "hadi", PASSWORD)
+        res = self.block(reason="Vacation")
+        self.assertEqual(res.status_code, 201, res.content)
+        body = res.json()
+        self.assertEqual((body["reason"], body["state"]), ("Vacation", "upcoming"))
+        listed = self.list_blocks().json()
+        self.assertEqual(listed["coachName"], "Hadi")
+        self.assertEqual([b["id"] for b in listed["blocks"]], [body["id"]])
+
+    def test_end_must_be_after_start(self):
+        staff_login(self.client, "hadi", PASSWORD)
+        res = self.block(start="10:00", end="09:00")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("after the start", res.json()["error"]["endsAt"][0])
+
+    def test_cannot_block_a_time_already_in_the_past(self):
+        staff_login(self.client, "hadi", PASSWORD)
+        res = self.block(day=_day(-2))
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("already in the past", res.json()["error"]["endsAt"][0])
+
+    def test_overlapping_blocks_are_refused(self):
+        staff_login(self.client, "hadi", PASSWORD)
+        self.block(start="09:00", end="12:00")
+        res = self.block(start="11:00", end="13:00")
+        self.assertEqual(res.status_code, 409)
+        self.assertIn("overlaps time off you've already blocked", res.json()["error"]["conflicts"][0])
+
+    def test_a_block_over_a_class_the_coach_already_teaches_is_refused(self):
+        _class("Spinning", self.hadi, self.day, start="10:00")
+        staff_login(self.client, "hadi", PASSWORD)
+        res = self.block(start="09:00", end="12:00")
+        self.assertEqual(res.status_code, 409)
+        self.assertIn("Spinning", res.json()["error"]["conflicts"][0])
+
+    def test_a_block_over_a_booked_pt_session_is_refused(self):
+        starts_at = local_datetime(self.day, time.fromisoformat("10:00"))
+        PTSession.objects.create(coach=self.hadi, member=self.lea, branch="Hamra", starts_at=starts_at,
+                                 ends_at=starts_at + timedelta(hours=1))
+        staff_login(self.client, "hadi", PASSWORD)
+        res = self.block(start="09:00", end="12:00")
+        self.assertEqual(res.status_code, 409)
+        self.assertIn("private training session", res.json()["error"]["conflicts"][0])
+
+    def test_a_coach_can_only_remove_their_own_block(self):
+        staff_login(self.client, "hadi", PASSWORD)
+        mine = self.block().json()
+        staff_login(self.client, "rita", PASSWORD)
+        theirs = self.block(start="14:00", end="16:00").json()
+        self.assertEqual(self.remove(mine["id"]).status_code, 404)  # not Rita's
+        res = self.remove(theirs["id"])
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(TimeOff.objects.filter(id=theirs["id"]).exists(), False)
+        self.assertEqual(TimeOff.objects.filter(id=mine["id"]).exists(), True)
+
+    def test_removing_a_block_opens_the_time_back_up_for_members(self):
+        _hours(self.hadi, self.day, "09:00", "12:00")
+        staff_login(self.client, "hadi", PASSWORD)
+        added = self.block(start="09:00", end="10:00").json()
+        self.assertEqual(rules.pt_slots(self.hadi, "Hamra", [self.day])[0]["state"], "blocked")
+        self.remove(added["id"])
+        self.assertEqual(rules.pt_slots(self.hadi, "Hamra", [self.day])[0]["state"], "open")
+
+    def test_a_member_cannot_book_a_blocked_slot(self):
+        _hours(self.hadi, self.day, "09:00", "12:00")
+        staff_login(self.client, "hadi", PASSWORD)
+        self.block(start="09:00", end="10:00")
+        _member_login(self.client, "lea")
+        res = self.client.post("/api/members/me/pt-sessions",
+                               {"coachId": self.hadi.id, "startsAt": f"{self.day}T09:00"},
+                               content_type="application/json")
+        self.assertEqual(res.status_code, 409)
+        self.assertIn("isn't available", res.json()["error"])
+
+    def test_a_coachs_schedule_includes_their_time_off(self):
+        staff_login(self.client, "hadi", PASSWORD)
+        self.block(start="09:00", end="10:00", reason="Dentist")
+        body = self.client.get(f"/api/classes/me/schedule?week={self.day}").json()
+        self.assertEqual([(t["reason"], t["state"]) for t in body["timeOff"]], [("Dentist", "upcoming")])
+
+    def test_it_writes_to_the_audit_log(self):
+        staff_login(self.client, "hadi", PASSWORD)
+        added = self.block(reason="Vacation").json()
+        entry = AuditLog.objects.filter(action=AuditLog.Action.TIME_OFF_ADDED).latest("id")
+        self.assertEqual((entry.actor_name, entry.branch), ("Hadi", "Hamra"))
+        self.remove(added["id"])
+        removed = AuditLog.objects.filter(action=AuditLog.Action.TIME_OFF_REMOVED).latest("id")
         self.assertEqual(removed.actor_name, "Hadi")

@@ -196,3 +196,37 @@ class PTSession(models.Model):
     @property
     def has_started(self):
         return self.starts_at <= timezone.now()
+
+
+# User story: "As a coach, I want to block off time on my calendar when I'm
+# unavailable, so that members can't book me during that time."
+#
+# One block of time a coach has marked themselves unavailable - a dentist
+# appointment, a week of vacation. Unlike PTAvailability (recurring weekly
+# hours a coach IS offering), this is a one-off window: it keeps members
+# from booking a private session in it (rules.pt_slots marks those slots
+# "blocked") and keeps a branch manager from scheduling the coach into a
+# class in it (rules.slot_problems). A block can't be created over a class
+# or private session the coach already has - see views.my_time_off - so a
+# block always means "nothing is scheduled here", never the other way
+# around.
+class TimeOff(models.Model):
+    coach = models.ForeignKey(StaffAccount, on_delete=models.CASCADE, related_name="time_off")
+    starts_at = models.DateTimeField(db_index=True)
+    ends_at = models.DateTimeField()
+    reason = models.CharField(max_length=200, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["starts_at", "id"]
+        constraints = [
+            models.CheckConstraint(condition=Q(ends_at__gt=F("starts_at")), name="time_off_ends_after_it_starts"),
+        ]
+
+    def __str__(self):
+        start, end = timezone.localtime(self.starts_at), timezone.localtime(self.ends_at)
+        return f"{self.coach.full_name} unavailable {start:%Y-%m-%d %H:%M}-{end:%H:%M}"
+
+    @property
+    def has_started(self):
+        return self.starts_at <= timezone.now()

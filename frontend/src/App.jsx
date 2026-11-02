@@ -7,6 +7,7 @@ import CheckIn from "./components/CheckIn.jsx";
 import ClassSchedule from "./components/classes/ClassSchedule.jsx";
 import MySchedule from "./components/classes/MySchedule.jsx";
 import MyAvailability from "./components/classes/MyAvailability.jsx";
+import MyTimeOff from "./components/classes/MyTimeOff.jsx";
 import PlanManager from "./components/plans/PlanManager.jsx";
 import PromotionManager from "./components/plans/PromotionManager.jsx";
 import AuditLog from "./components/audit/AuditLog.jsx";
@@ -57,6 +58,10 @@ function availableScreens(account) {
     // personal training sessions, so that members can book time with me
     // directly instead of going through the front desk."
     screens.push({ key: "myavailability", label: "My Availability", render: () => <MyAvailability /> });
+    // User story: "As a coach, I want to block off time on my calendar
+    // when I'm unavailable, so that members can't book me during that
+    // time."
+    screens.push({ key: "mytimeoff", label: "My Time Off", render: () => <MyTimeOff /> });
   }
   if (has("manage_membership_plans")) {
     screens.push({ key: "plans", label: "Plans & Pricing", render: () => <PlanManager /> });

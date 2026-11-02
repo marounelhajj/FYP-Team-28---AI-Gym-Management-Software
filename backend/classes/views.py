@@ -17,11 +17,12 @@ from members.access import door_access
 from members.models import Member
 
 from . import rules
-from .models import ClassBooking, ClassType, GymClass, PTAvailability, PTSession
+from .models import ClassBooking, ClassType, GymClass, PTAvailability, PTSession, TimeOff
 from .serializers import (
     WEEKDAYS, CancelClassSerializer, ClassTypeSerializer, ClassTypeWriteSerializer, GymClassCreateSerializer,
     GymClassSerializer, GymClassUpdateSerializer, MyBookingSerializer, MyPTHoursCreateSerializer, PTBookSerializer,
     PTHoursCreateSerializer, PTHoursSerializer, PTSessionSerializer, RosterEntrySerializer, StaffCancelPTSerializer,
+    TimeOffCreateSerializer, TimeOffSerializer,
 )
 
 # User story: "As a branch manager, I want to create and edit class schedules
@@ -493,12 +494,14 @@ def my_schedule(request):
         GymClass.objects.filter(coach=account, starts_at__gte=window_start, starts_at__lt=window_end),
     )
     sessions = rules.booked_pt().filter(coach=account, starts_at__gte=window_start, starts_at__lt=window_end)
+    time_off = rules.overlapping(TimeOff.objects.filter(coach=account), window_start, window_end)
     return Response({
         "coachId": account.id,
         "coachName": account.full_name,
         **_week_payload(start),
         "classes": GymClassSerializer(classes, many=True).data,
         "ptSessions": PTSessionSerializer(sessions.select_related("coach", "member"), many=True).data,
+        "timeOff": TimeOffSerializer(time_off, many=True).data,
     })
 
 
@@ -997,6 +1000,86 @@ def my_pt_hours_detail(request, hours_id):
     return Response({"removed": hours_id, "bookedSessionsKept": kept})
 
 
+# --- A coach's own time off ---
+#
+# User story: "As a coach, I want to block off time on my calendar when I'm
+# unavailable, so that members can't book me during that time."
+
+# GET  /api/classes/me/time-off - the signed-in coach's own blocks, newest
+#      first... actually oldest-first (TimeOff.Meta.ordering), so upcoming
+#      ones read top to bottom.
+# POST /api/classes/me/time-off - block a window: { startsAt, endsAt
+#      ("YYYY-MM-DDTHH:MM"), reason? }. Refused if it would cover a class or
+#      private session the coach already has, or overlaps a block they've
+#      already set.
+@api_view(["GET", "POST"])
+def my_time_off(request):
+    coach, denied = _coach_only(request)
+    if denied:
+        return denied
+
+    if request.method == "POST":
+        serializer = TimeOffCreateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response({"error": serializer.errors}, status=400)
+        data = serializer.validated_data
+        starts_at, ends_at = data["startsAt"], data["endsAt"]
+        if ends_at <= timezone.now():
+            return Response({"error": {"endsAt": ["That's already in the past."]}}, status=400)
+
+        with transaction.atomic():
+            StaffAccount.objects.select_for_update().filter(pk=coach.pk).first()
+            commitments = rules.coach_commitments(coach, starts_at, ends_at)
+            if commitments:
+                return Response({"error": {"conflicts": [
+                    f"You already have {', '.join(commitments)} then - move or cancel it first.",
+                ]}}, status=409)
+            clash = rules.time_off_clash(coach, starts_at, ends_at)
+            if clash:
+                return Response({"error": {"conflicts": [
+                    f"That overlaps time off you've already blocked "
+                    f"({timezone.localtime(clash.starts_at):%d %b %H:%M}–{timezone.localtime(clash.ends_at):%H:%M}).",
+                ]}}, status=409)
+            block = TimeOff.objects.create(
+                coach=coach, starts_at=starts_at, ends_at=ends_at, reason=data["reason"].strip(),
+            )
+        record(
+            request, AuditLog.Action.TIME_OFF_ADDED, actor=coach, target=coach, branch=coach.branch or "",
+            summary=f"{coach.full_name} blocked {timezone.localtime(block.starts_at):%d %b %H:%M}"
+                    f"–{timezone.localtime(block.ends_at):%H:%M} as unavailable"
+                    + (f": {block.reason}" if block.reason else ""),
+            details={"timeOffId": block.id},
+        )
+        return Response(TimeOffSerializer(block).data, status=201)
+
+    blocks = TimeOff.objects.filter(coach=coach)
+    return Response({
+        "coachId": coach.id,
+        "coachName": coach.full_name,
+        "blocks": TimeOffSerializer(blocks, many=True).data,
+    })
+
+
+# DELETE /api/classes/me/time-off/<id> - lift a block the coach set
+# themselves, opening that time back up for members to book.
+@api_view(["DELETE"])
+def my_time_off_detail(request, time_off_id):
+    coach, denied = _coach_only(request)
+    if denied:
+        return denied
+    block = TimeOff.objects.filter(id=time_off_id, coach=coach).first()
+    if block is None:
+        return Response({"error": f"Time off {time_off_id} not found."}, status=404)
+    label = f"{timezone.localtime(block.starts_at):%d %b %H:%M}–{timezone.localtime(block.ends_at):%H:%M}"
+    block.delete()
+    record(
+        request, AuditLog.Action.TIME_OFF_REMOVED, actor=coach, target=coach, branch=coach.branch or "",
+        summary=f"{coach.full_name} removed their time off block: {label}",
+        details={"timeOffId": time_off_id},
+    )
+    return Response({"removed": time_off_id})
+
+
 # POST /api/classes/pt-sessions/<id>/cancel - Body: { reason? }. The gym cancels
 # a booked session that hasn't started (the coach is ill, say).
 @api_view(["POST"])
@@ -1145,6 +1228,7 @@ def book_pt(request):
             "yours": (400, "You've already booked this session."),
             "taken": (409, "Someone has just booked that session - pick another time."),
             "coach_busy": (409, f"{coach.full_name} is teaching a class then."),
+            "blocked": (409, f"{coach.full_name} isn't available then."),
             "closed": (400, "That session has already started." if starts_at <= timezone.now()
                        else "Private training has to be booked at least an hour ahead."),
         }

@@ -69,6 +69,27 @@ export function removeMyPtHours(hoursId) {
   return staffRequest(`/me/pt-hours/${hoursId}`, { method: "DELETE" });
 }
 
+// --- The coach's own time off (self-service) ---
+// User story: "As a coach, I want to block off time on my calendar when
+// I'm unavailable, so that members can't book me during that time."
+
+// { coachId, coachName, blocks: [{ id, coachId, startsAt, endsAt, reason, state }] }
+export function fetchMyTimeOff() {
+  return staffRequest("/me/time-off");
+}
+
+// Body: { startsAt, endsAt ("YYYY-MM-DDTHH:MM", local Beirut time), reason? }.
+// A clash with a class/PT session or existing block comes back as a 409
+// with err.fieldErrors.conflicts.
+export function addMyTimeOff(data) {
+  return staffSend("POST", "/me/time-off", data);
+}
+
+// Resolves to { removed }.
+export function removeMyTimeOff(timeOffId) {
+  return staffRequest(`/me/time-off/${timeOffId}`, { method: "DELETE" });
+}
+
 // Who's already taken in a slot: { coaches: { coachId: "Boxing 18:00–19:00 at Jnah" },
 // studios: [{ name, takenBy }] } - so the form can grey them out before saving.
 export function fetchAvailability({ branch, date, startTime, durationMinutes, repeatWeeks, excludeId }) {

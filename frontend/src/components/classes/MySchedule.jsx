@@ -11,8 +11,33 @@ import useServerClock, { offsetLabel } from "./useServerClock.js";
 //
 // User story: "As a coach, I want to view my daily and weekly schedule of
 // classes and PT sessions, so that I can plan my working day."
+//
+// Time-off blocks (see MyAvailability.jsx... actually MyTimeOff.jsx - "As a
+// coach, I want to block off time on my calendar when I'm unavailable, so
+// that members can't book me during that time") show up here too, split
+// into one row per day they touch so a multi-day block reads naturally in
+// a day-by-day agenda.
 
 const REFRESH_MS = 30000;
+
+// TimeOffSerializer gives "YYYY-MM-DD HH:MM" (already Beirut time, see
+// classes/serializers.py's DATETIME format) - parsed as a plain local Date,
+// same convention as dates.js, never through UTC.
+function parseServerDateTime(value) {
+  const [datePart, timePart] = value.split(" ");
+  const [y, m, d] = datePart.split("-").map(Number);
+  const [h, min] = (timePart || "00:00").split(":").map(Number);
+  return new Date(y, m - 1, d, h, min);
+}
+
+function dayBounds(iso) {
+  const [y, m, d] = iso.split("-").map(Number);
+  return [new Date(y, m - 1, d, 0, 0), new Date(y, m - 1, d, 23, 59)];
+}
+
+function fmtTime(dt) {
+  return `${String(dt.getHours()).padStart(2, "0")}:${String(dt.getMinutes()).padStart(2, "0")}`;
+}
 
 function itemsFor(data) {
   const classes = (data.classes || []).map((c) => ({
@@ -39,7 +64,29 @@ function itemsFor(data) {
     state: s.state,
     cancelReason: s.cancelReason,
   }));
-  return [...classes, ...pt].sort((a, b) => a.startTime.localeCompare(b.startTime));
+  const timeOff = (data.timeOff || []).flatMap((block) => {
+    const blockStart = parseServerDateTime(block.startsAt);
+    const blockEnd = parseServerDateTime(block.endsAt);
+    return (data.days || []).flatMap((d) => {
+      const [dayStart, dayEnd] = dayBounds(d.date);
+      if (blockStart > dayEnd || blockEnd < dayStart) return [];
+      const segStart = blockStart > dayStart ? blockStart : dayStart;
+      const segEnd = blockEnd < dayEnd ? blockEnd : dayEnd;
+      return [{
+        id: `timeoff-${block.id}-${d.date}`,
+        date: d.date,
+        startTime: fmtTime(segStart),
+        endTime: fmtTime(segEnd),
+        kind: "Time off",
+        title: block.reason || "Unavailable",
+        detail: "",
+        branch: null,
+        state: block.state,
+        cancelReason: "",
+      }];
+    });
+  });
+  return [...classes, ...pt, ...timeOff].sort((a, b) => a.startTime.localeCompare(b.startTime));
 }
 
 export default function MySchedule() {
@@ -160,7 +207,9 @@ function ScheduleRow({ item }) {
       </div>
       <div style={styles.cardBody}>
         <span style={{ ...styles.cardTitle, textDecoration: item.state === "cancelled" ? "line-through" : "none" }}>
-          {item.kind === "Private training" ? `Private training · ${item.title}` : item.title}
+          {item.kind === "Private training" || item.kind === "Time off"
+            ? `${item.kind} · ${item.title}`
+            : item.title}
         </span>
         <span style={styles.cardMeta}>
           {item.kind}
