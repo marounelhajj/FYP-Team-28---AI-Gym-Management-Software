@@ -5,6 +5,8 @@ import MemberDirectory from "./components/MemberDirectory.jsx";
 import AdminConsole from "./components/admin/AdminConsole.jsx";
 import CheckIn from "./components/CheckIn.jsx";
 import ClassSchedule from "./components/classes/ClassSchedule.jsx";
+import MySchedule from "./components/classes/MySchedule.jsx";
+import MyAvailability from "./components/classes/MyAvailability.jsx";
 import PlanManager from "./components/plans/PlanManager.jsx";
 import PromotionManager from "./components/plans/PromotionManager.jsx";
 import AuditLog from "./components/audit/AuditLog.jsx";
@@ -42,6 +44,20 @@ function canAccessAdminConsole(account) {
 function availableScreens(account) {
   const has = (p) => account.permissions.includes(p);
   const screens = [];
+  // A Coach's role carries no permissions - a branch manager assigns them
+  // to classes and PT hours, but a coach doesn't manage the schedule, just
+  // needs to see their own slice of it. Gated on job title, not a
+  // permission, for that reason.
+  //
+  // User story: "As a coach, I want to view my daily and weekly schedule of
+  // classes and PT sessions, so that I can plan my working day."
+  if (account.jobTitle === "Coach") {
+    screens.push({ key: "myschedule", label: "My Schedule", render: () => <MySchedule /> });
+    // User story: "As a coach, I want to set my own availability for
+    // personal training sessions, so that members can book time with me
+    // directly instead of going through the front desk."
+    screens.push({ key: "myavailability", label: "My Availability", render: () => <MyAvailability /> });
+  }
   if (has("manage_membership_plans")) {
     screens.push({ key: "plans", label: "Plans & Pricing", render: () => <PlanManager /> });
   }

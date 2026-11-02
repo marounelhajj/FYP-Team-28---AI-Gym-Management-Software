@@ -743,3 +743,164 @@ class PrivateTrainingTests(TestCase):
         self.book("11:00", note="Posture")
         export = self.client.get("/api/members/me/export").json()
         self.assertEqual([(s["coach"], s["note"], s["status"]) for s in export["ptSessions"]], [("Hadi", "Posture", "Booked")])
+
+
+# User story: "As a coach, I want to view my daily and weekly schedule of
+# classes and PT sessions, so that I can plan my working day."
+class MyScheduleTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        _staff("bm", ["manage_class_schedule", "manage_members"], branch="Hamra")
+        cls.hadi = _coach("hadi")
+        cls.rita = _coach("rita")
+        cls.lea = _member("Lea Haddad", "lea")
+        cls.sami = _member("Sami Khoury", "sami")
+        cls.day = _day(2)
+
+    def _pt_session(self, member, coach, start, day=None):
+        starts_at = local_datetime(day or self.day, time.fromisoformat(start))
+        return PTSession.objects.create(coach=coach, member=member, branch="Hamra", starts_at=starts_at,
+                                        ends_at=starts_at + timedelta(hours=1))
+
+    def schedule(self, week=None):
+        url = "/api/classes/me/schedule"
+        if week:
+            url += f"?week={week}"
+        return self.client.get(url)
+
+    def test_requires_a_staff_session(self):
+        self.assertEqual(self.schedule().status_code, 401)
+
+    def test_a_coach_sees_only_their_own_classes_and_pt_sessions(self):
+        mine = _class("Spinning", self.hadi, self.day, start="18:00")
+        _book(self.lea, mine)
+        _class("Yoga", self.rita, self.day, start="19:00")  # not Hadi's
+        self._pt_session(self.sami, self.hadi, "09:00")
+        self._pt_session(self.lea, self.rita, "10:00")  # not Hadi's
+
+        staff_login(self.client, "hadi", PASSWORD)
+        body = self.schedule(self.day).json()
+        self.assertEqual(body["coachName"], "Hadi")
+        self.assertEqual([c["name"] for c in body["classes"]], ["Spinning"])
+        self.assertEqual(body["classes"][0]["booked"], 1)
+        self.assertEqual([(s["memberName"], s["startTime"]) for s in body["ptSessions"]], [("Sami Khoury", "09:00")])
+
+    def test_no_permission_is_required_just_your_own_data(self):
+        # "bm" (a Branch Manager, not a Coach) has manage_class_schedule but
+        # no classes of their own - the endpoint still works, just empty.
+        _class("Spinning", self.hadi, self.day, start="18:00")
+        staff_login(self.client, "bm", PASSWORD)
+        body = self.schedule(self.day).json()
+        self.assertEqual((body["classes"], body["ptSessions"]), ([], []))
+
+    def test_a_cancelled_class_still_shows_so_the_coach_knows_their_day_cleared(self):
+        cancelled = _class("HIIT", self.hadi, self.day, start="17:00")
+        GymClass.objects.filter(id=cancelled.id).update(status=GymClass.Status.CANCELLED)
+        staff_login(self.client, "hadi", PASSWORD)
+        body = self.schedule(self.day).json()
+        self.assertEqual(body["classes"][0]["state"], "cancelled")
+
+    def test_the_week_runs_monday_to_sunday_around_the_given_date(self):
+        staff_login(self.client, "hadi", PASSWORD)
+        body = self.schedule(self.day).json()
+        self.assertEqual(len(body["days"]), 7)
+        self.assertTrue(body["weekStart"] <= str(self.day) <= body["weekEnd"])
+
+
+# User story: "As a coach, I want to set my own availability for personal
+# training sessions, so that members can book time with me directly instead
+# of going through the front desk."
+class MyPTHoursTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        _staff("bm", ["manage_class_schedule", "manage_members"], branch="Hamra")
+        cls.hadi = _coach("hadi", branch="Hamra")
+        cls.rita = _coach("rita", branch="Hamra")
+        cls.joe = _coach("joe", branch=None)
+
+    def hours(self):
+        return self.client.get("/api/classes/me/pt-hours")
+
+    def add(self, **overrides):
+        body = {"weekday": 0, "startTime": "09:00", "endTime": "12:00", "sessionMinutes": 60}
+        body.update(overrides)
+        return self.client.post("/api/classes/me/pt-hours", body, content_type="application/json")
+
+    def remove(self, hours_id):
+        return self.client.delete(f"/api/classes/me/pt-hours/{hours_id}")
+
+    def test_requires_authentication(self):
+        self.assertEqual(self.hours().status_code, 401)
+        self.assertEqual(self.add().status_code, 401)
+
+    def test_only_a_coach_can_use_it(self):
+        staff_login(self.client, "bm", PASSWORD)
+        self.assertEqual(self.hours().status_code, 403)
+        self.assertEqual(self.add().status_code, 403)
+
+    def test_a_coach_tied_to_a_branch_gets_hours_there_without_asking(self):
+        staff_login(self.client, "hadi", PASSWORD)
+        res = self.add()
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertEqual(res.json()["branch"], "Hamra")
+        listed = self.hours().json()
+        self.assertEqual(listed["branches"], ["Hamra"])
+        self.assertEqual([h["branch"] for h in listed["hours"]], ["Hamra"])
+
+    def test_a_coach_tied_to_a_branch_cannot_set_hours_elsewhere(self):
+        staff_login(self.client, "hadi", PASSWORD)
+        res = self.add(branch="Jnah")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("Hamra", res.json()["error"]["branch"][0])
+
+    def test_a_floating_coach_must_choose_a_branch(self):
+        staff_login(self.client, "joe", PASSWORD)
+        res = self.add()
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("Choose which branch", res.json()["error"]["branch"][0])
+        self.assertEqual(self.hours().json()["branches"], list(Member.Branch.values))
+
+    def test_a_floating_coach_can_pick_any_branch(self):
+        staff_login(self.client, "joe", PASSWORD)
+        res = self.add(branch="Zalka")
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertEqual(res.json()["branch"], "Zalka")
+
+    def test_overlapping_hours_on_the_same_weekday_are_refused(self):
+        staff_login(self.client, "hadi", PASSWORD)
+        self.add(startTime="09:00", endTime="12:00")
+        res = self.add(startTime="11:00", endTime="13:00")
+        self.assertEqual(res.status_code, 409)
+        self.assertIn("already have PT hours", res.json()["error"]["conflicts"][0])
+
+    def test_a_coach_can_only_remove_their_own_hours(self):
+        staff_login(self.client, "hadi", PASSWORD)
+        mine = self.add().json()
+        staff_login(self.client, "rita", PASSWORD)
+        theirs = self.add(startTime="14:00", endTime="16:00").json()
+        self.assertEqual(self.remove(mine["id"]).status_code, 404)  # not Rita's
+        res = self.remove(theirs["id"])
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(PTAvailability.objects.filter(id=theirs["id"]).exists(), False)
+        self.assertEqual(PTAvailability.objects.filter(id=mine["id"]).exists(), True)
+
+    def test_removing_hours_keeps_sessions_already_booked_in_them(self):
+        staff_login(self.client, "hadi", PASSWORD)
+        added = self.add(**{"weekday": _day(2).weekday(), "startTime": "09:00", "endTime": "12:00"}).json()
+        member = _member("Lea Haddad", "lea")
+        _ = PTSession.objects.create(coach=self.hadi, member=member, branch="Hamra",
+                                     starts_at=local_datetime(_day(2), time.fromisoformat("09:00")),
+                                     ends_at=local_datetime(_day(2), time.fromisoformat("10:00")))
+        res = self.remove(added["id"])
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(res.json()["bookedSessionsKept"], 1)
+        self.assertEqual(PTSession.objects.filter(coach=self.hadi).count(), 1)
+
+    def test_it_writes_to_the_audit_log(self):
+        staff_login(self.client, "hadi", PASSWORD)
+        added = self.add().json()
+        entry = AuditLog.objects.filter(action=AuditLog.Action.PT_HOURS_ADDED).latest("id")
+        self.assertEqual((entry.actor_name, entry.branch), ("Hadi", "Hamra"))
+        self.remove(added["id"])
+        removed = AuditLog.objects.filter(action=AuditLog.Action.PT_HOURS_REMOVED).latest("id")
+        self.assertEqual(removed.actor_name, "Hadi")

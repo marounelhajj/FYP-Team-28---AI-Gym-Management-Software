@@ -9,7 +9,7 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from administration.models import StaffAccount
-from administration.permissions import authorize
+from administration.permissions import authorize, get_staff_account
 from audit.log import changes, record
 from audit.models import AuditLog
 from headcount.views import resolve_branch
@@ -20,8 +20,8 @@ from . import rules
 from .models import ClassBooking, ClassType, GymClass, PTAvailability, PTSession
 from .serializers import (
     WEEKDAYS, CancelClassSerializer, ClassTypeSerializer, ClassTypeWriteSerializer, GymClassCreateSerializer,
-    GymClassSerializer, GymClassUpdateSerializer, MyBookingSerializer, PTBookSerializer, PTHoursCreateSerializer,
-    PTHoursSerializer, PTSessionSerializer, RosterEntrySerializer, StaffCancelPTSerializer,
+    GymClassSerializer, GymClassUpdateSerializer, MyBookingSerializer, MyPTHoursCreateSerializer, PTBookSerializer,
+    PTHoursCreateSerializer, PTHoursSerializer, PTSessionSerializer, RosterEntrySerializer, StaffCancelPTSerializer,
 )
 
 # User story: "As a branch manager, I want to create and edit class schedules
@@ -464,6 +464,44 @@ def availability(request):
     })
 
 
+# GET /api/classes/me/schedule?week=YYYY-MM-DD - the signed-in coach's own
+# classes and private training sessions that week (Monday to Sunday,
+# default: this week), so they can plan their working day without opening
+# the branch calendar. Any authenticated staff account can call this - it
+# only ever returns what is assigned to them, and only a Coach is ever
+# assigned to a class or PT hours in the first place (see
+# rules.coach_problem). No permission is required, same reasoning as the
+# member self-service endpoints: this is your own data, not a branch-wide
+# view.
+#
+# User story: "As a coach, I want to view my daily and weekly schedule of
+# classes and PT sessions, so that I can plan my working day."
+@api_view(["GET"])
+def my_schedule(request):
+    account = get_staff_account(request)
+    if account is None:
+        return Response({"error": "Not authenticated."}, status=401)
+    day, error = _parse_day(request.query_params.get("week"))
+    if error:
+        return error
+
+    rules.settle_attendance()
+    start, window_start, window_end = rules.week_bounds(day)
+    # Not filtered by branch: a coach without one (e.g. Joe Karam) can teach
+    # across branches, so their week should show all of it.
+    classes = _with_counts(
+        GymClass.objects.filter(coach=account, starts_at__gte=window_start, starts_at__lt=window_end),
+    )
+    sessions = rules.booked_pt().filter(coach=account, starts_at__gte=window_start, starts_at__lt=window_end)
+    return Response({
+        "coachId": account.id,
+        "coachName": account.full_name,
+        **_week_payload(start),
+        "classes": GymClassSerializer(classes, many=True).data,
+        "ptSessions": PTSessionSerializer(sessions.select_related("coach", "member"), many=True).data,
+    })
+
+
 # GET /api/classes/coaches?branch= - coaches who can teach at the branch:
 # active staff with the Coach job title, from that branch or not tied to one.
 @api_view(["GET"])
@@ -786,9 +824,7 @@ def pt_hours_list(request):
             return Response({"error": {"coachId": [problem]}}, status=400)
         with transaction.atomic():
             StaffAccount.objects.select_for_update().filter(pk=coach.pk).first()
-            clash = PTAvailability.objects.filter(
-                coach=coach, weekday=data["weekday"], start_time__lt=data["endTime"], end_time__gt=data["startTime"],
-            ).first()
+            clash = rules.pt_hours_clash(coach, data["weekday"], data["startTime"], data["endTime"])
             if clash:
                 where = "" if clash.branch == branch else f" at {clash.branch}"
                 return Response({"error": {"conflicts": [
@@ -850,6 +886,112 @@ def pt_hours_detail(request, hours_id):
     record(
         request, AuditLog.Action.PT_HOURS_REMOVED, actor=account, target=coach, branch=branch,
         summary=f"Removed PT hours for {coach.full_name} at {branch}: {label}",
+        details={"bookedSessionsKept": kept},
+    )
+    return Response({"removed": hours_id, "bookedSessionsKept": kept})
+
+
+# --- Private training hours: the coach's own self-service ---
+#
+# User story: "As a coach, I want to set my own availability for personal
+# training sessions, so that members can book time with me directly
+# instead of going through the front desk."
+
+def _coach_only(request):
+    account = get_staff_account(request)
+    if account is None:
+        return None, Response({"error": "Not authenticated."}, status=401)
+    if account.job_title != StaffAccount.JobTitle.COACH:
+        return None, Response({"error": "Only coaches can set their own PT hours."}, status=403)
+    return account, None
+
+
+def _coach_branch_problem(coach, requested):
+    if coach.branch:
+        if requested and requested != coach.branch:
+            return None, Response(
+                {"error": {"branch": [f"You coach at {coach.branch} - hours can only be set there."]}}, status=400,
+            )
+        return coach.branch, None
+    if not requested:
+        return None, Response({"error": {"branch": ["Choose which branch these hours are for."]}}, status=400)
+    if requested not in rules.coach_branches(coach):
+        return None, Response({"error": {"branch": [f'Invalid branch "{requested}".']}}, status=400)
+    return requested, None
+
+
+# GET  /api/classes/me/pt-hours - the signed-in coach's own PT hours, at
+#      every branch they've set them at, their upcoming booked sessions, and
+#      which branches they may offer hours at.
+# POST /api/classes/me/pt-hours - add hours for themselves: { branch? (only
+#      needed if they aren't tied to one branch), weekday (0 = Monday),
+#      startTime, endTime, sessionMinutes }. Same overlap rule as the branch
+#      manager's version (rules.pt_hours_clash): a coach's hours can't
+#      overlap on the same weekday, at any branch.
+@api_view(["GET", "POST"])
+def my_pt_hours(request):
+    coach, denied = _coach_only(request)
+    if denied:
+        return denied
+
+    if request.method == "POST":
+        serializer = MyPTHoursCreateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response({"error": serializer.errors}, status=400)
+        data = serializer.validated_data
+        branch, error = _coach_branch_problem(coach, data.get("branch"))
+        if error:
+            return error
+        with transaction.atomic():
+            StaffAccount.objects.select_for_update().filter(pk=coach.pk).first()
+            clash = rules.pt_hours_clash(coach, data["weekday"], data["startTime"], data["endTime"])
+            if clash:
+                where = "" if clash.branch == branch else f" at {clash.branch}"
+                return Response({"error": {"conflicts": [
+                    f"You already have PT hours on {WEEKDAYS[clash.weekday]} "
+                    f"{clash.start_time:%H:%M}-{clash.end_time:%H:%M}{where}.",
+                ]}}, status=409)
+            hours = PTAvailability.objects.create(
+                coach=coach, branch=branch, weekday=data["weekday"], start_time=data["startTime"],
+                end_time=data["endTime"], session_minutes=data["sessionMinutes"],
+            )
+        record(
+            request, AuditLog.Action.PT_HOURS_ADDED, actor=coach, target=coach, branch=branch,
+            summary=f"{coach.full_name} added their own PT hours at {branch}: {WEEKDAYS[hours.weekday]} "
+                    f"{hours.start_time:%H:%M}-{hours.end_time:%H:%M} ({hours.session_minutes}-minute sessions)",
+            details={"ptHoursId": hours.id},
+        )
+        return Response(PTHoursSerializer(hours).data, status=201)
+
+    sessions = rules.booked_pt().filter(coach=coach, ends_at__gt=timezone.now()).select_related("coach", "member")
+    return Response({
+        "coachId": coach.id,
+        "coachName": coach.full_name,
+        "branches": rules.coach_branches(coach),
+        "sessionLengths": list(rules.PT_SESSION_LENGTHS),
+        "hours": PTHoursSerializer(PTAvailability.objects.filter(coach=coach), many=True).data,
+        "sessions": PTSessionSerializer(sessions[:200], many=True).data,
+    })
+
+
+# DELETE /api/classes/me/pt-hours/<id> - stop offering hours the coach set
+# themselves. Sessions members already booked in them stay booked, same as
+# when a branch manager removes a coach's hours.
+@api_view(["DELETE"])
+def my_pt_hours_detail(request, hours_id):
+    coach, denied = _coach_only(request)
+    if denied:
+        return denied
+    hours = PTAvailability.objects.filter(id=hours_id, coach=coach).first()
+    if hours is None:
+        return Response({"error": f"PT hours {hours_id} not found."}, status=404)
+    kept = _sessions_in_hours(hours)
+    label = f"{WEEKDAYS[hours.weekday]} {hours.start_time:%H:%M}-{hours.end_time:%H:%M}"
+    branch = hours.branch
+    hours.delete()
+    record(
+        request, AuditLog.Action.PT_HOURS_REMOVED, actor=coach, target=coach, branch=branch,
+        summary=f"{coach.full_name} removed their own PT hours at {branch}: {label}",
         details={"bookedSessionsKept": kept},
     )
     return Response({"removed": hours_id, "bookedSessionsKept": kept})

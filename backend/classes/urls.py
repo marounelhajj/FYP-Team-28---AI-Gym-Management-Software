@@ -6,6 +6,9 @@ from . import views
 # (members/urls.py), next to the rest of their self-service endpoints.
 urlpatterns = [
     path("", views.class_list),
+    path("/me/schedule", views.my_schedule),
+    path("/me/pt-hours", views.my_pt_hours),
+    path("/me/pt-hours/<int:hours_id>", views.my_pt_hours_detail),
     path("/coaches", views.coach_list),
     path("/availability", views.availability),
     path("/pt-hours", views.pt_hours_list),

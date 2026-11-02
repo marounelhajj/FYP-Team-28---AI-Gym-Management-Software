@@ -5,6 +5,7 @@ from django.utils import timezone
 
 from administration.models import StaffAccount
 from checkins.models import AUTO_CHECKOUT_AFTER, CheckIn
+from members.models import Member
 from training.events import log_training_event
 from training.models import TrainingEvent
 
@@ -123,6 +124,23 @@ def capacity_problem(class_type, capacity):
             "lower the spots, or raise the maximum under Class types."
         )
     return None
+
+
+# The branches a coach may set their own PT hours at: just their own, if
+# they're tied to one, or any branch if they're not (the same "floating
+# coach" idea eligible_coaches already uses, from the other direction).
+def coach_branches(coach):
+    return [coach.branch] if coach.branch else list(Member.Branch.values)
+
+
+# The existing PT hours block a proposed one would clash with - same
+# weekday, overlapping time, at any branch (a coach is one person, so their
+# hours can't overlap even across branches). Shared by the branch manager's
+# "add hours for a coach" and the coach's own "set my hours".
+def pt_hours_clash(coach, weekday, start_time, end_time, exclude_id=None):
+    return PTAvailability.objects.filter(
+        coach=coach, weekday=weekday, start_time__lt=end_time, end_time__gt=start_time,
+    ).exclude(id=exclude_id).first()
 
 
 def eligible_coaches(branch):
