@@ -11,6 +11,7 @@ urlpatterns = [
     path("/me/pt-hours/<int:hours_id>", views.my_pt_hours_detail),
     path("/me/time-off", views.my_time_off),
     path("/me/time-off/<int:time_off_id>", views.my_time_off_detail),
+    path("/day", views.class_day),
     path("/coaches", views.coach_list),
     path("/availability", views.availability),
     path("/pt-hours", views.pt_hours_list),
@@ -20,4 +21,7 @@ urlpatterns = [
     path("/types/<int:type_id>", views.class_type_detail),
     path("/<int:class_id>", views.class_detail),
     path("/<int:class_id>/cancel", views.cancel_class),
+    path("/<int:class_id>/member-search", views.class_member_search),
+    path("/<int:class_id>/bookings", views.desk_book),
+    path("/<int:class_id>/bookings/<int:booking_id>/cancel", views.desk_cancel_booking),
 ]

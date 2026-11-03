@@ -1,10 +1,13 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import {
-  cancelClass, createClass, fetchAvailability, fetchClass, fetchClassTypes, fetchCoaches, fetchSchedule, updateClass,
+  cancelClass, createClass, fetchAvailability, fetchClass, fetchClassTypes, fetchCoaches, fetchSchedule, removeDeskBooking,
+  updateClass,
 } from "../../api/classes.js";
 import { BUTTON_COLORS } from "../../styles/buttonColors.js";
 import SegmentedControl from "../SegmentedControl.jsx";
 import ClassTypeManager from "./ClassTypeManager.jsx";
+import DailySchedule from "./DailySchedule.jsx";
+import DeskBooking from "./DeskBooking.jsx";
 import PTHoursManager, { CancelSessionDialog } from "./PTHoursManager.jsx";
 import { addDays, formatDay, formatLongDay, weekLabel } from "./dates.js";
 import useServerClock, { offsetLabel } from "./useServerClock.js";
@@ -27,6 +30,10 @@ import useServerClock, { offsetLabel } from "./useServerClock.js";
 // Each class is of a class type (ClassTypeManager.jsx), whose maximum
 // capacity caps the class's spots - "set maximum capacity per class type,
 // so that I can prevent overbooking and keep sessions safe."
+//
+// The front desk opens on the daily view (DailySchedule.jsx) and books members
+// into classes from a class's details (DeskBooking.jsx); a manager opens on
+// the week they build.
 
 const DURATIONS = [15, 20, 30, 45, 60, 75, 90, 105, 120, 150, 180, 240];
 const HOURS = Array.from({ length: 24 }, (_, h) => String(h).padStart(2, "0"));
@@ -51,7 +58,8 @@ export default function ClassSchedule() {
   const [editor, setEditor] = useState(null); // { mode: "create", date } | { mode: "edit", gymClass, seriesFollowing }
   const [cancelTarget, setCancelTarget] = useState(null);
   const [notice, setNotice] = useState(null);
-  const [view, setView] = useState("calendar");
+  const [chosenView, setView] = useState(null); // null = the default for this role
+  const [dayRefresh, setDayRefresh] = useState(0);
   const [classTypes, setClassTypes] = useState([]);
   const [ptDetail, setPtDetail] = useState(null);
   const [ptCancel, setPtCancel] = useState(null);
@@ -112,13 +120,19 @@ export default function ClassSchedule() {
   const ptByDay = {};
   (data.ptSessions || []).forEach((s) => (ptByDay[s.date] = [...(ptByDay[s.date] || []), s]));
   const isThisWeek = data.days.some((d) => d.isToday);
+  const view = chosenView ?? (data.canEdit ? "calendar" : "day");
+
+  function refreshViews() {
+    load();
+    setDayRefresh((n) => n + 1);
+  }
 
   function afterSave(message) {
     setEditor(null);
     setCancelTarget(null);
     setDetailId(null);
     setNotice(message);
-    load();
+    refreshViews();
   }
 
   return (
@@ -129,7 +143,7 @@ export default function ClassSchedule() {
           <p style={styles.subtitle}>
             {data.canEdit
               ? "Build the week's classes and assign coaches. Past days are view-only."
-              : "This week's classes at your branch. Only a branch manager can change them."}
+              : "Today's classes and open slots at your branch. Book members in from here; only a branch manager can change the timetable."}
           </p>
         </div>
         {data.branches.length > 1 ? (
@@ -156,6 +170,7 @@ export default function ClassSchedule() {
           <SegmentedControl
             ariaLabel="View"
             options={[
+              { value: "day", label: "Daily schedule" },
               { value: "calendar", label: "Weekly calendar" },
               { value: "types", label: "Class types" },
               { value: "pt", label: "Private training" },
@@ -179,6 +194,7 @@ export default function ClassSchedule() {
         </span>
       </div>
 
+      {view === "day" && <DailySchedule branch={data.branch} refreshKey={dayRefresh} onOpen={(c) => setDetailId(c.id)} />}
       {view === "types" && (
         <ClassTypeManager
           branch={data.branch}
@@ -290,6 +306,7 @@ export default function ClassSchedule() {
       {detailId && (
         <ClassDetails
           classId={detailId}
+          onChanged={refreshViews}
           onClose={() => setDetailId(null)}
           onEdit={(gymClass, seriesFollowing) => {
             setDetailId(null);
@@ -436,15 +453,43 @@ function PtCard({ session: s, dayIsPast, onOpen }) {
   );
 }
 
-function ClassDetails({ classId, onClose, onEdit, onCancel }) {
+function ClassDetails({ classId, onChanged, onClose, onEdit, onCancel }) {
   const [detail, setDetail] = useState(null);
   const [error, setError] = useState(null);
+  const [removing, setRemoving] = useState(null); // the booking waiting for "Yes, remove"
+  const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    fetchClass(classId)
-      .then(setDetail)
+  const load = useCallback(() => {
+    return fetchClass(classId)
+      .then((body) => {
+        setDetail(body);
+        setError(null);
+      })
       .catch((err) => setError(err.message));
   }, [classId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  function changed() {
+    load();
+    onChanged();
+  }
+
+  async function remove(entry) {
+    setBusy(true);
+    setError(null);
+    try {
+      await removeDeskBooking(classId, entry.bookingId);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+      setRemoving(null);
+      changed();
+    }
+  }
 
   const booked = detail?.roster.filter((r) => r.status === "Booked") || [];
   const released = detail?.roster.filter((r) => r.status !== "Booked") || [];
@@ -476,6 +521,8 @@ function ClassDetails({ classId, onClose, onEdit, onCancel }) {
             <div style={styles.errorBox}>Cancelled{detail.cancelReason ? `: ${detail.cancelReason}` : "."}</div>
           )}
 
+          {detail.canBookMembers && <DeskBooking gymClass={detail} onBooked={changed} />}
+
           <h3 style={styles.rosterTitle}>
             {detail.state === "finished" ? "Attendance" : "Booked members"} ({booked.length})
           </h3>
@@ -491,7 +538,31 @@ function ClassDetails({ classId, onClose, onEdit, onCancel }) {
                   {r.attendance ? (
                     <span style={r.attendance === "Attended" ? styles.attended : styles.noShow}>{r.attendance}</span>
                   ) : (
-                    <span style={styles.muted}>Booked {r.bookedAt.slice(5)}</span>
+                    <span style={styles.rosterSide}>
+                      <span style={styles.muted}>
+                        {r.bookedBy ? `Booked at the desk by ${r.bookedBy}` : "Booked in the app"} · {r.bookedAt.slice(5)}
+                      </span>
+                      {detail.canBookMembers &&
+                        (removing === r.bookingId ? (
+                          <>
+                            <button type="button" onClick={() => remove(r)} disabled={busy} style={styles.removeButton}>
+                              {busy ? "..." : "Yes, remove"}
+                            </button>
+                            <button type="button" onClick={() => setRemoving(null)} style={styles.keepButton}>
+                              Keep
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setRemoving(r.bookingId)}
+                            style={styles.keepButton}
+                            aria-label={`Remove ${r.memberName}`}
+                          >
+                            Remove
+                          </button>
+                        ))}
+                    </span>
                   )}
                 </li>
               ))}
@@ -975,7 +1046,27 @@ const styles = {
   },
   select: { padding: "8px 10px", fontSize: 14, border: "1px solid #d0d0d5", borderRadius: 8, background: "#fff" },
   viewBar: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 14 },
-  viewSwitch: { flex: "0 1 440px", minWidth: 0 },
+  viewSwitch: { flex: "0 1 590px", minWidth: 0, overflowX: "auto" },
+  rosterSide: { display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" },
+  removeButton: {
+    padding: "4px 8px",
+    fontSize: 12,
+    fontWeight: 600,
+    border: "none",
+    borderRadius: 6,
+    ...BUTTON_COLORS.red,
+    cursor: "pointer",
+  },
+  keepButton: {
+    padding: "4px 8px",
+    fontSize: 12,
+    fontWeight: 600,
+    border: "1px solid #d0d0d5",
+    borderRadius: 6,
+    background: "#fff",
+    color: "#333",
+    cursor: "pointer",
+  },
   clock: {
     display: "inline-flex",
     alignItems: "baseline",

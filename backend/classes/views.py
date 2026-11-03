@@ -12,15 +12,18 @@ from administration.models import StaffAccount
 from administration.permissions import authorize, get_staff_account
 from audit.log import changes, record
 from audit.models import AuditLog
+from checkins.models import active_flags
 from headcount.views import resolve_branch
+from members import qr
 from members.access import door_access
 from members.models import Member
 
 from . import rules
 from .models import ClassBooking, ClassType, GymClass, PTAvailability, PTSession, TimeOff
 from .serializers import (
-    WEEKDAYS, CancelClassSerializer, ClassTypeSerializer, ClassTypeWriteSerializer, GymClassCreateSerializer,
-    GymClassSerializer, GymClassUpdateSerializer, MyBookingSerializer, MyPTHoursCreateSerializer, PTBookSerializer,
+    WEEKDAYS, CancelClassSerializer, ClassTypeSerializer, ClassTypeWriteSerializer, DeskBookingSerializer,
+    GymClassCreateSerializer, GymClassSerializer, GymClassUpdateSerializer, MyBookingSerializer,
+    MyPTHoursCreateSerializer, PTBookSerializer,
     PTHoursCreateSerializer, PTHoursSerializer, PTSessionSerializer, RosterEntrySerializer, StaffCancelPTSerializer,
     TimeOffCreateSerializer, TimeOffSerializer,
 )
@@ -47,32 +50,38 @@ def _with_counts(queryset):
     ).order_by("starts_at", "id")
 
 
-def _parse_day(value):
+def _parse_day(value, name="week"):
     if not value:
         return timezone.localdate(), None
     try:
         return date.fromisoformat(value), None
     except ValueError:
-        return None, Response({"error": "week must be a date (YYYY-MM-DD)."}, status=400)
+        return None, Response({"error": f"{name} must be a date (YYYY-MM-DD)."}, status=400)
 
 
-# The week's seven days, with which of them are already over - decided by the
-# server clock in Beirut time (settings.TIME_ZONE), not the browser's. The
+# The server clock in Beirut time (settings.TIME_ZONE), not the browser's. The
 # calendar runs its live clock from nowIso, so it shows Beirut time even on a
 # laptop set to another time zone.
-def _week_payload(start):
+def _clock_payload():
     now = timezone.localtime()
-    today = now.date()
     offset = now.strftime("%z")
-    days = [start + timedelta(days=i) for i in range(7)]
     return {
-        "weekStart": start,
-        "weekEnd": days[-1],
-        "today": today,
+        "today": now.date(),
         "now": f"{now:%H:%M}",
         "nowIso": now.isoformat(timespec="seconds"),
         "timeZone": timezone.get_current_timezone_name(),
         "utcOffset": f"{offset[:3]}:{offset[3:]}",
+    }
+
+
+# The week's seven days, with which of them are already over.
+def _week_payload(start):
+    today = timezone.localdate()
+    days = [start + timedelta(days=i) for i in range(7)]
+    return {
+        "weekStart": start,
+        "weekEnd": days[-1],
+        **_clock_payload(),
         "days": [{"date": d, "isPast": d < today, "isToday": d == today} for d in days],
     }
 
@@ -249,12 +258,14 @@ def class_detail(request, class_id):
     gym_class, error = _class_or_error(account, class_id)
     if error:
         return error
-    roster = gym_class.bookings.select_related("member").order_by("status", "booked_at", "id")
+    roster = gym_class.bookings.select_related("member", "booked_by").order_by("status", "booked_at", "id")
     return Response({
         **GymClassSerializer(gym_class).data,
         "roster": RosterEntrySerializer(roster, many=True).data,
         "seriesFollowing": len(_targets(gym_class, "following")) if gym_class.is_editable else 0,
         "canEdit": EDIT in account.role.permissions,
+        # Whether this person can book members in or take them out right now.
+        "canBookMembers": VIEW in account.role.permissions and gym_class.is_editable,
     })
 
 
@@ -713,32 +724,42 @@ def my_classes(request):
     })
 
 
-def _booking_problem(member, gym_class):
+# Why this member can't take a spot in this class, or None. The same rules
+# whether they book in the app or at the front desk, worded for whoever is
+# reading - with one difference: members book their own branch in the app,
+# but the desk can book a member visiting from another branch, since their
+# card opens the doors here too.
+def _booking_problem(member, gym_class, at_desk=False):
     if gym_class.status == GymClass.Status.CANCELLED:
         return Response({"error": "This class was cancelled."}, status=400)
     if gym_class.has_started:
         return Response({"error": "This class has already started - booking is closed."}, status=400)
-    if gym_class.branch != member.branch:
+    if not at_desk and gym_class.branch != member.branch:
         return Response({"error": f"You can only book classes at your own branch ({member.branch})."}, status=403)
     access = door_access(member)
     if not access.granted:
-        return Response({"error": f"You can't book classes right now: {access.message}"}, status=403)
+        who = f"{member.name} can't be booked" if at_desk else "You can't book classes"
+        return Response({"error": f"{who} right now: {access.message}"}, status=403)
     class_day = timezone.localtime(gym_class.starts_at).date()
     if member.subscription_expires_at < class_day:
+        whose = f"{member.name}'s" if at_desk else "Your"
         return Response({
-            "error": f"Your membership runs until {member.subscription_expires_at:%d %b %Y} - "
+            "error": f"{whose} membership runs until {member.subscription_expires_at:%d %b %Y} - "
                      "renew it to book classes after that date.",
         }, status=403)
     if ClassBooking.objects.filter(gym_class=gym_class, member=member, status=ClassBooking.Status.BOOKED).exists():
-        return Response({"error": "You've already reserved a spot in this class."}, status=400)
+        message = f"{member.name} already has a spot in this class." if at_desk else "You've already reserved a spot in this class."
+        return Response({"error": message}, status=400)
     # The class's spots, and never past its type's safety limit.
     if rules.booked_count(gym_class) >= min(gym_class.capacity, gym_class.class_type.max_capacity):
         return Response({"error": "This class is full."}, status=409)
     clash = rules.member_busy(member, gym_class.starts_at, gym_class.ends_at)
     if clash:
-        return Response({
-            "error": f"You're already booked into {clash} - you can't take two classes at the same time.",
-        }, status=409)
+        if at_desk:
+            message = f"{member.name} is already booked into {clash} - they can't take two classes at the same time."
+        else:
+            message = f"You're already booked into {clash} - you can't take two classes at the same time."
+        return Response({"error": message}, status=409)
     return None
 
 
@@ -782,6 +803,203 @@ def cancel_booking(request, class_id):
     booking.cancel_reason = "Cancelled by you"
     booking.save(update_fields=["status", "cancelled_at", "cancel_reason"])
     return Response(_for_member(_class_with_counts(class_id), booking))
+
+
+# --- The front desk: one day's classes, and booking walk-ins into them ---
+#
+# User story: "As a receptionist, I want to view the daily class schedule and
+# open slots, so that I can answer member questions and book walk-ins into
+# classes."
+#
+# A walk-in has to be a member: the doors and the check-in desk only let
+# members in, so someone new is registered in the Member Directory first. The
+# desk can't overbook - a full class is full for receptionists too.
+
+def _desk_result(gym_class, booking):
+    return {
+        "class": GymClassSerializer(_class_with_counts(gym_class.pk)).data,
+        "booking": RosterEntrySerializer(booking).data,
+    }
+
+
+# GET /api/classes/day?date=YYYY-MM-DD&branch= - one day's classes (default today)
+# with the spots still open. "open" only counts classes that can still be
+# booked, so a class that already started isn't an open slot. nextOpen is the
+# next class with a free spot after this day, for "when's the next one?".
+@api_view(["GET"])
+def class_day(request):
+    account, denied = authorize(request, EDIT, VIEW)
+    if denied:
+        return denied
+    branch, branches, error = resolve_branch(account, request.query_params.get("branch"), subject=SUBJECT)
+    if error:
+        return error
+    day, error = _parse_day(request.query_params.get("date"), name="date")
+    if error:
+        return error
+
+    rules.settle_attendance()
+    start = rules.local_datetime(day, time.min)
+    end = rules.local_datetime(day + timedelta(days=1), time.min)
+    classes = GymClassSerializer(
+        _with_counts(GymClass.objects.filter(branch=branch, starts_at__gte=start, starts_at__lt=end)), many=True,
+    ).data
+    bookable = [c for c in classes if c["state"] == "upcoming"]
+    open_classes = [c for c in bookable if c["spotsLeft"] > 0]
+
+    after = max(end, timezone.now())
+    later = _with_counts(GymClass.objects.filter(
+        branch=branch, status=GymClass.Status.SCHEDULED, starts_at__gte=after,
+        starts_at__lt=after + timedelta(days=rules.NEXT_OPEN_DAYS),
+    ))
+    next_open = next((c for c in GymClassSerializer(later, many=True).data if c["spotsLeft"] > 0), None)
+
+    today = timezone.localdate()
+    return Response({
+        "branch": branch,
+        "branches": branches,
+        "date": day,
+        "isPast": day < today,
+        "isToday": day == today,
+        **_clock_payload(),
+        "canEdit": EDIT in account.role.permissions,
+        "canBookMembers": VIEW in account.role.permissions,
+        "classes": classes,
+        "summary": {
+            "classes": sum(1 for c in classes if c["state"] != "cancelled"),
+            "openClasses": len(open_classes),
+            "openSpots": sum(c["spotsLeft"] for c in open_classes),
+            "fullClasses": len(bookable) - len(open_classes),
+        },
+        "nextOpen": None if next_open is None else {
+            "id": next_open["id"], "name": next_open["name"], "date": next_open["date"],
+            "startTime": next_open["startTime"], "spotsLeft": next_open["spotsLeft"],
+        },
+    })
+
+
+# Who a search at the desk means: a scanned card, a membership ID or phone
+# number, or part of a name. Returns (members, error).
+def _desk_member_matches(query):
+    if query.startswith(qr.PREFIX):
+        card = qr.read(query)
+        if card is None:
+            return None, Response({"error": "That QR code isn't a valid Fitness Factory membership code."}, status=400)
+        member = Member.objects.filter(id=card[0]).first()
+        if member is not None and card[1] != member.access_card_number:
+            return None, Response({"error": "This card was replaced - ask for the member's current card or ID."}, status=400)
+        return ([member] if member else []), None
+    if query.isdecimal():
+        by_id = Member.objects.filter(id=int(query))
+        by_phone = Member.objects.filter(phone__contains=query).exclude(id=int(query))
+        return list(by_id) + list(by_phone[:rules.DESK_SEARCH_LIMIT]), None
+    return list(Member.objects.filter(name__icontains=query).order_by("name")[:rules.DESK_SEARCH_LIMIT]), None
+
+
+# GET /api/classes/<id>/member-search?q= - members matching q, each with whether
+# they can take a spot in this class and, if not, why - so the receptionist can
+# answer on the spot. flagged and waiverOnFile are for the desk to act on;
+# neither stops a booking (the desk is where those get sorted out).
+@api_view(["GET"])
+def class_member_search(request, class_id):
+    account, denied = authorize(request, VIEW)
+    if denied:
+        return denied
+    gym_class, error = _class_or_error(account, class_id)
+    if error:
+        return error
+    query = (request.query_params.get("q") or "").strip()
+    if not query:
+        return Response({"results": []})
+    members, error = _desk_member_matches(query)
+    if error:
+        return error
+
+    results = []
+    for member in members[:rules.DESK_SEARCH_LIMIT]:
+        member.refresh_expiry_status()
+        problem = _booking_problem(member, gym_class, at_desk=True)
+        results.append({
+            "id": member.id,
+            "name": member.name,
+            "phone": member.phone,
+            "branch": member.branch,
+            "status": member.status,
+            "visiting": member.branch != gym_class.branch,
+            "flagged": active_flags(member).exists(),
+            "waiverOnFile": hasattr(member, "waiver"),
+            "canBook": problem is None,
+            "reason": problem.data["error"] if problem else None,
+        })
+    return Response({"results": results})
+
+
+# POST /api/classes/<id>/bookings - Body: { memberId }. Books a member at the desk.
+# Same rules as booking in the app, and the same locks.
+@api_view(["POST"])
+def desk_book(request, class_id):
+    account, denied = authorize(request, VIEW)
+    if denied:
+        return denied
+    gym_class, error = _class_or_error(account, class_id)
+    if error:
+        return error
+    serializer = DeskBookingSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response({"error": serializer.errors}, status=400)
+    member_id = serializer.validated_data["memberId"]
+
+    try:
+        with transaction.atomic():
+            member = Member.objects.select_for_update().filter(pk=member_id).first()
+            if member is None:
+                return Response({"error": f"No member found with ID {member_id}."}, status=404)
+            locked_class = GymClass.objects.select_for_update().get(pk=gym_class.pk)
+            member.refresh_expiry_status()
+            problem = _booking_problem(member, locked_class, at_desk=True)
+            if problem:
+                return problem
+            booking = ClassBooking.objects.create(gym_class=locked_class, member=member, booked_by=account)
+    except IntegrityError:
+        return Response({"error": "This member already has a spot in this class."}, status=400)
+
+    record(
+        request, AuditLog.Action.CLASS_DESK_BOOKED, actor=account, target=member, branch=gym_class.branch,
+        summary=f"Booked {member.name} into {rules.describe(gym_class)} at the front desk",
+        details={"classId": gym_class.id, "bookingId": booking.id},
+    )
+    return Response(_desk_result(gym_class, booking), status=201)
+
+
+# POST /api/classes/<id>/bookings/<booking_id>/cancel - take a member out of a class
+# that hasn't started (booked by mistake, or they asked at the desk). The spot
+# opens up again and the member sees why their reservation ended.
+@api_view(["POST"])
+def desk_cancel_booking(request, class_id, booking_id):
+    account, denied = authorize(request, VIEW)
+    if denied:
+        return denied
+    gym_class, error = _class_or_error(account, class_id)
+    if error:
+        return error
+    booking = gym_class.bookings.filter(
+        id=booking_id, status=ClassBooking.Status.BOOKED,
+    ).select_related("member", "booked_by").first()
+    if booking is None:
+        return Response({"error": "That booking isn't active any more."}, status=404)
+    if gym_class.has_started:
+        return Response({"error": "This class has already started - its bookings can't be changed now."}, status=409)
+    booking.status = ClassBooking.Status.CANCELLED
+    booking.cancelled_at = timezone.now()
+    booking.cancel_reason = "Removed at the front desk"
+    booking.save(update_fields=["status", "cancelled_at", "cancel_reason"])
+    record(
+        request, AuditLog.Action.CLASS_DESK_BOOKING_REMOVED, actor=account, target=booking.member,
+        branch=gym_class.branch,
+        summary=f"Removed {booking.member.name} from {rules.describe(gym_class)} at the front desk",
+        details={"classId": gym_class.id, "bookingId": booking.id},
+    )
+    return Response(_desk_result(gym_class, booking))
 
 
 # --- Private training (PT) ---

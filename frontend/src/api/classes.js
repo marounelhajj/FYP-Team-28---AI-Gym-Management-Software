@@ -34,9 +34,35 @@ export function fetchSchedule(filters) {
   return staffRequest(query(filters));
 }
 
-// The class plus { roster, seriesFollowing, canEdit }.
+// The class plus { roster, seriesFollowing, canEdit, canBookMembers }.
 export function fetchClass(classId) {
   return staffRequest(`/${classId}`);
+}
+
+// --- The front desk: one day's classes, and booking members into them ---
+
+// { branch, branches, date, isPast, isToday, today, nowIso, timeZone, utcOffset, canEdit, canBookMembers,
+//   classes, summary: { classes, openClasses, openSpots, fullClasses }, nextOpen }
+export function fetchClassDay({ date, branch } = {}) {
+  const params = new URLSearchParams();
+  if (date) params.set("date", date);
+  if (branch) params.set("branch", branch);
+  return staffRequest(`/day?${params.toString()}`);
+}
+
+// q is a name, a membership ID, a phone number or a scanned card.
+// { results: [{ id, name, phone, branch, status, visiting, flagged, waiverOnFile, canBook, reason }] }
+export function searchMembersForClass(classId, q) {
+  return staffRequest(`/${classId}/member-search?${new URLSearchParams({ q }).toString()}`);
+}
+
+// Resolves to { class, booking }.
+export function bookMemberAtDesk(classId, memberId) {
+  return staffSend("POST", `/${classId}/bookings`, { memberId });
+}
+
+export function removeDeskBooking(classId, bookingId) {
+  return staffRequest(`/${classId}/bookings/${bookingId}/cancel`, { method: "POST" });
 }
 
 export function fetchCoaches(branch) {

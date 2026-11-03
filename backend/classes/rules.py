@@ -20,6 +20,11 @@ MAX_REPEAT_WEEKS = 12
 # How far ahead a class can be put on the calendar.
 MAX_DAYS_AHEAD = 365
 
+# The front desk's day view: how far ahead it looks for the next class with an
+# open spot, and how many members one search shows.
+NEXT_OPEN_DAYS = 14
+DESK_SEARCH_LIMIT = 8
+
 # Private training: the session lengths a coach's hours can be cut into, how
 # much notice a coach gets (no booking a session that starts within the
 # hour), and how many upcoming sessions one member can hold at once, so a few

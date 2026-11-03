@@ -6,8 +6,9 @@ from django.utils import timezone
 from administration.models import Role, StaffAccount
 from administration.testing import staff_login
 from audit.models import AuditLog
-from checkins.models import CheckIn
-from members.models import Member
+from checkins.models import CheckIn, CheckInFlag
+from members import qr
+from members.models import Member, Waiver
 from training.models import TrainingEvent
 
 from . import rules
@@ -1031,3 +1032,309 @@ class MyTimeOffTests(TestCase):
         self.remove(added["id"])
         removed = AuditLog.objects.filter(action=AuditLog.Action.TIME_OFF_REMOVED).latest("id")
         self.assertEqual(removed.actor_name, "Hadi")
+
+
+# User story: "As a receptionist, I want to view the daily class schedule and
+# open slots, so that I can answer member questions and book walk-ins into
+# classes."
+class FrontDeskClassTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        receptionist = StaffAccount.JobTitle.RECEPTIONIST
+        _staff("desk", ["manage_members"], branch="Hamra", job_title=receptionist)
+        _staff("jnahdesk", ["manage_members"], branch="Jnah", job_title=receptionist)
+        _staff("floater", ["manage_members"], job_title=receptionist)
+        _staff("admin", ["manage_members", "manage_class_schedule", "view_all_branches"],
+               job_title=StaffAccount.JobTitle.SYSTEM_ADMINISTRATOR)
+        _staff("gm", ["view_all_branches"], job_title=StaffAccount.JobTitle.GENERAL_MANAGER)
+        cls.hadi = _coach("hadi")
+        cls.rita = _coach("rita")
+        cls.lea = _member("Lea Haddad", "lea")
+        cls.sami = _member("Sami Khoury", "sami")
+        cls.nour = _member("Nour Saad", "nour", branch="Jnah")
+        cls.tomorrow = _day(1)
+        cls.spin = _class("Spinning", cls.hadi, cls.tomorrow, start="18:00", capacity=2, room="Cycle Studio")
+        cls.yoga = _class("Yoga", cls.rita, cls.tomorrow, start="18:30", capacity=5)
+
+    def setUp(self):
+        staff_login(self.client, "desk", PASSWORD)
+
+    def day(self, date=None, **params):
+        query = {**({"date": str(date)} if date else {}), **params}
+        return self.client.get("/api/classes/day", query)
+
+    def search(self, gym_class, q):
+        return self.client.get(f"/api/classes/{gym_class.id}/member-search", {"q": q})
+
+    def book(self, gym_class, member):
+        member_id = member.id if hasattr(member, "id") else member
+        return self.client.post(f"/api/classes/{gym_class.id}/bookings", {"memberId": member_id},
+                                content_type="application/json")
+
+    def remove(self, gym_class, booking_id):
+        return self.client.post(f"/api/classes/{gym_class.id}/bookings/{booking_id}/cancel")
+
+    def running_class(self):
+        now = timezone.localtime()
+        return GymClass.objects.create(
+            name="HIIT", class_type=_type("HIIT"), coach=self.rita, branch="Hamra", capacity=5,
+            starts_at=now - timedelta(minutes=10), ends_at=now + timedelta(minutes=50),
+        )
+
+    # --- the day's schedule and open slots ---
+    def test_a_day_lists_its_classes_in_order_with_the_spots_still_open(self):
+        _book(self.lea, self.spin)
+        body = self.day(self.tomorrow).json()
+        self.assertEqual((body["branch"], body["date"], body["isPast"], body["isToday"]),
+                         ("Hamra", str(self.tomorrow), False, False))
+        rows = [(c["name"], c["startTime"], c["coachName"], c["room"], c["booked"], c["spotsLeft"]) for c in body["classes"]]
+        self.assertEqual(rows, [("Spinning", "18:00", "Hadi", "Cycle Studio", 1, 1), ("Yoga", "18:30", "Rita", "", 0, 5)])
+        self.assertEqual(body["summary"], {"classes": 2, "openClasses": 2, "openSpots": 6, "fullClasses": 0})
+        self.assertTrue(body["canBookMembers"])
+        self.assertFalse(body["canEdit"])
+        self.assertEqual(body["timeZone"], "Asia/Beirut")
+
+    def test_the_day_defaults_to_today_in_beirut_and_rejects_a_bad_date(self):
+        self.assertEqual(self.day().json()["date"], str(timezone.localdate()))
+        self.assertTrue(self.day().json()["isToday"])
+        res = self.day(date="tomorrow")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("date must be a date", res.json()["error"])
+
+    def test_only_classes_that_can_still_be_booked_count_as_open(self):
+        _book(self.lea, self.spin)
+        _book(self.sami, self.spin)  # full
+        cancelled = _class("Boxing", self.rita, self.tomorrow, start="07:00", capacity=9)
+        GymClass.objects.filter(id=cancelled.id).update(status=GymClass.Status.CANCELLED)
+        summary = self.day(self.tomorrow).json()["summary"]
+        self.assertEqual(summary, {"classes": 2, "openClasses": 1, "openSpots": 5, "fullClasses": 1})
+
+        self.running_class()
+        today = self.day().json()
+        self.assertEqual([c["state"] for c in today["classes"]], ["in_progress"])
+        self.assertEqual((today["summary"]["classes"], today["summary"]["openSpots"]), (1, 0))
+
+        past = _class("Pilates", self.rita, _day(-1), capacity=9)
+        body = self.day(_day(-1)).json()
+        self.assertTrue(body["isPast"])
+        self.assertEqual(([c["id"] for c in body["classes"]], body["summary"]["openSpots"]), ([past.id], 0))
+
+    def test_open_spots_never_count_past_the_types_maximum(self):
+        tight = _type("Reformer", max_capacity=2)
+        _class("Reformer", self.rita, _day(2), capacity=5, class_type=tight)
+        self.assertEqual(self.day(_day(2)).json()["classes"][0]["spotsLeft"], 2)
+
+    def test_the_next_open_class_is_offered_when_this_day_has_none(self):
+        _book(self.lea, self.spin)
+        body = self.day().json()  # nothing today; the first class with a free spot is tomorrow's Spinning
+        self.assertEqual(body["nextOpen"]["id"], self.spin.id)
+        self.assertEqual(body["nextOpen"]["spotsLeft"], 1)
+        _book(self.sami, self.spin)
+        self.assertEqual(self.day().json()["nextOpen"]["id"], self.yoga.id)  # Spinning filled up
+        GymClass.objects.filter(id=self.yoga.id).update(status=GymClass.Status.CANCELLED)
+        self.assertIsNone(self.day().json()["nextOpen"])
+
+    def test_the_day_stays_on_the_receptionists_own_branch(self):
+        _class("Zumba", self.rita, self.tomorrow, branch="Jnah")
+        self.assertEqual(self.day(self.tomorrow, branch="Jnah").status_code, 403)
+        staff_login(self.client, "floater", PASSWORD)
+        self.assertIn("isn't assigned to a branch", self.day().json()["error"])
+        staff_login(self.client, "admin", PASSWORD)
+        self.assertEqual(self.day(self.tomorrow, branch="Jnah").json()["classes"][0]["name"], "Zumba")
+        staff_login(self.client, "gm", PASSWORD)
+        self.assertEqual(self.day().status_code, 403)
+        self.client.post("/api/auth/logout")
+        self.assertEqual(self.day().status_code, 401)
+
+    # --- finding the member at the desk ---
+    def test_a_member_is_found_by_name_id_phone_or_card(self):
+        self.assertEqual([m["name"] for m in self.search(self.yoga, "hadd").json()["results"]], ["Lea Haddad"])
+        self.assertEqual([m["id"] for m in self.search(self.yoga, str(self.sami.id)).json()["results"]], [self.sami.id])
+        Member.objects.filter(id=self.lea.id).update(phone="70123456")
+        self.assertEqual([m["id"] for m in self.search(self.yoga, "123456").json()["results"]], [self.lea.id])
+        card = qr.payload_for(self.lea)
+        self.assertEqual([m["id"] for m in self.search(self.yoga, card).json()["results"]], [self.lea.id])
+        self.assertEqual(self.search(self.yoga, "").json()["results"], [])
+        self.assertEqual(self.search(self.yoga, "nobody here").json()["results"], [])
+
+    def test_odd_searches_are_handled(self):
+        self.assertEqual(self.search(self.yoga, "99999999999999999999999").json()["results"], [])
+        self.assertEqual(self.search(self.yoga, "²").json()["results"], [])
+        arabic_id = str(self.lea.id).translate(str.maketrans("0123456789", "٠١٢٣٤٥٦٧٨٩"))
+        self.assertEqual(self.search(self.yoga, arabic_id).json()["results"][0]["id"], self.lea.id)
+        res = self.search(self.yoga, "FFM1:1:forged")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("isn't a valid", res.json()["error"])
+
+    def test_a_replaced_card_is_refused(self):
+        old_card = qr.payload_for(self.lea)
+        Member.objects.filter(id=self.lea.id).update(access_card_number=2)
+        res = self.search(self.yoga, old_card)
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("replaced", res.json()["error"])
+
+    def test_search_says_who_can_be_booked_and_why_not(self):
+        Member.objects.filter(id=self.sami.id).update(status=Member.Status.FROZEN)
+        frozen = self.search(self.yoga, "Sami").json()["results"][0]
+        self.assertFalse(frozen["canBook"])
+        self.assertIn("Sami Khoury can't be booked right now", frozen["reason"])
+
+        free = self.search(self.yoga, "Lea").json()["results"][0]
+        self.assertEqual((free["canBook"], free["reason"], free["visiting"]), (True, None, False))
+        self.assertFalse(free["flagged"])
+        self.assertFalse(free["waiverOnFile"])
+
+        _book(self.lea, self.spin)  # overlaps Yoga
+        clashing = self.search(self.yoga, "Lea").json()["results"][0]
+        self.assertIn("they can't take two classes", clashing["reason"])
+
+    def test_search_warns_about_a_flagged_member_or_a_missing_waiver_but_allows_booking(self):
+        visit = CheckIn.objects.create(member=self.lea, branch="Hamra", result=CheckIn.Result.ALLOWED)
+        CheckInFlag.objects.create(check_in=visit, reason=CheckInFlag.Reason.SHARING)
+        found = self.search(self.yoga, "Lea").json()["results"][0]
+        self.assertEqual((found["flagged"], found["waiverOnFile"], found["canBook"]), (True, False, True))
+        Waiver.objects.create(member=self.lea, signature_name="Lea Haddad", health_disclaimer_accepted=True,
+                              liability_waiver_accepted=True, waiver_version="1", signed_via=Waiver.SignedVia.ONLINE)
+        self.assertTrue(self.search(self.yoga, "Lea").json()["results"][0]["waiverOnFile"])
+        self.assertEqual(self.book(self.yoga, self.lea).status_code, 201)
+
+    # --- booking a walk-in ---
+    def test_the_desk_books_a_member_who_then_sees_it_in_the_app(self):
+        res = self.book(self.yoga, self.lea)
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertEqual((res.json()["class"]["spotsLeft"], res.json()["class"]["booked"]), (4, 1))
+        self.assertEqual((res.json()["booking"]["memberName"], res.json()["booking"]["bookedBy"]), ("Lea Haddad", "Desk"))
+
+        roster = self.client.get(f"/api/classes/{self.yoga.id}").json()
+        self.assertEqual([(r["memberName"], r["bookedBy"]) for r in roster["roster"]], [("Lea Haddad", "Desk")])
+        self.assertTrue(roster["canBookMembers"])
+
+        entry = AuditLog.objects.filter(action=AuditLog.Action.CLASS_DESK_BOOKED).latest("id")
+        self.assertEqual((entry.actor_name, entry.target_label, entry.branch), ("Desk", "Lea Haddad", "Hamra"))
+
+        _member_login(self.client, "lea")
+        upcoming = self.client.get(f"/api/members/me/classes?week={self.tomorrow}").json()["upcoming"]
+        self.assertEqual([c["name"] for c in upcoming], ["Yoga"])
+
+    def test_a_self_service_booking_shows_no_receptionist(self):
+        _book(self.lea, self.yoga)
+        roster = self.client.get(f"/api/classes/{self.yoga.id}").json()["roster"]
+        self.assertIsNone(roster[0]["bookedBy"])
+
+    def test_a_full_class_is_full_for_the_desk_too(self):
+        self.assertEqual(self.book(self.spin, self.lea).status_code, 201)
+        self.assertEqual(self.book(self.spin, self.sami).status_code, 201)
+        res = self.book(self.spin, self.nour)
+        self.assertEqual(res.status_code, 409)
+        self.assertIn("full", res.json()["error"])
+        self.assertEqual(ClassBooking.objects.filter(gym_class=self.spin, status="Booked").count(), 2)
+
+    def test_a_member_cannot_be_booked_twice_or_into_overlapping_things(self):
+        self.book(self.spin, self.lea)
+        res = self.book(self.spin, self.lea)
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("already has a spot", res.json()["error"])
+
+        res = self.book(self.yoga, self.lea)
+        self.assertEqual(res.status_code, 409)
+        self.assertIn("already booked into Spinning", res.json()["error"])
+
+        starts_at = self.yoga.starts_at
+        PTSession.objects.create(coach=self.hadi, member=self.sami, branch="Hamra", starts_at=starts_at,
+                                 ends_at=starts_at + timedelta(hours=1))
+        res = self.book(self.yoga, self.sami)
+        self.assertEqual(res.status_code, 409)
+        self.assertIn("private training session", res.json()["error"])
+
+    def test_only_a_valid_membership_can_be_booked(self):
+        for status in (Member.Status.FROZEN, Member.Status.CANCELLED):
+            Member.objects.filter(id=self.lea.id).update(status=status)
+            res = self.book(self.yoga, self.lea)
+            self.assertEqual(res.status_code, 403, status)
+            self.assertIn("Lea Haddad can't be booked", res.json()["error"])
+
+        # Paid until today, class tomorrow: renew first.
+        Member.objects.filter(id=self.lea.id).update(status=Member.Status.ACTIVE, subscription_expires_at=timezone.localdate())
+        res = self.book(self.yoga, self.lea)
+        self.assertEqual(res.status_code, 403)
+        self.assertIn("Lea Haddad's membership runs until", res.json()["error"])
+
+        # Lapsed yesterday and still marked Active: caught at the desk, not trusted.
+        Member.objects.filter(id=self.lea.id).update(subscription_expires_at=_day(-1))
+        self.assertEqual(self.book(self.yoga, self.lea).status_code, 403)
+        self.assertEqual(Member.objects.get(id=self.lea.id).status, Member.Status.FROZEN)
+
+    def test_only_classes_that_have_not_started_can_be_booked(self):
+        running = self.running_class()
+        self.assertIn("already started", self.book(running, self.lea).json()["error"])
+        past = _class("Pilates", self.rita, _day(-1), capacity=9)
+        self.assertEqual(self.book(past, self.lea).status_code, 400)
+        self.assertFalse(self.client.get(f"/api/classes/{past.id}").json()["canBookMembers"])
+        GymClass.objects.filter(id=self.yoga.id).update(status=GymClass.Status.CANCELLED)
+        self.assertIn("cancelled", self.book(self.yoga, self.lea).json()["error"])
+        self.assertFalse(self.client.get(f"/api/classes/{self.yoga.id}").json()["canBookMembers"])
+
+    def test_bad_requests(self):
+        self.assertEqual(self.book(self.yoga, 999999).status_code, 404)
+        res = self.client.post(f"/api/classes/{self.yoga.id}/bookings", {}, content_type="application/json")
+        self.assertIn("memberId", res.json()["error"])
+        self.assertEqual(self.client.post("/api/classes/999999/bookings", {"memberId": self.lea.id},
+                                          content_type="application/json").status_code, 404)
+
+    def test_a_member_visiting_from_another_branch_can_be_booked_at_the_desk(self):
+        found = self.search(self.yoga, "Nour").json()["results"][0]
+        self.assertEqual((found["visiting"], found["branch"], found["canBook"]), (True, "Jnah", True))
+        self.assertEqual(self.book(self.yoga, self.nour).status_code, 201)
+        # Booking their own way into another branch's class is still refused.
+        _member_login(self.client, "nour")
+        self.assertEqual(self.client.post(f"/api/members/me/classes/{self.spin.id}/book").status_code, 403)
+
+    def test_the_desk_stays_on_its_own_branch(self):
+        staff_login(self.client, "jnahdesk", PASSWORD)
+        self.assertEqual(self.book(self.yoga, self.nour).status_code, 403)
+        self.assertEqual(self.search(self.yoga, "Lea").status_code, 403)
+        staff_login(self.client, "admin", PASSWORD)
+        self.assertEqual(self.book(self.yoga, self.nour).status_code, 201)
+
+    def test_only_the_front_desk_can_search_or_book(self):
+        staff_login(self.client, "gm", PASSWORD)
+        self.assertEqual(self.search(self.yoga, "Lea").status_code, 403)
+        self.assertEqual(self.book(self.yoga, self.lea).status_code, 403)
+        self.client.post("/api/auth/logout")
+        self.assertEqual(self.book(self.yoga, self.lea).status_code, 401)
+        _member_login(self.client, "lea")  # a member's session isn't a staff one
+        self.assertEqual(self.book(self.yoga, self.sami).status_code, 401)
+
+    # --- taking a booking back ---
+    def test_removing_a_booking_frees_the_spot_and_tells_the_member(self):
+        booking_id = self.book(self.spin, self.lea).json()["booking"]["bookingId"]
+        res = self.remove(self.spin, booking_id)
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual((res.json()["class"]["spotsLeft"], res.json()["booking"]["status"]), (2, "Cancelled"))
+        self.assertTrue(AuditLog.objects.filter(action=AuditLog.Action.CLASS_DESK_BOOKING_REMOVED).exists())
+        self.assertEqual(self.remove(self.spin, booking_id).status_code, 404)  # only once
+        self.assertEqual(self.book(self.spin, self.lea).status_code, 201)  # they can come back
+
+        _book(self.sami, self.yoga)
+        self.remove(self.yoga, ClassBooking.objects.get(member=self.sami, gym_class=self.yoga).id)
+        _member_login(self.client, "sami")
+        mine = next(c for c in self.client.get(f"/api/members/me/classes?week={self.tomorrow}").json()["classes"]
+                    if c["id"] == self.yoga.id)
+        self.assertEqual(mine["myBooking"]["cancelReason"], "Removed at the front desk")
+
+    def test_bookings_are_frozen_once_a_class_starts(self):
+        running = self.running_class()
+        booking = _book(self.lea, running)
+        res = self.remove(running, booking.id)
+        self.assertEqual(res.status_code, 409)
+        self.assertIn("already started", res.json()["error"])
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, "Booked")
+
+    def test_a_booking_can_only_be_removed_through_its_own_class_and_branch(self):
+        booking = _book(self.lea, self.yoga)
+        self.assertEqual(self.remove(self.spin, booking.id).status_code, 404)
+        staff_login(self.client, "jnahdesk", PASSWORD)
+        self.assertEqual(self.remove(self.yoga, booking.id).status_code, 403)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, "Booked")

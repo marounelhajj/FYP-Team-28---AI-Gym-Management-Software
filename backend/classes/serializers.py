@@ -56,8 +56,10 @@ class GymClassSerializer(serializers.ModelSerializer):
         count = getattr(obj, "booked_count", None)
         return count if count is not None else obj.bookings.filter(status=ClassBooking.Status.BOOKED).count()
 
+    # What can actually still be booked: the class's spots, and never past its
+    # type's safety limit (the same limit booking enforces).
     def get_spotsLeft(self, obj):
-        return max(0, obj.capacity - self.get_booked(obj))
+        return max(0, min(obj.capacity, obj.class_type.max_capacity) - self.get_booked(obj))
 
     def get_seriesId(self, obj):
         return str(obj.series) if obj.series else None
@@ -78,11 +80,18 @@ class RosterEntrySerializer(serializers.ModelSerializer):
     memberId = serializers.IntegerField(source="member_id")
     memberName = serializers.CharField(source="member.name")
     bookedAt = serializers.DateTimeField(source="booked_at", format=DATETIME)
+    # Who booked it at the front desk; null when the member booked it themselves.
+    bookedBy = serializers.CharField(source="booked_by.full_name", default=None)
     cancelReason = serializers.CharField(source="cancel_reason")
 
     class Meta:
         model = ClassBooking
-        fields = ["bookingId", "memberId", "memberName", "status", "bookedAt", "cancelReason", "attendance"]
+        fields = ["bookingId", "memberId", "memberName", "status", "bookedAt", "bookedBy", "cancelReason", "attendance"]
+
+
+# POST /api/classes/<id>/bookings
+class DeskBookingSerializer(serializers.Serializer):
+    memberId = serializers.IntegerField(min_value=1)
 
 
 class MyBookingSerializer(serializers.ModelSerializer):

@@ -112,9 +112,14 @@ class ClassBooking(models.Model):
     member = models.ForeignKey(Member, on_delete=models.CASCADE, related_name="class_bookings")
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.BOOKED)
     booked_at = models.DateTimeField(default=timezone.now)
+    # The receptionist who booked it at the front desk; empty when the member
+    # booked it themselves in the app.
+    booked_by = models.ForeignKey(
+        StaffAccount, on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
     cancelled_at = models.DateTimeField(null=True, blank=True)
-    # Why it ended: the member cancelled, the gym cancelled the class, or the
-    # membership was frozen or cancelled.
+    # Why it ended: the member cancelled, the front desk removed it, the gym
+    # cancelled the class, or the membership was frozen or cancelled.
     cancel_reason = models.CharField(max_length=60, blank=True)
     # Filled in once the class is over, from the member's check-ins (see
     # rules.settle_attendance). Blank until then.

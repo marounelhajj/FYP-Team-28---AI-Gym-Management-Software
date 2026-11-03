@@ -84,6 +84,8 @@ class AuditLog(models.Model):
         PT_SESSION_CANCELLED = "class.pt_session_cancelled", "Private training session cancelled by staff"
         TIME_OFF_ADDED = "class.time_off_added", "Coach time off added"
         TIME_OFF_REMOVED = "class.time_off_removed", "Coach time off removed"
+        CLASS_DESK_BOOKED = "class.desk_booked", "Member booked into a class at the front desk"
+        CLASS_DESK_BOOKING_REMOVED = "class.desk_booking_removed", "Class booking removed at the front desk"
         # The log itself (SCRUM-126) - who took a copy of which entries.
         AUDIT_LOG_EXPORTED = "audit_log.exported", "Audit log exported"
 
