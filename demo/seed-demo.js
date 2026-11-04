@@ -3,7 +3,8 @@
  *
  *   npm run demo:seed
  *
- * Creates demo/.data/demo.sqlite3 from scratch (migrate + seed_demo) and writes
+ * Creates demo/.data/demo.sqlite3 from scratch (migrate + seed_demo_sprint3, or
+ * DEMO_SEED=seed_demo for the Sprint 2 data only) and writes
  * the generated logins to demo/.data/credentials.json. Both are git-ignored,
  * and the demo database is separate from backend/db.sqlite3, so your own dev
  * data is never touched. Needs backend/.venv (see SETUP.md).
@@ -41,5 +42,5 @@ fs.mkdirSync(DATA, { recursive: true });
 fs.rmSync(DB, { force: true });
 console.log("[demo] Creating a fresh demo database at", path.relative(ROOT, DB));
 manage(["migrate", "-v", "0"]);
-manage(["seed_demo", "--credentials", CREDENTIALS]);
+manage([process.env.DEMO_SEED || "seed_demo_sprint3", "--credentials", CREDENTIALS]);
 console.log("[demo] Done. Next: npm run demo:record");
