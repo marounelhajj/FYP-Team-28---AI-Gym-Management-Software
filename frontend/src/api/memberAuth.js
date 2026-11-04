@@ -155,3 +155,15 @@ export function resumeMyMembership() {
 export function cancelMyMembership() {
   return postMembershipAction("cancel");
 }
+
+// GET /api/members/me/busy - how busy a branch is right now and on a typical
+// weekday, as levels only (SCRUM-77). branch defaults to the member's own,
+// weekday (0 = Monday) to today.
+export async function fetchBranchBusy({ branch, weekday } = {}) {
+  const params = new URLSearchParams();
+  if (branch) params.set("branch", branch);
+  if (weekday !== null && weekday !== undefined) params.set("weekday", weekday);
+  const res = await fetch(`/api/members/me/busy?${params.toString()}`);
+  if (!res.ok) throw await parseError(res);
+  return res.json();
+}
