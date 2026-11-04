@@ -124,6 +124,17 @@ class ClassBooking(models.Model):
     # Filled in once the class is over, from the member's check-ins (see
     # rules.settle_attendance). Blank until then.
     attendance = models.CharField(max_length=10, choices=Attendance.choices, blank=True)
+    # SCRUM-36: who marked attendance by hand (the class's coach or a branch
+    # manager) and when. Empty while it is unmarked or was settled
+    # automatically from check-ins. A hand mark always wins:
+    # settle_attendance only fills bookings that are still blank.
+    attendance_marked_by = models.ForeignKey(
+        StaffAccount, on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+    attendance_marked_at = models.DateTimeField(null=True, blank=True)
+    # Added by the coach after the class started for someone who came
+    # without booking. Never takes a bookable spot: the class had started.
+    walk_in = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["booked_at", "id"]

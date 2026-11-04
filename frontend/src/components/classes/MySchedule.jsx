@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { fetchMySchedule } from "../../api/classes.js";
 import { addDays, dayOfMonth, formatLongDay, weekdayShort, weekLabel } from "./dates.js";
 import useServerClock, { offsetLabel } from "./useServerClock.js";
+import AttendanceSheet from "./AttendanceSheet.jsx";
 
 // A coach's own daily/weekly schedule: their classes and private training
 // sessions, read-only (editing a class or PT hours is the branch manager's
@@ -42,6 +43,7 @@ function fmtTime(dt) {
 function itemsFor(data) {
   const classes = (data.classes || []).map((c) => ({
     id: `class-${c.id}`,
+    classId: c.id,
     date: c.date,
     startTime: c.startTime,
     endTime: c.endTime,
@@ -94,6 +96,7 @@ export default function MySchedule() {
   const [data, setData] = useState(null);
   const [selected, setSelected] = useState(null);
   const [error, setError] = useState(null);
+  const [attendanceFor, setAttendanceFor] = useState(null);
   const clock = useServerClock(data?.nowIso, data?.timeZone);
 
   const load = useCallback(() => {
@@ -183,13 +186,19 @@ export default function MySchedule() {
       {dayItems.length === 0 && <div style={styles.empty}>Nothing on your schedule this day.</div>}
 
       {dayItems.map((item) => (
-        <ScheduleRow key={item.id} item={item} />
+        <ScheduleRow key={item.id} item={item} onAttendance={() => setAttendanceFor(item.classId)} />
       ))}
+
+      {attendanceFor && (
+        <AttendanceSheet classId={attendanceFor} onClose={() => setAttendanceFor(null)} onChanged={load} />
+      )}
     </div>
   );
 }
 
-function ScheduleRow({ item }) {
+function ScheduleRow({ item, onAttendance }) {
+  // SCRUM-36: attendance opens when a class starts.
+  const canTakeAttendance = item.kind === "Class" && (item.state === "in_progress" || item.state === "finished");
   let tag = null;
   if (item.state === "cancelled") {
     tag = <span style={styles.cancelledTag}>Cancelled{item.cancelReason ? `: ${item.cancelReason}` : ""}</span>;
@@ -217,7 +226,14 @@ function ScheduleRow({ item }) {
         </span>
         {item.state !== "cancelled" && <span style={styles.cardDetail}>{item.detail}</span>}
       </div>
-      <div style={styles.cardTag}>{tag}</div>
+      <div style={styles.cardTag}>
+        {tag}
+        {canTakeAttendance && (
+          <button type="button" onClick={onAttendance} style={styles.attendanceButton}>
+            Attendance
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -289,7 +305,18 @@ const styles = {
   cardTitle: { fontSize: 14, fontWeight: 700 },
   cardMeta: { fontSize: 12, opacity: 0.8 },
   cardDetail: { fontSize: 12, opacity: 0.7 },
-  cardTag: { flexShrink: 0 },
+  cardTag: { flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 },
+  attendanceButton: {
+    height: 30,
+    padding: "0 12px",
+    border: "none",
+    borderRadius: 8,
+    background: "#124096",
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: 700,
+    cursor: "pointer",
+  },
   liveTag: { fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 4, background: "#e3f5e8", color: "#0f6e2b" },
   doneTag: { fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 4, background: "#e4e4e8", color: "#555" },
   cancelledTag: { fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 4, background: "#fdeceb", color: "#b3261e" },
