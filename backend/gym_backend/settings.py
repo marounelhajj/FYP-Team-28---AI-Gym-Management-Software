@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     'doors',
     'retail',
     'classes',
+    'notifications',
 ]
 
 MIDDLEWARE = [

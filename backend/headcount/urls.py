@@ -4,4 +4,5 @@ from . import views
 urlpatterns = [
     path("/live", views.live_headcount),
     path("/hourly", views.hourly_headcount),
+    path("/capacity", views.branch_capacity),
 ]

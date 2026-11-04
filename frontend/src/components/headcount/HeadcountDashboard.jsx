@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import CapacityPanel, { AlertBanner } from "./CapacityPanel.jsx";
 import HourlyChart from "./HourlyChart.jsx";
 import { useLiveHeadcount } from "./useLiveHeadcount.js";
 
@@ -137,6 +138,7 @@ export default function HeadcountDashboard() {
         ) : (
           <>
             <div className="hc-pad" style={styles.body}>
+              <AlertBanner alert={data?.alert} capacity={data?.capacity} count={count} />
               <div style={styles.countRow} aria-live="polite" aria-atomic="true">
                 <span
                   key={count ?? "none"}
@@ -154,6 +156,7 @@ export default function HeadcountDashboard() {
                 Counted from check-ins and check-outs at this branch. Anyone still checked in after{" "}
                 {data?.autoCheckoutHours ?? 4} hours is checked out automatically.
               </p>
+              {shownBranch && <CapacityPanel branch={shownBranch} count={count} capacity={data?.capacity} />}
             </div>
             <div className="hc-pad">
               <HourlyChart branch={branch} />
@@ -187,7 +190,10 @@ const CSS = `
   .hc-tools, .hc-tray { width: 100%; }
   .hc-tray-option { padding: 0 2px; font-size: 14px; }
 }
+@keyframes hc-alert-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+.hc-alert { animation: hc-alert-in 280ms cubic-bezier(0.16, 1, 0.3, 1); }
 @media (prefers-reduced-motion: reduce) {
+  .hc-alert { animation: none; }
   .hc-bump, .hc-live-dot, .hc-spinner, .hc-grow path { animation: none; }
   .hc-pill, .hc-press { transition: none; }
   .hc-press:active { transform: none; }

@@ -24,6 +24,7 @@ import MemberLoginPage from "./components/member/MemberLoginPage.jsx";
 import MemberSignupPage from "./components/member/MemberSignupPage.jsx";
 import MemberDashboard from "./components/member/MemberDashboard.jsx";
 import PlanBrowser from "./components/member/PlanBrowser.jsx";
+import NotificationBell from "./components/NotificationBell.jsx";
 import Logo from "./components/Logo.jsx";
 import AccessDenied from "./components/AccessDenied.jsx";
 
@@ -308,6 +309,7 @@ export default function App() {
             <div style={styles.userName}>{session.data.fullName || session.data.name}</div>
             <div style={styles.userRole}>{isStaff ? session.data.roleName : "Member"}</div>
           </div>
+          {isStaff && <NotificationBell />}
           <button onClick={handleLogout} style={styles.logoutButton}>
             Log out
           </button>

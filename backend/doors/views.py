@@ -8,6 +8,7 @@ from audit.log import changes, record
 from audit.models import AuditLog
 from checkins.models import CheckIn, active_flags, close_stale_sessions, open_session
 from checkins.serializers import CheckInSerializer
+from headcount.alerts import check_capacity_safely
 from members import qr
 from members.access import door_access
 from members.models import Member
@@ -70,6 +71,7 @@ def _enter(door, member, card_number):
             )
             return _decision(door, False, "This card is already inside - it hasn't been scanned out.", member)
         check_in = CheckIn.objects.create(member=member, branch=door.branch, door=door, result=CheckIn.Result.ALLOWED)
+    check_capacity_safely(door.branch)  # SCRUM-128
 
     log_training_event(
         TrainingEvent.EventType.CHECK_IN, member=member, branch=door.branch, occurred_at=check_in.checked_in_at,
@@ -87,6 +89,7 @@ def _exit(door, member):
         return _decision(door, True, f"Goodbye, {first_name}.", member)
     session.checked_out_at = timezone.now()
     session.save(update_fields=["checked_out_at"])
+    check_capacity_safely(session.branch)  # SCRUM-128
     duration = CheckInSerializer(session).data["duration"]
     return _decision(door, True, f"Goodbye, {first_name} - you were in for {duration}.", member)
 
