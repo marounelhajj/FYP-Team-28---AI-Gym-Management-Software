@@ -39,3 +39,22 @@ export async function fetchHourlyHeadcount(branch) {
     clearTimeout(timer);
   }
 }
+
+// SCRUM-128: the branch's capacity and alert threshold.
+// Returns { branch, capacity: { maxCapacity, alertPercent, threshold, clearBelow } | null, alert, defaultAlertPercent }.
+export async function fetchCapacity(branch) {
+  const query = branch ? `?branch=${encodeURIComponent(branch)}` : "";
+  const res = await fetch(`/api/headcount/capacity${query}`);
+  if (!res.ok) throw await parseError(res);
+  return res.json();
+}
+
+export async function saveCapacity({ branch, maxCapacity, alertPercent }) {
+  const res = await fetch("/api/headcount/capacity", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ branch, maxCapacity, alertPercent }),
+  });
+  if (!res.ok) throw await parseError(res);
+  return res.json();
+}
