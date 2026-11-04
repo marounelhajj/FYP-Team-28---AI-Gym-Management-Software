@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     'retail',
     'classes',
     'notifications',
+    'progress',
 ]
 
 MIDDLEWARE = [

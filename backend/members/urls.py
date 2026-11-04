@@ -3,6 +3,7 @@ from django.urls import path
 from billing import views as billing_views
 from classes import views as class_views
 from headcount import busy as headcount_busy
+from progress import views as progress_views
 
 from . import auth_views, privacy, views
 
@@ -22,6 +23,10 @@ urlpatterns = [
     path("/me/resume", views.my_resume),
     path("/me/cancel", views.my_cancel),
     path("/me/busy", headcount_busy.my_branch_busy),
+    path("/me/workouts", progress_views.my_workouts),
+    path("/me/workouts/<int:entry_id>", progress_views.my_workout_detail),
+    path("/me/metrics", progress_views.my_metrics),
+    path("/me/metrics/<int:metric_id>", progress_views.my_metric_detail),
     path("/me/classes", class_views.my_classes),
     path("/me/classes/<int:class_id>/book", class_views.book_class),
     path("/me/classes/<int:class_id>/cancel", class_views.cancel_booking),
