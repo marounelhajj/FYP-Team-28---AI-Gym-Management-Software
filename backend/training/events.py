@@ -20,7 +20,13 @@ logger = logging.getLogger(__name__)
 # Wired today: check_in (checkins/views.py), cancellation (members/views.py,
 # front desk and self-service) and no_show (classes/rules.settle_attendance:
 # a class booking or private training session nobody checked in for -
-# session_id is the class booking id, or "pt:<id>" for a PT session).
+# session_id is the class booking id, or "pt:<id>" for a PT session), and
+# attended / no_show again when a coach or branch manager marks a class
+# booking by hand (classes/attendance.py, SCRUM-36, payload source "manual").
+#
+# trainer_accept / trainer_reject are still not wired (checked in SCRUM-36):
+# members book PT straight into a coach's published hours (classes.PTSession),
+# so there is no request for a coach to accept or reject yet.
 #
 # TODO(trainer_accept / trainer_reject): there is no coach-request flow yet.
 # When a coach accepts or rejects a PT request or program, call

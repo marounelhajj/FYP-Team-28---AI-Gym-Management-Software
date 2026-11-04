@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views
+from . import attendance, views
 
 # The member's own booking endpoints live under /api/members/me/classes
 # (members/urls.py), next to the rest of their self-service endpoints.
@@ -21,6 +21,8 @@ urlpatterns = [
     path("/types/<int:type_id>", views.class_type_detail),
     path("/<int:class_id>", views.class_detail),
     path("/<int:class_id>/cancel", views.cancel_class),
+    path("/<int:class_id>/attendance", attendance.class_attendance),
+    path("/<int:class_id>/attendance/walk-ins", attendance.class_walk_in),
     path("/<int:class_id>/member-search", views.class_member_search),
     path("/<int:class_id>/bookings", views.desk_book),
     path("/<int:class_id>/bookings/<int:booking_id>/cancel", views.desk_cancel_booking),

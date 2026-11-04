@@ -34,6 +34,8 @@ class TrainingEvent(models.Model):
         CHECK_IN = "check_in", "Check-in"
         CANCELLATION = "cancellation", "Membership cancellation"
         NO_SHOW = "no_show", "No-show"
+        # SCRUM-36: a class booking marked Attended by its coach or a branch manager.
+        ATTENDED = "attended", "Attended a class"
         TRAINER_ACCEPT = "trainer_accept", "Trainer accepted"
         TRAINER_REJECT = "trainer_reject", "Trainer rejected"
 
