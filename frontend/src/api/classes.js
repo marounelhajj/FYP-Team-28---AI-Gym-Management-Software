@@ -240,3 +240,17 @@ export function bookPtSession({ coachId, startsAt, note }) {
 export function cancelMyPtSession(sessionId) {
   return memberSend(`/pt-sessions/${sessionId}/cancel`);
 }
+
+// SCRUM-36: a class's attendance sheet. The coach marks their own classes;
+// a branch manager any class at their branch.
+export function fetchAttendance(classId) {
+  return staffRequest(`/${classId}/attendance`);
+}
+
+export function markAttendance(classId, bookingId, attendance) {
+  return staffSend("POST", `/${classId}/attendance`, { bookingId, attendance });
+}
+
+export function addWalkIn(classId, memberId) {
+  return staffSend("POST", `/${classId}/attendance/walk-ins`, { memberId });
+}

@@ -11,6 +11,7 @@ import DeskBooking from "./DeskBooking.jsx";
 import PTHoursManager, { CancelSessionDialog } from "./PTHoursManager.jsx";
 import { addDays, formatDay, formatLongDay, weekLabel } from "./dates.js";
 import useServerClock, { offsetLabel } from "./useServerClock.js";
+import AttendanceSheet from "./AttendanceSheet.jsx";
 
 // User story: "As a branch manager, I want to create and edit class schedules
 // and assign coaches to time slots, so that I can build the weekly class
@@ -458,6 +459,7 @@ function ClassDetails({ classId, onChanged, onClose, onEdit, onCancel }) {
   const [error, setError] = useState(null);
   const [removing, setRemoving] = useState(null); // the booking waiting for "Yes, remove"
   const [busy, setBusy] = useState(false);
+  const [takingAttendance, setTakingAttendance] = useState(false);
 
   const load = useCallback(() => {
     return fetchClass(classId)
@@ -522,6 +524,15 @@ function ClassDetails({ classId, onChanged, onClose, onEdit, onCancel }) {
           )}
 
           {detail.canBookMembers && <DeskBooking gymClass={detail} onBooked={changed} />}
+
+          {detail.canEdit && (detail.state === "in_progress" || detail.state === "finished") && (
+            <button type="button" onClick={() => setTakingAttendance(true)} style={styles.primaryButton}>
+              Take attendance
+            </button>
+          )}
+          {takingAttendance && (
+            <AttendanceSheet classId={classId} onClose={() => setTakingAttendance(false)} onChanged={changed} />
+          )}
 
           <h3 style={styles.rosterTitle}>
             {detail.state === "finished" ? "Attendance" : "Booked members"} ({booked.length})
