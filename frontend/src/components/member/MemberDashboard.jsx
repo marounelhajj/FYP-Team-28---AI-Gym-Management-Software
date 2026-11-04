@@ -8,6 +8,7 @@ import {
   resumeMyMembership,
 } from "../../api/memberAuth.js";
 import { BUTTON_COLORS } from "../../styles/buttonColors.js";
+import BranchBusyLevel from "./BranchBusyLevel.jsx";
 import MemberBooking from "./MemberBooking.jsx";
 import MemberPaymentMethodForm from "./MemberPaymentMethodForm.jsx";
 import MemberPrivacyPanel from "./MemberPrivacyPanel.jsx";
@@ -181,6 +182,8 @@ export default function MemberDashboard({ member: initialMember, onDeleted }) {
           </div>
         </div>
       )}
+
+      <BranchBusyLevel homeBranch={member.branch} />
 
       <h2 style={styles.sectionTitle}>Book at {member.branch}</h2>
       <MemberBooking key={member.status} />
