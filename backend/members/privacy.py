@@ -13,6 +13,7 @@ from audit.models import AuditLog
 from billing.models import PaymentMethod
 from checkins.models import CheckInFlag
 from classes.rules import release_future_bookings
+from progress.models import BodyMetric, WorkoutEntry
 from training.events import delete_training_events_for_member
 
 from .models import AccessCardReissue, Member
@@ -27,8 +28,8 @@ from .models import AccessCardReissue, Member
 # Deletion - the retention rule:
 #   * Personal data is REMOVED outright: login credentials, contact details,
 #     the payment method on file, access-card reissue notes, check-in flag
-#     notes, and every AI training event (training.events.
-#     delete_training_events_for_member).
+#     notes, the self-logged workouts and body metrics (SCRUM-60), and every
+#     AI training event (training.events.delete_training_events_for_member).
 #   * Records the gym has to keep are KEPT but ANONYMIZED, not hard-deleted:
 #       - the Member row itself, so the records below keep their anchor
 #         (name, email, phone replaced; username/password cleared; status
@@ -140,6 +141,26 @@ def build_export(member):
             {"id": s.pk, "total": f"{s.total:.2f}", "soldAt": _stamp(s.sold_at), "voided": s.voided_at is not None}
             for s in member.retail_purchases.all()
         ],
+        # SCRUM-60: the member's own training log.
+        "workouts": [
+            {
+                "date": _stamp(w.performed_on), "exercise": w.exercise, "kind": w.kind, "sets": w.sets, "reps": w.reps,
+                "weightKg": str(w.weight_kg) if w.weight_kg is not None else None,
+                "durationMinutes": w.duration_minutes,
+                "distanceKm": str(w.distance_km) if w.distance_km is not None else None, "note": w.note,
+            }
+            for w in member.workouts.all()
+        ],
+        "bodyMetrics": [
+            {
+                "date": _stamp(b.measured_on), "weightKg": str(b.weight_kg),
+                "bodyFatPercent": str(b.body_fat_percent) if b.body_fat_percent is not None else None,
+                "waistCm": str(b.waist_cm) if b.waist_cm is not None else None,
+                "chestCm": str(b.chest_cm) if b.chest_cm is not None else None,
+                "hipsCm": str(b.hips_cm) if b.hips_cm is not None else None, "note": b.note,
+            }
+            for b in member.body_metrics.all()
+        ],
         "trainingEvents": [
             {
                 "eventType": e.event_type, "occurredAt": _stamp(e.occurred_at), "branch": e.branch,
@@ -193,6 +214,9 @@ def anonymize_member(member):
         AccessCardReissue.objects.filter(member=member).delete()
         CheckInFlag.objects.filter(check_in__member=member).update(note="", resolution_note="")
         release_future_bookings(member, "Member data deleted")
+        # SCRUM-60: the self-logged training log is personal data, not a record the gym must keep.
+        WorkoutEntry.objects.filter(member=member).delete()
+        BodyMetric.objects.filter(member=member).delete()
         delete_training_events_for_member(member.pk)
         _scrub_audit_entries(member)
 

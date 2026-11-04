@@ -24,6 +24,7 @@ import MemberLoginPage from "./components/member/MemberLoginPage.jsx";
 import MemberSignupPage from "./components/member/MemberSignupPage.jsx";
 import MemberDashboard from "./components/member/MemberDashboard.jsx";
 import PlanBrowser from "./components/member/PlanBrowser.jsx";
+import MyClients from "./components/progress/MyClients.jsx";
 import NotificationBell from "./components/NotificationBell.jsx";
 import Logo from "./components/Logo.jsx";
 import AccessDenied from "./components/AccessDenied.jsx";
@@ -63,6 +64,8 @@ function availableScreens(account) {
     // when I'm unavailable, so that members can't book me during that
     // time."
     screens.push({ key: "mytimeoff", label: "My Time Off", render: () => <MyTimeOff /> });
+    // SCRUM-60: read-only view of what private-training clients log themselves.
+    screens.push({ key: "myclients", label: "My Clients", render: () => <MyClients /> });
   }
   if (has("manage_membership_plans")) {
     screens.push({ key: "plans", label: "Plans & Pricing", render: () => <PlanManager /> });
