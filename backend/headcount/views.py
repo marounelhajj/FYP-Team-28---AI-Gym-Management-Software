@@ -9,6 +9,9 @@ from administration.permissions import authorize
 from checkins.models import AUTO_CHECKOUT_AFTER, CheckIn, close_stale_sessions
 from members.models import Member
 
+from .alerts import check_capacity
+from .models import DEFAULT_ALERT_PERCENT, BranchCapacity
+
 VIEW_PERMISSION = "view_branch_headcount"
 # Lets a role pick any branch (General Manager). Without it, a role only
 # ever sees the branch on its own staff account.
@@ -56,6 +59,27 @@ def current_headcount(branch, now=None):
     ).count()
 
 
+def _capacity_data(setting):
+    if setting is None:
+        return None
+    return {
+        "maxCapacity": setting.max_capacity,
+        "alertPercent": setting.alert_percent,
+        "threshold": setting.threshold,
+        "clearBelow": setting.clear_below,
+    }
+
+
+def _alert_data(setting):
+    if setting is None or not setting.alert_active:
+        return {"active": False}
+    return {
+        "active": True,
+        "since": timezone.localtime(setting.alert_raised_at).strftime("%H:%M") if setting.alert_raised_at else None,
+        "count": setting.alert_count,
+    }
+
+
 # GET /api/headcount/live?branch=Hamra
 #
 # How many members are inside one branch right now. A Branch Manager always
@@ -78,10 +102,14 @@ def live_headcount(request):
         return error
 
     now = timezone.now()
+    count = current_headcount(branch, now)
+    setting = check_capacity(branch, count=count, now=now)
     return Response({
         "branch": branch,
-        "count": current_headcount(branch, now),
+        "count": count,
         "asOf": now,
+        "capacity": _capacity_data(setting),
+        "alert": _alert_data(setting),
         "branches": branches,
         "canChooseBranch": len(branches) > 1,
         "autoCheckoutHours": int(AUTO_CHECKOUT_AFTER.total_seconds() // 3600),
@@ -182,4 +210,60 @@ def hourly_headcount(request):
         "asOf": now,
         "timeZone": timezone.get_current_timezone_name(),
         "hours": hours,
+    })
+
+
+# GET /api/headcount/capacity?branch=  - the branch's capacity setting.
+# PUT /api/headcount/capacity          - Body: { branch?, maxCapacity, alertPercent? (10-100, default 90) }.
+#
+# Same branch rule and permission as the live dashboard: a Branch Manager
+# sets their own branch, a General Manager (view_all_branches) any. Those
+# are exactly the two roles that hold view_branch_headcount, so no separate
+# permission is needed. Saving re-checks the alert straight away, so a lower
+# threshold that the current headcount already passes alerts at once.
+#
+# 200 + {"branch", "capacity": {maxCapacity, alertPercent, threshold, clearBelow} | null,
+#        "alert", "defaultAlertPercent"}.
+#
+# User story (SCRUM-128): "As a branch manager, I want to be alerted when
+# headcount approaches the branch capacity limit, so that I can act before
+# the floor becomes unsafe or unpleasant."
+@api_view(["GET", "PUT"])
+def branch_capacity(request):
+    account, denied = authorize(request, VIEW_PERMISSION)
+    if denied:
+        return denied
+    requested = request.data.get("branch") if request.method == "PUT" else request.query_params.get("branch")
+    branch, _, error = resolve_branch(account, requested)
+    if error:
+        return error
+
+    if request.method == "PUT":
+        errors = {}
+        try:
+            max_capacity = int(request.data.get("maxCapacity"))
+            if not 1 <= max_capacity <= 5000:
+                raise ValueError
+        except (TypeError, ValueError):
+            errors["maxCapacity"] = ["Enter the most people the floor should hold (1-5000)."]
+        try:
+            alert_percent = int(request.data.get("alertPercent", DEFAULT_ALERT_PERCENT))
+            if not 10 <= alert_percent <= 100:
+                raise ValueError
+        except (TypeError, ValueError):
+            errors["alertPercent"] = ["Alert at a share of capacity between 10% and 100%."]
+        if errors:
+            return Response({"error": errors}, status=400)
+        setting, _ = BranchCapacity.objects.get_or_create(branch=branch, defaults={"max_capacity": max_capacity})
+        setting.max_capacity = max_capacity
+        setting.alert_percent = alert_percent
+        setting.updated_by = account
+        setting.save()
+
+    setting = check_capacity(branch)
+    return Response({
+        "branch": branch,
+        "capacity": _capacity_data(setting),
+        "alert": _alert_data(setting),
+        "defaultAlertPercent": DEFAULT_ALERT_PERCENT,
     })

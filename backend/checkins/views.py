@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from administration.permissions import authorize
 from audit.log import record
 from audit.models import AuditLog
+from headcount.alerts import check_capacity_safely
 from members.access import door_access
 from members.models import Member
 from members.serializers import MemberSerializer
@@ -101,6 +102,7 @@ def checkin_list(request):
             )
         else:
             check_in = CheckIn.objects.create(member=member, branch=branch, result=CheckIn.Result.ALLOWED)
+            check_capacity_safely(branch)  # SCRUM-128
             # Training data (SCRUM-73): only real visits, not refused attempts.
             log_training_event(
                 TrainingEvent.EventType.CHECK_IN, member=member, branch=branch,
@@ -175,6 +177,7 @@ def checkout(request):
 
     session.checked_out_at = timezone.now()
     session.save(update_fields=["checked_out_at"])
+    check_capacity_safely(session.branch)  # SCRUM-128
 
     return Response({"member": MemberSerializer(member).data, "checkIn": CheckInSerializer(session).data})
 
