@@ -3,6 +3,7 @@ from django.urls import path
 from billing import views as billing_views
 from classes import views as class_views
 from headcount import busy as headcount_busy
+from notifications import views as notification_views
 from progress import views as progress_views
 
 from . import auth_views, privacy, views
@@ -30,6 +31,11 @@ urlpatterns = [
     path("/me/classes", class_views.my_classes),
     path("/me/classes/<int:class_id>/book", class_views.book_class),
     path("/me/classes/<int:class_id>/cancel", class_views.cancel_booking),
+    path("/me/classes/<int:class_id>/waitlist", class_views.join_waitlist),
+    path("/me/classes/<int:class_id>/waitlist/leave", class_views.leave_waitlist),
+    path("/me/notifications", notification_views.my_member_notifications),
+    path("/me/notifications/read-all", notification_views.member_read_all),
+    path("/me/notifications/<int:notification_id>/read", notification_views.member_read_one),
     path("/me/coaches", class_views.my_coaches),
     path("/me/pt-slots", class_views.my_pt_slots),
     path("/me/pt-sessions", class_views.book_pt),

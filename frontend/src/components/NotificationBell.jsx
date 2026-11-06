@@ -1,17 +1,47 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { fetchNotifications, markAllNotificationsRead, markNotificationRead } from "../api/notifications.js";
+import { staffNotificationsApi } from "../api/notifications.js";
 
 const POLL_MS = 20000;
+const canAlert = typeof window !== "undefined" && "Notification" in window;
 
-// The staff top bar's bell: the signed-in staff member's own notifications
-// (SCRUM-128 capacity alerts so far), newest first. Polls, since the app has
-// no push channel.
-export default function NotificationBell() {
+// The top bar's bell: the signed-in person's own notifications, newest first.
+// Staff see theirs (SCRUM-128 capacity alerts); a member passes
+// api={memberNotificationsApi} for theirs (waitlist spots, cancelled classes).
+// Polls, since the app has no push channel.
+//
+// desktopAlerts: also pop up an operating-system notification - the
+// browser's built-in Notification API, no outside service - for each new
+// unread one, once the person allows it. Works while the app is open in a tab.
+export default function NotificationBell({ api = staffNotificationsApi, desktopAlerts = false }) {
   const [data, setData] = useState({ unread: 0, results: [] });
   const [open, setOpen] = useState(false);
+  const [permission, setPermission] = useState(canAlert ? Notification.permission : "unsupported");
   const wrap = useRef(null);
+  const known = useRef(null); // ids already seen, so only new ones pop up
 
-  const load = useCallback(() => fetchNotifications().then(setData).catch(() => {}), []);
+  const load = useCallback(
+    () =>
+      api
+        .fetch()
+        .then((body) => {
+          setData(body);
+          if (!desktopAlerts) return;
+          const before = known.current;
+          known.current = new Set(body.results.map((n) => n.id));
+          if (!before || !canAlert || Notification.permission !== "granted") return;
+          body.results
+            .filter((n) => !n.read && !before.has(n.id))
+            .forEach((n) => {
+              try {
+                new Notification(n.title, { body: n.message, tag: `ff-notification-${n.id}`, icon: "/logo-badge.png" });
+              } catch {
+                // Some browsers only allow notifications from a service worker; the bell still shows it.
+              }
+            });
+        })
+        .catch(() => {}),
+    [api, desktopAlerts],
+  );
 
   useEffect(() => {
     load();
@@ -36,13 +66,17 @@ export default function NotificationBell() {
   }, [open]);
 
   async function readOne(n) {
-    if (!n.read) await markNotificationRead(n.id).catch(() => {});
+    if (!n.read) await api.markRead(n.id).catch(() => {});
     load();
   }
 
   async function readAll() {
-    await markAllNotificationsRead().catch(() => {});
+    await api.markAllRead().catch(() => {});
     load();
+  }
+
+  async function allowAlerts() {
+    setPermission(await Notification.requestPermission());
   }
 
   return (
@@ -77,6 +111,17 @@ export default function NotificationBell() {
               </button>
             )}
           </div>
+          {desktopAlerts && permission === "default" && (
+            <div style={styles.alertsRow}>
+              <span>Get a pop-up on this computer too?</span>
+              <button type="button" onClick={allowAlerts} style={styles.linkButton}>
+                Turn on desktop alerts
+              </button>
+            </div>
+          )}
+          {desktopAlerts && permission === "denied" && (
+            <div style={styles.alertsRow}>Desktop alerts are blocked in this browser&apos;s site settings.</div>
+          )}
           {data.results.length === 0 ? (
             <div style={styles.empty}>Nothing yet.</div>
           ) : (
@@ -130,6 +175,10 @@ const styles = {
   popTitle: { fontSize: 15, fontWeight: 800 },
   popCount: { marginLeft: 4 },
   linkButton: { border: "none", background: "none", color: "#124096", fontSize: 13, fontWeight: 700, cursor: "pointer" },
+  alertsRow: {
+    display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap",
+    padding: "8px 14px", fontSize: 12, color: "#555", background: "#fafafb", borderBottom: "1px solid #f0f0f2",
+  },
   empty: { padding: 18, fontSize: 13, color: "#888", textAlign: "center" },
   list: { listStyle: "none", margin: 0, padding: 0 },
   item: {

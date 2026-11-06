@@ -91,7 +91,12 @@ export default function DeskBooking({ gymClass, onBooked }) {
       {notice && <div style={styles.successBox}>{notice}</div>}
 
       {gymClass.spotsLeft === 0 ? (
-        <div style={styles.fullBox}>This class is full - nobody else can be booked in unless a spot opens up.</div>
+        <div style={styles.fullBox}>
+          This class is full - nobody else can be booked in unless a spot opens up
+          {gymClass.waitlistCount
+            ? `, and then it goes to the ${gymClass.waitlistCount} member${gymClass.waitlistCount === 1 ? "" : "s"} on the waitlist first.`
+            : "."}
+        </div>
       ) : (
         <>
           <div style={styles.searchRow}>

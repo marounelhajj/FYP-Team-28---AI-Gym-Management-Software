@@ -156,6 +156,21 @@ CORS_ALLOWED_ORIGINS = [
 # When unset (local dev), a key derived from SECRET_KEY is used instead.
 TOTP_ENCRYPTION_KEY = os.environ.get("TOTP_ENCRYPTION_KEY", "")
 
+# Email (member notifications - notifications/delivery.py). In development,
+# each email is written as a file to backend/sent_emails/ so it can be read
+# without sending anything. To send real email, set EMAIL_BACKEND to
+# django.core.mail.backends.smtp.EmailBackend and EMAIL_HOST, EMAIL_PORT,
+# EMAIL_HOST_USER, EMAIL_HOST_PASSWORD (any provider's SMTP details).
+EMAIL_BACKEND = os.environ.get('EMAIL_BACKEND', 'django.core.mail.backends.filebased.EmailBackend')
+EMAIL_FILE_PATH = os.environ.get('EMAIL_FILE_PATH') or BASE_DIR / 'sent_emails'
+EMAIL_HOST = os.environ.get('EMAIL_HOST', 'localhost')
+EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'true').lower() == 'true'
+EMAIL_TIMEOUT = 10
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'Fitness Factory <no-reply@fitnessfactory.local>')
+
 # Our URL patterns deliberately omit trailing slashes to match the
 # frontend's fetch() calls exactly (e.g. /api/members, /api/members/meta),
 # so suppress Django's "missing trailing slash" system-check warning.

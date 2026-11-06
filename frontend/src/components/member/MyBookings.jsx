@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { cancelMyBooking, cancelMyPtSession, fetchMyClasses } from "../../api/classes.js";
+import { cancelMyBooking, cancelMyPtSession, fetchMyClasses, leaveWaitlist } from "../../api/classes.js";
 import { formatDay } from "../classes/dates.js";
 
 // Everything the member has coming up - class spots and private sessions - in
@@ -33,8 +33,13 @@ export default function MyBookings() {
     setError(null);
     try {
       if (item.kind === "class") await cancelMyBooking(item.id);
+      else if (item.kind === "waitlist") await leaveWaitlist(item.id);
       else await cancelMyPtSession(item.id);
-      setNotice(`${item.title} on ${formatDay(item.date)} at ${item.startTime} was cancelled.`);
+      setNotice(
+        item.kind === "waitlist"
+          ? `You left the waitlist for ${item.title} on ${formatDay(item.date)}.`
+          : `${item.title} on ${formatDay(item.date)} at ${item.startTime} was cancelled.`,
+      );
       await load();
     } catch (err) {
       setError(err.message);
@@ -55,6 +60,10 @@ export default function MyBookings() {
       kind: "pt", key: `pt-${s.id}`, id: s.id, title: "Private training", date: s.date, startTime: s.startTime,
       endTime: s.endTime, coach: s.coachName, where: s.note, state: s.state,
     })),
+    ...(data.waitlists || []).map((c) => ({
+      kind: "waitlist", key: `wait-${c.id}`, id: c.id, title: c.name, date: c.date, startTime: c.startTime,
+      endTime: c.endTime, coach: c.coachName, where: `#${c.myWaitlist.position} in line`, state: c.state,
+    })),
   ].sort((a, b) => `${a.date} ${a.startTime}`.localeCompare(`${b.date} ${b.startTime}`));
 
   return (
@@ -67,7 +76,7 @@ export default function MyBookings() {
         <ul style={styles.list}>
           {items.map((item) => (
             <li key={item.key} style={styles.row}>
-              <span style={item.kind === "pt" ? styles.ptTag : styles.classTag}>{item.kind === "pt" ? "Private" : "Class"}</span>
+              <span style={TAGS[item.kind].style}>{TAGS[item.kind].label}</span>
               <span style={styles.body}>
                 <strong>{item.title}</strong>
                 <span style={styles.meta}>
@@ -77,7 +86,7 @@ export default function MyBookings() {
               </span>
               {item.state === "upcoming" ? (
                 <button type="button" onClick={() => cancel(item)} disabled={busyKey === item.key} style={styles.cancelButton}>
-                  {busyKey === item.key ? "..." : "Cancel"}
+                  {busyKey === item.key ? "..." : item.kind === "waitlist" ? "Leave" : "Cancel"}
                 </button>
               ) : (
                 <span style={styles.liveTag}>In progress</span>
@@ -86,12 +95,16 @@ export default function MyBookings() {
           ))}
         </ul>
       )}
-      <p style={styles.muted}>Times are Beirut time. A booking can be cancelled until it starts.</p>
+      <p style={styles.muted}>
+        Times are Beirut time. A booking can be cancelled until it starts. On a waitlist, a spot that opens is booked for
+        you automatically and you&apos;re notified.
+      </p>
     </div>
   );
 }
 
 const styles = {
+  waitTag: { fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: "#fff1d6", color: "#8a5300" },
   muted: { fontSize: 12, color: "#888", margin: "8px 0" },
   empty: { padding: 14, border: "1px dashed #d0d0d5", borderRadius: 10, fontSize: 13, color: "#888", textAlign: "center" },
   successBox: { background: "#e6f4ea", color: "#1e7a34", padding: "10px 14px", borderRadius: 8, fontSize: 13, marginBottom: 10 },
@@ -114,4 +127,10 @@ const styles = {
     color: "#de0b12",
     cursor: "pointer",
   },
+};
+
+const TAGS = {
+  class: { label: "Class", style: styles.classTag },
+  pt: { label: "Private", style: styles.ptTag },
+  waitlist: { label: "Waitlist", style: styles.waitTag },
 };

@@ -5,6 +5,7 @@ from django.utils import timezone
 
 from administration.models import StaffAccount
 from checkins.models import AUTO_CHECKOUT_AFTER, CheckIn
+from members.access import door_access
 from members.models import Member
 from training.events import log_training_event
 from training.models import TrainingEvent
@@ -206,21 +207,66 @@ def member_clashes(gym_class, starts_at, ends_at, moving_ids):
     return sorted({b.member.name for b in clashes.select_related("member")} | {s.member.name for s in sessions.select_related("member")})
 
 
+# Why this member can't take a spot in this class, as (http status, message),
+# or None. The same rules whether they book in the app, at the front desk or
+# are booked from the waitlist, worded for whoever is reading - with one
+# difference: members book their own branch in the app, but the desk can book
+# a member visiting from another branch, since their card opens the doors
+# here too. check_capacity=False skips "is it full" (joining a waitlist).
+def booking_problem(member, gym_class, at_desk=False, check_capacity=True):
+    if gym_class.status == GymClass.Status.CANCELLED:
+        return 400, "This class was cancelled."
+    if gym_class.has_started:
+        return 400, "This class has already started - booking is closed."
+    if not at_desk and gym_class.branch != member.branch:
+        return 403, f"You can only book classes at your own branch ({member.branch})."
+    access = door_access(member)
+    if not access.granted:
+        who = f"{member.name} can't be booked" if at_desk else "You can't book classes"
+        return 403, f"{who} right now: {access.message}"
+    class_day = timezone.localtime(gym_class.starts_at).date()
+    if member.subscription_expires_at < class_day:
+        whose = f"{member.name}'s" if at_desk else "Your"
+        return 403, (f"{whose} membership runs until {member.subscription_expires_at:%d %b %Y} - "
+                     "renew it to book classes after that date.")
+    if ClassBooking.objects.filter(gym_class=gym_class, member=member, status=ClassBooking.Status.BOOKED).exists():
+        return 400, f"{member.name} already has a spot in this class." if at_desk else "You've already reserved a spot in this class."
+    # The class's spots, and never past its type's safety limit.
+    if check_capacity and spots_left(gym_class) == 0:
+        return 409, "This class is full."
+    clash = member_busy(member, gym_class.starts_at, gym_class.ends_at)
+    if clash:
+        if at_desk:
+            return 409, f"{member.name} is already booked into {clash} - they can't take two classes at the same time."
+        return 409, f"You're already booked into {clash} - you can't take two classes at the same time."
+    return None
+
+
+def spots_left(gym_class):
+    return max(0, min(gym_class.capacity, gym_class.class_type.max_capacity) - booked_count(gym_class))
+
+
 def booked_count(gym_class):
     return gym_class.bookings.filter(status=ClassBooking.Status.BOOKED).count()
 
 
 # Ends every future booking a member holds - class spots and private sessions -
-# when their membership is frozen, cancelled or erased, so they go back to
-# other members.
+# and takes them off every waitlist, when their membership is frozen,
+# cancelled or erased. The class spots go straight to whoever is waiting.
 def release_future_bookings(member, reason):
+    from .waitlist import fill, leave_all
+
     now = timezone.now()
-    classes = ClassBooking.objects.filter(
-        member=member, status=ClassBooking.Status.BOOKED, gym_class__starts_at__gt=now,
-    ).update(status=ClassBooking.Status.CANCELLED, cancelled_at=now, cancel_reason=reason[:60])
+    future = ClassBooking.objects.filter(member=member, status=ClassBooking.Status.BOOKED, gym_class__starts_at__gt=now)
+    freed = list(future.values_list("gym_class_id", flat=True))
+    classes = future.update(status=ClassBooking.Status.CANCELLED, cancelled_at=now, cancel_reason=reason[:60])
     sessions = booked_pt().filter(member=member, starts_at__gt=now).update(
         status=PTSession.Status.CANCELLED, cancelled_at=now, cancel_reason=reason[:120],
     )
+    # They come off every waitlist, and the spots they held go to whoever is waiting.
+    leave_all(member, reason)
+    for class_id in freed:
+        fill(class_id)
     return classes + sessions
 
 
@@ -299,7 +345,11 @@ def pt_slots(coach, branch, days, member=None, now=None):
 # no-cron approach as close_stale_sessions). A no-show is logged as AI
 # training data (SCRUM-73), once.
 def settle_attendance(now=None, limit=500):
+    from .waitlist import close_started
+
     now = now or timezone.now()
+    # Waitlists close when their class starts (same lazy, no-cron sweep).
+    close_started(now)
     pending = ClassBooking.objects.filter(
         status=ClassBooking.Status.BOOKED, attendance="",
         gym_class__status=GymClass.Status.SCHEDULED, gym_class__ends_at__lte=now,

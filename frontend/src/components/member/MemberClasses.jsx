@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { bookClass, cancelMyBooking, fetchMyClasses } from "../../api/classes.js";
+import { bookClass, cancelMyBooking, fetchMyClasses, joinWaitlist, leaveWaitlist } from "../../api/classes.js";
 import { BUTTON_COLORS } from "../../styles/buttonColors.js";
 import { addDays, dayOfMonth, formatDay, formatLongDay, weekdayShort, weekLabel } from "../classes/dates.js";
 import useServerClock, { offsetLabel } from "../classes/useServerClock.js";
@@ -75,6 +75,15 @@ export default function MemberClasses() {
       if (action === "book") {
         await bookClass(gymClass.id);
         setNotice(`You're booked into ${gymClass.name} on ${formatDay(gymClass.date)} at ${gymClass.startTime}.`);
+      } else if (action === "join") {
+        const joined = await joinWaitlist(gymClass.id);
+        setNotice(
+          `You're #${joined.myWaitlist.position} on the waitlist for ${gymClass.name}. If a spot opens we'll book you in ` +
+            "and let you know - no need to keep checking.",
+        );
+      } else if (action === "leave") {
+        await leaveWaitlist(gymClass.id);
+        setNotice(`You left the waitlist for ${gymClass.name}.`);
       } else {
         await cancelMyBooking(gymClass.id);
         setNotice(`Your spot in ${gymClass.name} on ${formatDay(gymClass.date)} was given back.`);
@@ -97,7 +106,7 @@ export default function MemberClasses() {
   const matches = (c) =>
     (!typeFilter || c.name === typeFilter) &&
     (!coachFilter || String(c.coachId) === coachFilter) &&
-    (!freeOnly || mine(c) || (c.state === "upcoming" && c.spotsLeft > 0));
+    (!freeOnly || mine(c) || c.myWaitlist || (c.state === "upcoming" && c.spotsLeft > 0));
   const dayClasses = data.classes.filter((c) => c.date === day.date && matches(c));
   const typeNames = [...new Set(data.classes.map((c) => c.name))].sort();
   const coachList = [...new Map(data.classes.map((c) => [String(c.coachId), c.coachName])).entries()].sort((a, b) =>
@@ -214,6 +223,8 @@ export default function MemberClasses() {
           busy={busyId === c.id}
           onBook={() => act(c, "book")}
           onCancel={() => act(c, "cancel")}
+          onJoinWaitlist={() => act(c, "join")}
+          onLeaveWaitlist={() => act(c, "leave")}
         />
       ))}
 
@@ -224,8 +235,9 @@ export default function MemberClasses() {
   );
 }
 
-function ClassRow({ gymClass: c, data, clash, busy, onBook, onCancel }) {
+function ClassRow({ gymClass: c, data, clash, busy, onBook, onCancel, onJoinWaitlist, onLeaveWaitlist }) {
   const mine = c.myBooking?.status === "Booked";
+  const waiting = c.myWaitlist;
   let action;
   if (c.state === "cancelled") {
     action = <span style={styles.cancelledTag}>Cancelled</span>;
@@ -245,21 +257,37 @@ function ClassRow({ gymClass: c, data, clash, busy, onBook, onCancel }) {
         {busy ? "..." : "Cancel"}
       </button>
     );
+  } else if (waiting) {
+    action = (
+      <button type="button" onClick={onLeaveWaitlist} disabled={busy} style={styles.cancelButton}>
+        {busy ? "..." : "Leave waitlist"}
+      </button>
+    );
   } else {
     let reason = null;
     if (!data.canBook) reason = "Reserve";
     else if (data.bookableUntil && c.date > data.bookableUntil) reason = "After renewal";
-    else if (c.spotsLeft === 0) reason = "Full";
     else if (clash) reason = "Clashes";
-    action = reason ? (
-      <button type="button" disabled style={styles.disabledButton}>
-        {reason}
-      </button>
-    ) : (
-      <button type="button" onClick={onBook} disabled={busy} style={styles.bookButton}>
-        {busy ? "..." : "Reserve"}
-      </button>
-    );
+    if (reason) {
+      action = (
+        <button type="button" disabled style={styles.disabledButton}>
+          {reason}
+        </button>
+      );
+    } else if (c.spotsLeft === 0) {
+      // Full: queue for it instead. A spot that opens is booked for you.
+      action = (
+        <button type="button" onClick={onJoinWaitlist} disabled={busy} style={styles.waitlistButton}>
+          {busy ? "..." : "Join waitlist"}
+        </button>
+      );
+    } else {
+      action = (
+        <button type="button" onClick={onBook} disabled={busy} style={styles.bookButton}>
+          {busy ? "..." : "Reserve"}
+        </button>
+      );
+    }
   }
 
   const muted = c.state !== "upcoming";
@@ -273,12 +301,19 @@ function ClassRow({ gymClass: c, data, clash, busy, onBook, onCancel }) {
         <span style={{ ...styles.className, textDecoration: c.state === "cancelled" ? "line-through" : "none" }}>
           {c.name}
           {mine && c.state === "upcoming" && <span style={styles.reservedTag}>Reserved</span>}
+          {waiting && c.state === "upcoming" && <span style={styles.waitlistTag}>Waitlist #{waiting.position}</span>}
         </span>
         <span style={styles.classMeta}>
           {c.coachName}
           {c.room && ` · ${c.room}`}
-          {c.state === "upcoming" && ` · ${c.spotsLeft} of ${c.capacity} spots left`}
+          {c.state === "upcoming" &&
+            (c.spotsLeft > 0
+              ? ` · ${c.spotsLeft} of ${c.capacity} spots left`
+              : ` · Full${c.waitlistCount ? ` · ${c.waitlistCount} waiting` : ""}`)}
         </span>
+        {waiting && c.state === "upcoming" && (
+          <span style={styles.waitNote}>If a spot opens you&apos;re booked in automatically and we&apos;ll let you know.</span>
+        )}
         {!mine && c.state === "upcoming" && clash && (
           <span style={styles.clashNote}>
             You're booked into {clash.name} {clash.startTime}–{clash.endTime} at the same time.
@@ -405,6 +440,19 @@ const styles = {
     cursor: "not-allowed",
   },
   reservedTag: { fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 4, background: "#e3f5e8", color: "#0f6e2b" },
+  waitlistTag: { fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 4, background: "#fff1d6", color: "#8a5300" },
+  waitNote: { fontSize: 11, color: "#8a5300" },
+  waitlistButton: {
+    padding: "7px 10px",
+    fontSize: 12,
+    fontWeight: 700,
+    border: "1px solid #c98a12",
+    borderRadius: 6,
+    background: "#fff8e8",
+    color: "#8a5300",
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+  },
   liveTag: { fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 4, background: "#e3f5e8", color: "#0f6e2b" },
   doneTag: { fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 4, background: "#e4e4e8", color: "#555" },
   missedTag: { fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 4, background: "#fdeceb", color: "#b3261e" },

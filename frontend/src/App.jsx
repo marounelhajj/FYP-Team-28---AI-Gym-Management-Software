@@ -26,6 +26,7 @@ import MemberDashboard from "./components/member/MemberDashboard.jsx";
 import PlanBrowser from "./components/member/PlanBrowser.jsx";
 import MyClients from "./components/progress/MyClients.jsx";
 import NotificationBell from "./components/NotificationBell.jsx";
+import { memberNotificationsApi } from "./api/notifications.js";
 import Logo from "./components/Logo.jsx";
 import AccessDenied from "./components/AccessDenied.jsx";
 
@@ -312,7 +313,7 @@ export default function App() {
             <div style={styles.userName}>{session.data.fullName || session.data.name}</div>
             <div style={styles.userRole}>{isStaff ? session.data.roleName : "Member"}</div>
           </div>
-          {isStaff && <NotificationBell />}
+          {isStaff ? <NotificationBell /> : <NotificationBell api={memberNotificationsApi} desktopAlerts />}
           <button onClick={handleLogout} style={styles.logoutButton}>
             Log out
           </button>

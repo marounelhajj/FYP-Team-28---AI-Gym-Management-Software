@@ -179,7 +179,11 @@ function Spots({ gymClass: c }) {
   if (c.state === "cancelled") return <span style={{ ...styles.tag, ...styles.tagCancelled }}>Cancelled</span>;
   if (c.state === "finished") return <span style={{ ...styles.tag, ...styles.tagDone }}>Finished</span>;
   if (c.state === "in_progress") return <span style={{ ...styles.tag, ...styles.tagLive }}>In progress</span>;
-  if (c.spotsLeft === 0) return <span style={{ ...styles.tag, ...styles.tagFull }}>Full</span>;
+  if (c.spotsLeft === 0) {
+    return (
+      <span style={{ ...styles.tag, ...styles.tagFull }}>Full{c.waitlistCount ? ` · ${c.waitlistCount} waiting` : ""}</span>
+    );
+  }
   return (
     <span style={c.spotsLeft <= LOW_SPOTS ? styles.spotsLow : styles.spotsOpen}>
       {c.spotsLeft} spot{c.spotsLeft === 1 ? "" : "s"} left

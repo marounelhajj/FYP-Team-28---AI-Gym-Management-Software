@@ -551,7 +551,12 @@ function ClassDetails({ classId, onChanged, onClose, onEdit, onCancel }) {
                   ) : (
                     <span style={styles.rosterSide}>
                       <span style={styles.muted}>
-                        {r.bookedBy ? `Booked at the desk by ${r.bookedBy}` : "Booked in the app"} · {r.bookedAt.slice(5)}
+                        {r.fromWaitlist
+                          ? "From the waitlist"
+                          : r.bookedBy
+                            ? `Booked at the desk by ${r.bookedBy}`
+                            : "Booked in the app"}{" "}
+                        · {r.bookedAt.slice(5)}
                       </span>
                       {detail.canBookMembers &&
                         (removing === r.bookingId ? (
@@ -584,6 +589,26 @@ function ClassDetails({ classId, onChanged, onClose, onEdit, onCancel }) {
               {released.length} cancelled reservation{released.length === 1 ? "" : "s"}:{" "}
               {released.map((r) => `${r.memberName} (${r.cancelReason || "cancelled"})`).join(", ")}
             </p>
+          )}
+
+          {detail.waitlist?.length > 0 && (
+            <>
+              <h3 style={styles.rosterTitle}>Waitlist ({detail.waitlist.length})</h3>
+              <ol style={styles.roster} aria-label="Waitlist">
+                {detail.waitlist.map((w) => (
+                  <li key={w.memberId} style={styles.rosterRow}>
+                    <span>
+                      <strong>
+                        #{w.position} {w.memberName}
+                      </strong>{" "}
+                      <span style={styles.muted}>· ID {w.memberId}</span>
+                    </span>
+                    <span style={styles.muted}>Joined {w.joinedAt.slice(5)}</span>
+                  </li>
+                ))}
+              </ol>
+              <p style={styles.muted}>When a spot opens, the first in line is booked in automatically and told.</p>
+            </>
           )}
 
           {detail.canEdit && detail.editable && (

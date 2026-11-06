@@ -135,6 +135,8 @@ class ClassBooking(models.Model):
     # Added by the coach after the class started for someone who came
     # without booking. Never takes a bookable spot: the class had started.
     walk_in = models.BooleanField(default=False)
+    # Booked automatically from the class's waitlist when a spot opened.
+    from_waitlist = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["booked_at", "id"]
@@ -147,6 +149,51 @@ class ClassBooking(models.Model):
 
     def __str__(self):
         return f"{self.member} -> {self.gym_class} ({self.status})"
+
+
+# User story: "As a member, I want to join a waitlist for a full class and be
+# notified automatically when a spot opens up, so that I don't have to keep
+# checking manually."
+#
+# One member's place in line for a full class. When a spot opens (someone
+# cancels, the desk removes a booking, a membership is frozen, the class gets
+# more spots), the first member still waiting is booked into it automatically
+# and told - see classes/waitlist.py. Members queue in the order they joined;
+# the waitlist closes when the class starts or is cancelled.
+class WaitlistEntry(models.Model):
+    class Status(models.TextChoices):
+        WAITING = "Waiting", "Waiting"
+        BOOKED = "Booked", "Booked into a spot"
+        # A spot came up but the member couldn't take it (membership lapsed,
+        # booked into something else at that time...) - they're told why.
+        SKIPPED = "Skipped", "Skipped"
+        LEFT = "Left", "Left the waitlist"
+        # The class started, or was cancelled, before a spot came up.
+        CLOSED = "Closed", "Closed"
+
+    gym_class = models.ForeignKey(GymClass, on_delete=models.CASCADE, related_name="waitlist")
+    member = models.ForeignKey(Member, on_delete=models.CASCADE, related_name="waitlist_entries")
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.WAITING)
+    joined_at = models.DateTimeField(default=timezone.now, db_index=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    # Why it ended, in words the member sees.
+    note = models.CharField(max_length=200, blank=True)
+    # The spot they got, when status is Booked.
+    booking = models.OneToOneField(
+        ClassBooking, on_delete=models.SET_NULL, null=True, blank=True, related_name="waitlist_entry",
+    )
+
+    class Meta:
+        ordering = ["joined_at", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["gym_class", "member"], condition=Q(status="Waiting"),
+                name="one_place_per_member_per_class_waitlist",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.member} waiting for {self.gym_class} ({self.status})"
 
 
 # User story: "As a member, I want to browse and book available classes or PT

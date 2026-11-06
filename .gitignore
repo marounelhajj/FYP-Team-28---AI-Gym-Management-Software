@@ -15,6 +15,8 @@ db.sqlite3
 db.sqlite3-journal
 staticfiles/
 *.timestamp-*.mjs
+# Development email (settings.EMAIL_FILE_PATH): written here instead of sent
+sent_emails/
 
 # Sprint 2 demo tooling (dev-only): generated data, credentials and videos never get committed
 demo/.data/

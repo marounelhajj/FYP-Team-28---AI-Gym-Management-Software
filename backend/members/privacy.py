@@ -13,6 +13,7 @@ from audit.models import AuditLog
 from billing.models import PaymentMethod
 from checkins.models import CheckInFlag
 from classes.rules import release_future_bookings
+from notifications.models import MemberNotification
 from progress.models import BodyMetric, WorkoutEntry
 from training.events import delete_training_events_for_member
 
@@ -137,6 +138,17 @@ def build_export(member):
             }
             for s in member.pt_sessions.select_related("coach")
         ],
+        "classWaitlists": [
+            {
+                "className": w.gym_class.name, "startsAt": _stamp(w.gym_class.starts_at), "status": w.status,
+                "joinedAt": _stamp(w.joined_at), "note": w.note,
+            }
+            for w in member.waitlist_entries.select_related("gym_class")
+        ],
+        "notifications": [
+            {"title": n.title, "message": n.message, "createdAt": _stamp(n.created_at), "read": n.read_at is not None}
+            for n in member.notifications.all()
+        ],
         "retailPurchases": [
             {"id": s.pk, "total": f"{s.total:.2f}", "soldAt": _stamp(s.sold_at), "voided": s.voided_at is not None}
             for s in member.retail_purchases.all()
@@ -216,6 +228,8 @@ def anonymize_member(member):
         release_future_bookings(member, "Member data deleted")
         # SCRUM-60: the self-logged training log is personal data, not a record the gym must keep.
         WorkoutEntry.objects.filter(member=member).delete()
+        # Notifications are messages to them, not a record the gym must keep.
+        MemberNotification.objects.filter(recipient=member).delete()
         BodyMetric.objects.filter(member=member).delete()
         delete_training_events_for_member(member.pk)
         _scrub_audit_entries(member)

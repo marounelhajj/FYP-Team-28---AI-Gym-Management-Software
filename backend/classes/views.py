@@ -18,8 +18,8 @@ from members import qr
 from members.access import door_access
 from members.models import Member
 
-from . import rules
-from .models import ClassBooking, ClassType, GymClass, PTAvailability, PTSession, TimeOff
+from . import rules, waitlist
+from .models import ClassBooking, ClassType, GymClass, PTAvailability, PTSession, TimeOff, WaitlistEntry
 from .serializers import (
     WEEKDAYS, CancelClassSerializer, ClassTypeSerializer, ClassTypeWriteSerializer, DeskBookingSerializer,
     GymClassCreateSerializer, GymClassSerializer, GymClassUpdateSerializer, MyBookingSerializer,
@@ -44,9 +44,11 @@ SUBJECT = "the class schedule"
 
 
 # Ordered explicitly: Meta.ordering isn't applied to a query with an aggregate.
+# distinct, because counting two related tables in one query multiplies rows.
 def _with_counts(queryset):
     return queryset.select_related("coach", "class_type").annotate(
-        booked_count=Count("bookings", filter=Q(bookings__status=ClassBooking.Status.BOOKED)),
+        booked_count=Count("bookings", filter=Q(bookings__status=ClassBooking.Status.BOOKED), distinct=True),
+        waiting_count=Count("waitlist", filter=Q(waitlist__status=WaitlistEntry.Status.WAITING), distinct=True),
     ).order_by("starts_at", "id")
 
 
@@ -259,9 +261,16 @@ def class_detail(request, class_id):
     if error:
         return error
     roster = gym_class.bookings.select_related("member", "booked_by").order_by("status", "booked_at", "id")
+    queue = waitlist.waiting().filter(gym_class=gym_class).select_related("member").order_by("joined_at", "id")
     return Response({
         **GymClassSerializer(gym_class).data,
         "roster": RosterEntrySerializer(roster, many=True).data,
+        # Who's waiting, in the order they'll get a spot.
+        "waitlist": [
+            {"position": i, "memberId": e.member_id, "memberName": e.member.name,
+             "joinedAt": timezone.localtime(e.joined_at).strftime("%Y-%m-%d %H:%M")}
+            for i, e in enumerate(queue, start=1)
+        ],
         "seriesFollowing": len(_targets(gym_class, "following")) if gym_class.is_editable else 0,
         "canEdit": EDIT in account.role.permissions,
         # Whether this person can book members in or take them out right now.
@@ -361,6 +370,9 @@ def _update_classes(request, class_id):
             target.coach = coach
             target.starts_at, target.ends_at = starts_at, ends_at
             target.save()
+    # More spots than before go to whoever is waiting.
+    for target_id in ids:
+        waitlist.fill(target_id)
 
     updated = _serialized(ids)
     after = next(c for c in updated if c["id"] == gym_class.id)
@@ -402,9 +414,13 @@ def cancel_class(request, class_id):
             status=GymClass.Status.CANCELLED, cancelled_at=now, cancelled_by=account, cancel_reason=reason,
             updated_at=now,
         )
-        released = ClassBooking.objects.filter(gym_class_id__in=ids, status=ClassBooking.Status.BOOKED).update(
+        live = ClassBooking.objects.filter(gym_class_id__in=ids, status=ClassBooking.Status.BOOKED)
+        released_bookings = list(live.select_related("member", "gym_class"))
+        released = live.update(
             status=ClassBooking.Status.CANCELLED, cancelled_at=now, cancel_reason="Class cancelled by the gym",
         )
+        # Everyone booked or waiting is told, in the app and by email.
+        waitlist.class_cancelled(GymClass.objects.filter(id__in=ids), released_bookings, reason)
 
     record(
         request, AuditLog.Action.CLASS_CANCELLED, actor=account, target=gym_class, branch=gym_class.branch,
@@ -654,6 +670,9 @@ def class_type_detail(request, type_id):
         class_type.description = data.get("description", class_type.description)
         class_type.is_active = data.get("isActive", class_type.is_active)
         class_type.save()
+    # A higher maximum opens spots - they go to whoever is waiting.
+    for class_id in adjusted:
+        waitlist.fill(class_id)
 
     after = _type_payload(class_type)
     changed = changes(before, after, ignore=("upcomingClasses", "mostBookedUpcoming"))
@@ -678,8 +697,16 @@ def _member_from_session(request):
     return member, None
 
 
-def _for_member(gym_class, booking):
-    return {**GymClassSerializer(gym_class).data, "myBooking": MyBookingSerializer(booking).data if booking else None}
+# entry: the member's place on this class's waitlist, while they're waiting.
+def _for_member(gym_class, booking, entry=None):
+    return {
+        **GymClassSerializer(gym_class).data,
+        "myBooking": MyBookingSerializer(booking).data if booking else None,
+        "myWaitlist": None if entry is None else {
+            "position": waitlist.position(entry),
+            "joinedAt": timezone.localtime(entry.joined_at).strftime("%Y-%m-%d %H:%M"),
+        },
+    }
 
 
 def _class_with_counts(class_id):
@@ -711,56 +738,29 @@ def my_classes(request):
         gym_class__ends_at__gt=timezone.now(),
     ).select_related("gym_class__coach").order_by("gym_class__starts_at")[:20]
     upcoming_pt = rules.booked_pt().filter(member=member, ends_at__gt=timezone.now()).select_related("coach", "member")
+    queued = list(waitlist.waiting().filter(member=member).select_related("gym_class__coach", "gym_class__class_type")
+                  .order_by("gym_class__starts_at"))
+    queued_by_class = {e.gym_class_id: e for e in queued}
     access = door_access(member)
     return Response({
         "branch": member.branch,
         **_week_payload(start),
-        "classes": [_for_member(c, mine.get(c.id)) for c in classes],
+        "classes": [_for_member(c, mine.get(c.id), queued_by_class.get(c.id)) for c in classes],
         "upcoming": [_for_member(b.gym_class, b) for b in upcoming],
         "upcomingPt": PTSessionSerializer(upcoming_pt, many=True).data,
+        "waitlists": [_for_member(e.gym_class, None, e) for e in queued],
+        "maxWaitlists": waitlist.MAX_WAITLISTS,
         "canBook": access.granted,
         "bookingBlockedReason": None if access.granted else access.message,
         "bookableUntil": member.subscription_expires_at,
     })
 
 
-# Why this member can't take a spot in this class, or None. The same rules
-# whether they book in the app or at the front desk, worded for whoever is
-# reading - with one difference: members book their own branch in the app,
-# but the desk can book a member visiting from another branch, since their
-# card opens the doors here too.
+# Why this member can't take a spot in this class, as a response, or None.
+# The rules themselves are rules.booking_problem, shared with the waitlist.
 def _booking_problem(member, gym_class, at_desk=False):
-    if gym_class.status == GymClass.Status.CANCELLED:
-        return Response({"error": "This class was cancelled."}, status=400)
-    if gym_class.has_started:
-        return Response({"error": "This class has already started - booking is closed."}, status=400)
-    if not at_desk and gym_class.branch != member.branch:
-        return Response({"error": f"You can only book classes at your own branch ({member.branch})."}, status=403)
-    access = door_access(member)
-    if not access.granted:
-        who = f"{member.name} can't be booked" if at_desk else "You can't book classes"
-        return Response({"error": f"{who} right now: {access.message}"}, status=403)
-    class_day = timezone.localtime(gym_class.starts_at).date()
-    if member.subscription_expires_at < class_day:
-        whose = f"{member.name}'s" if at_desk else "Your"
-        return Response({
-            "error": f"{whose} membership runs until {member.subscription_expires_at:%d %b %Y} - "
-                     "renew it to book classes after that date.",
-        }, status=403)
-    if ClassBooking.objects.filter(gym_class=gym_class, member=member, status=ClassBooking.Status.BOOKED).exists():
-        message = f"{member.name} already has a spot in this class." if at_desk else "You've already reserved a spot in this class."
-        return Response({"error": message}, status=400)
-    # The class's spots, and never past its type's safety limit.
-    if rules.booked_count(gym_class) >= min(gym_class.capacity, gym_class.class_type.max_capacity):
-        return Response({"error": "This class is full."}, status=409)
-    clash = rules.member_busy(member, gym_class.starts_at, gym_class.ends_at)
-    if clash:
-        if at_desk:
-            message = f"{member.name} is already booked into {clash} - they can't take two classes at the same time."
-        else:
-            message = f"You're already booked into {clash} - you can't take two classes at the same time."
-        return Response({"error": message}, status=409)
-    return None
+    problem = rules.booking_problem(member, gym_class, at_desk=at_desk)
+    return Response({"error": problem[1]}, status=problem[0]) if problem else None
 
 
 # POST /api/members/me/classes/<id>/book - reserve a spot.
@@ -781,28 +781,75 @@ def book_class(request, class_id):
         if problem:
             return problem
         booking = ClassBooking.objects.create(gym_class=gym_class, member=member)
+        waitlist.booked_directly(member, gym_class)
     return Response(_for_member(_class_with_counts(gym_class.pk), booking), status=201)
 
 
 # POST /api/members/me/classes/<id>/cancel - give a reserved spot back, any
-# time before the class starts.
+# time before the class starts. The spot goes straight to the first member
+# on the waitlist, if there is one.
 @api_view(["POST"])
 def cancel_booking(request, class_id):
     member, denied = _member_from_session(request)
     if denied:
         return denied
-    booking = member.class_bookings.filter(
-        gym_class_id=class_id, status=ClassBooking.Status.BOOKED,
-    ).select_related("gym_class").first()
-    if booking is None:
-        return Response({"error": "You don't have a reservation for this class."}, status=404)
-    if booking.gym_class.has_started:
-        return Response({"error": "This class has already started - the reservation can't be cancelled now."}, status=400)
-    booking.status = ClassBooking.Status.CANCELLED
-    booking.cancelled_at = timezone.now()
-    booking.cancel_reason = "Cancelled by you"
-    booking.save(update_fields=["status", "cancelled_at", "cancel_reason"])
+    with transaction.atomic():
+        # Locked so nobody else grabs the freed spot ahead of the waitlist.
+        GymClass.objects.select_for_update().filter(id=class_id).first()
+        booking = member.class_bookings.filter(
+            gym_class_id=class_id, status=ClassBooking.Status.BOOKED,
+        ).select_related("gym_class").first()
+        if booking is None:
+            return Response({"error": "You don't have a reservation for this class."}, status=404)
+        if booking.gym_class.has_started:
+            return Response(
+                {"error": "This class has already started - the reservation can't be cancelled now."}, status=400,
+            )
+        booking.status = ClassBooking.Status.CANCELLED
+        booking.cancelled_at = timezone.now()
+        booking.cancel_reason = "Cancelled by you"
+        booking.save(update_fields=["status", "cancelled_at", "cancel_reason"])
+        waitlist.fill(class_id)
     return Response(_for_member(_class_with_counts(class_id), booking))
+
+
+# POST /api/members/me/classes/<id>/waitlist - join the waitlist of a full class.
+# 201 + the class with myWaitlist { position, joinedAt }.
+@api_view(["POST"])
+def join_waitlist(request, class_id):
+    member, denied = _member_from_session(request)
+    if denied:
+        return denied
+    member.refresh_expiry_status()
+    try:
+        with transaction.atomic():
+            Member.objects.select_for_update().filter(pk=member.pk).first()
+            gym_class = GymClass.objects.select_for_update().select_related("class_type").filter(id=class_id).first()
+            if gym_class is None:
+                return Response({"error": f"Class {class_id} not found."}, status=404)
+            problem = waitlist.join_problem(member, gym_class)
+            if problem:
+                return Response({"error": problem[1]}, status=problem[0])
+            entry = WaitlistEntry.objects.create(gym_class=gym_class, member=member)
+    except IntegrityError:
+        return Response({"error": "You're already on the waitlist for this class."}, status=400)
+    return Response(_for_member(_class_with_counts(class_id), None, entry), status=201)
+
+
+# POST /api/members/me/classes/<id>/waitlist/leave - give up your place in line.
+@api_view(["POST"])
+def leave_waitlist(request, class_id):
+    member, denied = _member_from_session(request)
+    if denied:
+        return denied
+    entry = waitlist.waiting().filter(member=member, gym_class_id=class_id).first()
+    if entry is None:
+        return Response({"error": "You're not on the waitlist for this class."}, status=404)
+    entry.status = WaitlistEntry.Status.LEFT
+    entry.note = "You left the waitlist."
+    entry.resolved_at = timezone.now()
+    entry.save(update_fields=["status", "note", "resolved_at"])
+    return Response(_for_member(_class_with_counts(class_id), None))
 
 
 # --- The front desk: one day's classes, and booking walk-ins into them ---
@@ -960,6 +1007,7 @@ def desk_book(request, class_id):
             if problem:
                 return problem
             booking = ClassBooking.objects.create(gym_class=locked_class, member=member, booked_by=account)
+            waitlist.booked_directly(member, locked_class)
     except IntegrityError:
         return Response({"error": "This member already has a spot in this class."}, status=400)
 
@@ -982,17 +1030,21 @@ def desk_cancel_booking(request, class_id, booking_id):
     gym_class, error = _class_or_error(account, class_id)
     if error:
         return error
-    booking = gym_class.bookings.filter(
-        id=booking_id, status=ClassBooking.Status.BOOKED,
-    ).select_related("member", "booked_by").first()
-    if booking is None:
-        return Response({"error": "That booking isn't active any more."}, status=404)
-    if gym_class.has_started:
-        return Response({"error": "This class has already started - its bookings can't be changed now."}, status=409)
-    booking.status = ClassBooking.Status.CANCELLED
-    booking.cancelled_at = timezone.now()
-    booking.cancel_reason = "Removed at the front desk"
-    booking.save(update_fields=["status", "cancelled_at", "cancel_reason"])
+    with transaction.atomic():
+        GymClass.objects.select_for_update().filter(pk=gym_class.pk).first()
+        booking = gym_class.bookings.filter(
+            id=booking_id, status=ClassBooking.Status.BOOKED,
+        ).select_related("member", "booked_by").first()
+        if booking is None:
+            return Response({"error": "That booking isn't active any more."}, status=404)
+        if gym_class.has_started:
+            return Response({"error": "This class has already started - its bookings can't be changed now."}, status=409)
+        booking.status = ClassBooking.Status.CANCELLED
+        booking.cancelled_at = timezone.now()
+        booking.cancel_reason = "Removed at the front desk"
+        booking.save(update_fields=["status", "cancelled_at", "cancel_reason"])
+        # The freed spot goes to the waitlist first, not to the next walk-in.
+        waitlist.fill(gym_class.pk)
     record(
         request, AuditLog.Action.CLASS_DESK_BOOKING_REMOVED, actor=account, target=booking.member,
         branch=gym_class.branch,

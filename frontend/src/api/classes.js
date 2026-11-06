@@ -220,6 +220,15 @@ export function cancelMyBooking(classId) {
   return memberSend(`/classes/${classId}/cancel`);
 }
 
+// Join a full class's waitlist; resolves to the class with myWaitlist { position, joinedAt }.
+export function joinWaitlist(classId) {
+  return memberSend(`/classes/${classId}/waitlist`);
+}
+
+export function leaveWaitlist(classId) {
+  return memberSend(`/classes/${classId}/waitlist/leave`);
+}
+
 // { branch, coaches: [{ id, name, teaches, ptHours, nextOpen }] }
 export function fetchMyCoaches() {
   return memberRequest("/coaches");

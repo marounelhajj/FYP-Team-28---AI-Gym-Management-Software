@@ -26,6 +26,7 @@ class GymClassSerializer(serializers.ModelSerializer):
     durationMinutes = serializers.SerializerMethodField()
     booked = serializers.SerializerMethodField()
     spotsLeft = serializers.SerializerMethodField()
+    waitlistCount = serializers.SerializerMethodField()
     cancelReason = serializers.CharField(source="cancel_reason")
     seriesId = serializers.SerializerMethodField()
     state = serializers.SerializerMethodField()
@@ -36,7 +37,7 @@ class GymClassSerializer(serializers.ModelSerializer):
         fields = [
             "id", "branch", "classTypeId", "name", "description", "coachId", "coachName", "coachActive", "room",
             "date", "startTime", "endTime", "durationMinutes", "capacity", "maxCapacity", "booked", "spotsLeft",
-            "status", "cancelReason", "seriesId", "state", "editable",
+            "waitlistCount", "status", "cancelReason", "seriesId", "state", "editable",
         ]
 
     def get_date(self, obj):
@@ -61,6 +62,11 @@ class GymClassSerializer(serializers.ModelSerializer):
     def get_spotsLeft(self, obj):
         return max(0, min(obj.capacity, obj.class_type.max_capacity) - self.get_booked(obj))
 
+    # How many members are waiting for a spot (views annotate waiting_count).
+    def get_waitlistCount(self, obj):
+        count = getattr(obj, "waiting_count", None)
+        return count if count is not None else obj.waitlist.filter(status="Waiting").count()
+
     def get_seriesId(self, obj):
         return str(obj.series) if obj.series else None
 
@@ -82,11 +88,16 @@ class RosterEntrySerializer(serializers.ModelSerializer):
     bookedAt = serializers.DateTimeField(source="booked_at", format=DATETIME)
     # Who booked it at the front desk; null when the member booked it themselves.
     bookedBy = serializers.CharField(source="booked_by.full_name", default=None)
+    # Booked automatically when a spot opened and they were next in line.
+    fromWaitlist = serializers.BooleanField(source="from_waitlist")
     cancelReason = serializers.CharField(source="cancel_reason")
 
     class Meta:
         model = ClassBooking
-        fields = ["bookingId", "memberId", "memberName", "status", "bookedAt", "bookedBy", "cancelReason", "attendance"]
+        fields = [
+            "bookingId", "memberId", "memberName", "status", "bookedAt", "bookedBy", "fromWaitlist", "cancelReason",
+            "attendance",
+        ]
 
 
 # POST /api/classes/<id>/bookings
