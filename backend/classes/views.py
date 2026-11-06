@@ -17,6 +17,7 @@ from headcount.views import resolve_branch
 from members import qr
 from members.access import door_access
 from members.models import Member
+from notifications import reminders
 
 from . import rules, waitlist
 from .models import ClassBooking, ClassType, GymClass, PTAvailability, PTSession, TimeOff, WaitlistEntry
@@ -362,6 +363,8 @@ def _update_classes(request, class_id):
 
         before = GymClassSerializer(gym_class).data
         for target, starts_at, ends_at, _, capacity in plans:
+            was = {"starts_at": target.starts_at, "ends_at": target.ends_at, "room": target.room,
+                   "coach": target.coach.full_name}
             if new_type:
                 target.class_type, target.name = new_type, new_type.name
             target.description = data.get("description", target.description)
@@ -370,6 +373,8 @@ def _update_classes(request, class_id):
             target.coach = coach
             target.starts_at, target.ends_at = starts_at, ends_at
             target.save()
+            # Whoever is booked hears about a new time, studio or coach.
+            reminders.class_changed(target, was)
     # More spots than before go to whoever is waiting.
     for target_id in ids:
         waitlist.fill(target_id)
@@ -1374,6 +1379,7 @@ def staff_cancel_pt(request, session_id):
     session.cancelled_at = timezone.now()
     session.cancel_reason = f"Cancelled by the gym{': ' + reason if reason else ''}"[:120]
     session.save(update_fields=["status", "cancelled_at", "cancel_reason"])
+    reminders.pt_cancelled_by_gym(session, reason)
     when = timezone.localtime(session.starts_at)
     record(
         request, AuditLog.Action.PT_SESSION_CANCELLED, actor=account, target=session.member, branch=session.branch,

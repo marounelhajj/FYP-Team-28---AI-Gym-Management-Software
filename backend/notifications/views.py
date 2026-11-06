@@ -5,7 +5,9 @@ from rest_framework.response import Response
 from administration.permissions import get_staff_account
 from members.models import Member
 
-from .models import MemberNotification, StaffNotification
+from . import reminders
+from .models import MemberNotification, NotificationSettings, StaffNotification
+from .serializers import NotificationSettingsSerializer
 
 LIMIT = 30
 
@@ -113,3 +115,42 @@ def member_read_all(request):
         return denied
     MemberNotification.objects.filter(recipient=member, read_at__isnull=True).update(read_at=timezone.now())
     return Response({"ok": True})
+
+
+def _reminders_data(member):
+    prefs = NotificationSettings.objects.filter(member=member).first() or reminders.defaults()
+    return {
+        "settings": {
+            "classDayBefore": prefs.class_day_before,
+            "classMinutesBefore": prefs.class_minutes_before,
+            "renewalDaysBefore": prefs.renewal_days_before,
+            "email": prefs.email,
+        },
+        "choices": {
+            "classMinutesBefore": list(NotificationSettings.CLASS_MINUTES_CHOICES),
+            "renewalDaysBefore": list(NotificationSettings.RENEWAL_DAYS_CHOICES),
+        },
+        "emailAddress": member.email,
+        "renewalHour": reminders.RENEWAL_HOUR.strftime("%H:%M"),
+        "upcoming": reminders.upcoming(member),
+    }
+
+
+# GET /api/members/me/reminders - the member's reminder settings and what
+# they'll be reminded about next.
+# PUT/PATCH - change any of classDayBefore, classMinutesBefore,
+# renewalDaysBefore, email; the rest stay as they are.
+@api_view(["GET", "PUT", "PATCH"])
+def my_reminders(request):
+    member, denied = _member(request)
+    if denied:
+        return denied
+    if request.method != "GET":
+        serializer = NotificationSettingsSerializer(data=request.data, partial=True)
+        if not serializer.is_valid():
+            return Response({"error": serializer.errors}, status=400)
+        prefs, _ = NotificationSettings.objects.get_or_create(member=member)
+        for field, value in serializer.validated_data.items():
+            setattr(prefs, field, value)
+        prefs.save()
+    return Response(_reminders_data(member))

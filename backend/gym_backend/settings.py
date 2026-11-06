@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 import os
+import sys
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -65,6 +66,8 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    # Starts the background reminder sender once, then steps out of the way.
+    'notifications.scheduler.ReminderSchedulerMiddleware',
 ]
 
 ROOT_URLCONF = 'gym_backend.urls'
@@ -170,6 +173,13 @@ EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
 EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'true').lower() == 'true'
 EMAIL_TIMEOUT = 10
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'Fitness Factory <no-reply@fitnessfactory.local>')
+
+# Class and renewal reminders (notifications/reminders.py) are sent by a
+# background thread in the web server, every REMINDER_INTERVAL_SECONDS. Off
+# for tests; set REMINDERS_AUTORUN=false to use "manage.py send_reminders"
+# from cron / Task Scheduler instead.
+REMINDERS_AUTORUN = os.environ.get('REMINDERS_AUTORUN', 'false' if sys.argv[1:2] == ['test'] else 'true').lower() == 'true'
+REMINDER_INTERVAL_SECONDS = int(os.environ.get('REMINDER_INTERVAL_SECONDS', '60'))
 
 # Our URL patterns deliberately omit trailing slashes to match the
 # frontend's fetch() calls exactly (e.g. /api/members, /api/members/meta),

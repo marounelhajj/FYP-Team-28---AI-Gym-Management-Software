@@ -13,7 +13,7 @@ from audit.models import AuditLog
 from billing.models import PaymentMethod
 from checkins.models import CheckInFlag
 from classes.rules import release_future_bookings
-from notifications.models import MemberNotification
+from notifications.models import MemberNotification, NotificationSettings, SentReminder
 from progress.models import BodyMetric, WorkoutEntry
 from training.events import delete_training_events_for_member
 
@@ -67,6 +67,7 @@ def _waiver_of(member):
 def build_export(member):
     payment_method = PaymentMethod.objects.filter(member=member).first()
     waiver = _waiver_of(member)
+    settings = NotificationSettings.objects.filter(member=member).first()
     return {
         "exportFormatVersion": EXPORT_FORMAT_VERSION,
         "exportedAt": timezone.now().isoformat(),
@@ -149,6 +150,10 @@ def build_export(member):
             {"title": n.title, "message": n.message, "createdAt": _stamp(n.created_at), "read": n.read_at is not None}
             for n in member.notifications.all()
         ],
+        "notificationSettings": None if settings is None else {
+            "classDayBefore": settings.class_day_before, "classMinutesBefore": settings.class_minutes_before,
+            "renewalDaysBefore": settings.renewal_days_before, "email": settings.email,
+        },
         "retailPurchases": [
             {"id": s.pk, "total": f"{s.total:.2f}", "soldAt": _stamp(s.sold_at), "voided": s.voided_at is not None}
             for s in member.retail_purchases.all()
@@ -230,6 +235,8 @@ def anonymize_member(member):
         WorkoutEntry.objects.filter(member=member).delete()
         # Notifications are messages to them, not a record the gym must keep.
         MemberNotification.objects.filter(recipient=member).delete()
+        NotificationSettings.objects.filter(member=member).delete()
+        SentReminder.objects.filter(member=member).delete()
         BodyMetric.objects.filter(member=member).delete()
         delete_training_events_for_member(member.pk)
         _scrub_audit_entries(member)

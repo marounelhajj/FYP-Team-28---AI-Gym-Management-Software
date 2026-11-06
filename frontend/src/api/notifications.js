@@ -33,6 +33,24 @@ export const memberNotificationsApi = {
   markAllRead: () => memberFetch("/read-all", { method: "POST" }),
 };
 
+// The member's reminder settings (class, private training and renewal
+// reminders, and whether to email them) plus what's coming up next.
+export async function fetchMyReminders() {
+  const res = await fetch("/api/members/me/reminders");
+  if (!res.ok) throw await parseError(res);
+  return res.json();
+}
+
+export async function saveMyReminders(changes) {
+  const res = await fetch("/api/members/me/reminders", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(changes),
+  });
+  if (!res.ok) throw await parseError(res);
+  return res.json();
+}
+
 export const staffNotificationsApi = {
   fetch: fetchNotifications,
   markRead: markNotificationRead,

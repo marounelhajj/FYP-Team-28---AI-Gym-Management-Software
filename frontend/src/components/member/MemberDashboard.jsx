@@ -14,6 +14,7 @@ import MyTrainingLog from "../progress/MyTrainingLog.jsx";
 import MemberPaymentMethodForm from "./MemberPaymentMethodForm.jsx";
 import MemberPrivacyPanel from "./MemberPrivacyPanel.jsx";
 import MemberProfileForm from "./MemberProfileForm.jsx";
+import ReminderSettings from "./ReminderSettings.jsx";
 
 const STATUS_STYLES = {
   Active: BUTTON_COLORS.green,
@@ -37,6 +38,9 @@ const STATUS_STYLES = {
 // subscription without a front-desk visit."
 // User story (SCRUM-62): "As a member, I want to request an export or
 // deletion of my personal data, so that I have control over my own privacy."
+// User story (reminders): "As a member, I want to receive notifications
+// before an upcoming class or when my membership is about to renew, so that
+// I don't miss sessions or get charged unexpectedly." (ReminderSettings.jsx)
 // Booking: classes, coaches and private training, and the member's own
 // bookings (MemberBooking.jsx). Re-keyed on status, so freezing (which frees
 // future spots and sessions) reloads it.
@@ -187,7 +191,7 @@ export default function MemberDashboard({ member: initialMember, onDeleted }) {
       <BranchBusyLevel homeBranch={member.branch} />
 
       <h2 style={styles.sectionTitle}>Book at {member.branch}</h2>
-      <MemberBooking key={member.status} />
+      <MemberBooking key={`booking-${member.status}`} />
 
       <div style={styles.paymentCard}>
         <div style={styles.paymentCardHeader}>
@@ -200,6 +204,10 @@ export default function MemberDashboard({ member: initialMember, onDeleted }) {
           {paymentMethod ? paymentMethod.summary : "Not on file - add one so renewals are one click."}
         </div>
       </div>
+
+      <h2 style={styles.sectionTitle}>Reminders</h2>
+      {/* Keys differ from MemberBooking's: siblings sharing a key get duplicated by React. */}
+      <ReminderSettings key={`reminders-${member.status}`} />
 
       <h2 style={styles.sectionTitle}>My training log</h2>
       <MyTrainingLog />
