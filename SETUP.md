@@ -403,6 +403,23 @@ risk of leaving, so that I know who to contact first."*
 - After pulling: `python manage.py migrate`.
 - Tests: `python manage.py test churn`
 
+### Why a member is at risk (SCRUM-119)
+
+Story: *"As a branch manager, I want each at-risk member to show the two or
+three reasons behind their ranking, so that staff know what to talk about on
+the call."*
+
+- Each member on the list shows their top two or three reasons: the largest
+  weighted terms of the rule-based score, or the largest coefficient x value
+  pushes of the learned model (only features that add at least 3 points).
+- Reasons are plain sentences with the member's real numbers - "Visits
+  dropped from 3 a week to 1 a week", "Missed 2 booked classes or sessions
+  in the last 30 days", "Membership payment overdue since 4 Nov", "Joined 6
+  weeks ago", "Membership ends in 12 days (22 Nov)" - each with a one-line
+  talking point for the call ("Talking points" toggle). No scores or feature
+  names are sent to the page (`churn/reasons.py`).
+- Tests: `python manage.py test churn.test_reasons`
+
 ## Folder structure
 
 ```

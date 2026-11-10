@@ -47,6 +47,22 @@ function RiskBadge({ level, score }) {
   );
 }
 
+// SCRUM-119: the two or three reasons in plain language, each with a short
+// line staff can use on the call.
+function Reasons({ reasons, talkingPoints }) {
+  if (!reasons.length) return <span style={styles.noReasons}>No warning signs</span>;
+  return (
+    <ul style={styles.reasonList}>
+      {reasons.map((r) => (
+        <li key={r.text} style={styles.reason}>
+          <span style={styles.reasonText}>{r.text}</span>
+          {talkingPoints && <span style={styles.talkingPoint} className="ar-say">Say: {r.talkingPoint}</span>}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function MethodChip({ run }) {
   if (!run) return null;
   if (run.method === "model" && run.model) {
@@ -66,6 +82,8 @@ export default function AtRiskMembers() {
   // "risk" = High and Medium: the people worth a call. "all" includes Low.
   const [level, setLevel] = useState("risk");
   const [query, setQuery] = useState("");
+  // SCRUM-119: a suggested line for the call under each reason.
+  const [showTalkingPoints, setShowTalkingPoints] = useState(true);
 
   const load = useCallback((which) => {
     setLoading(true);
@@ -180,6 +198,16 @@ export default function AtRiskMembers() {
                 </button>
               ))}
             </div>
+            <div style={styles.toolRight}>
+            <label style={styles.toggle} className="ar-press">
+              <input
+                type="checkbox"
+                checked={showTalkingPoints}
+                onChange={(e) => setShowTalkingPoints(e.target.checked)}
+                style={styles.toggleBox}
+              />
+              Talking points
+            </label>
             <input
               type="search"
               value={query}
@@ -189,6 +217,7 @@ export default function AtRiskMembers() {
               style={styles.search}
               className="ar-input"
             />
+            </div>
           </div>
 
           <div style={styles.scroll} className="ar-body" data-loading={loading || refreshing}>
@@ -202,6 +231,7 @@ export default function AtRiskMembers() {
                     <th style={styles.th}>#</th>
                     <th style={styles.th}>Member</th>
                     <th style={styles.th}>Risk</th>
+                    <th style={styles.th}>Why they're on the list</th>
                     <th style={styles.th}>Last visit</th>
                     <th style={styles.th}>Membership ends</th>
                   </tr>
@@ -217,6 +247,7 @@ export default function AtRiskMembers() {
                           {m.status !== "Active" && <span style={styles.status}>{m.status}</span>}
                         </td>
                         <td style={styles.td}><RiskBadge level={m.level} score={m.score} /></td>
+                        <td style={styles.tdReasons}><Reasons reasons={m.reasons} talkingPoints={showTalkingPoints} /></td>
                         <td style={styles.td}>{m.lastVisit ? formatDate(m.lastVisit) : "Never"}</td>
                         <td style={styles.td}>
                           {formatDate(m.membershipEndsAt)}
@@ -247,6 +278,7 @@ const CSS = `
 .ar-press:disabled { opacity: 0.6; cursor: progress; }
 .ar-body { transition: opacity 180ms ease; }
 .ar-body[data-loading="true"] { opacity: 0.55; }
+.ar-say { animation: ar-in 220ms ease-out both; }
 .ar-row { animation: ar-in 260ms ease-out both; }
 .ar-row:hover td { background: #f6f8fd; }
 .ar-pop { display: inline-block; animation: ar-pop 360ms cubic-bezier(0.34, 1.56, 0.64, 1) both; }
@@ -259,7 +291,7 @@ const CSS = `
 @keyframes ar-pop { from { transform: scale(0.85); opacity: 0.4; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
   .ar-tab, .ar-press, .ar-body { transition: none; }
-  .ar-row, .ar-pop { animation: none; }
+  .ar-row, .ar-pop, .ar-say { animation: none; }
   .ar-tab:active, .ar-press:active:not(:disabled) { transform: none; }
 }
 `;
@@ -295,10 +327,19 @@ export const styles = {
   search: { height: 48, minWidth: 0, flex: "0 1 260px", padding: "0 14px", fontSize: 15, fontWeight: 600, border: "1px solid #d0d0d5", borderRadius: 14, background: "#fff", fontFamily: "inherit" },
   scroll: { overflowX: "auto" },
   empty: { padding: 22, border: "1px dashed #d0d0d5", borderRadius: 14, fontSize: 14, color: "#888", textAlign: "center" },
-  table: { width: "100%", minWidth: 640, borderCollapse: "collapse", fontSize: 14 },
+  toolRight: { display: "flex", alignItems: "center", gap: 10, flex: "1 1 340px", justifyContent: "flex-end", minWidth: 0 },
+  toggle: { flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 8, height: 48, padding: "0 14px", border: "1px solid #d0d0d5", borderRadius: 14, fontSize: 14, fontWeight: 800, color: "#333", cursor: "pointer", background: "#fff", userSelect: "none" },
+  toggleBox: { width: 18, height: 18, accentColor: BLUE, margin: 0 },
+  tdReasons: { padding: "12px", borderBottom: "1px solid #f0f0f3", verticalAlign: "top", minWidth: 280, whiteSpace: "normal" },
+  reasonList: { listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8 },
+  reason: { display: "flex", flexDirection: "column", gap: 2, paddingLeft: 12, borderLeft: "3px solid #f1c27a" },
+  reasonText: { fontWeight: 700, fontSize: 14 },
+  talkingPoint: { fontSize: 13, color: BLUE, fontWeight: 600 },
+  noReasons: { fontSize: 13, color: "#888" },
+  table: { width: "100%", minWidth: 860, borderCollapse: "collapse", fontSize: 14 },
   th: { textAlign: "left", padding: "10px 12px", fontSize: 12, fontWeight: 800, color: "#666", borderBottom: "2px solid #ececf0", whiteSpace: "nowrap", textTransform: "uppercase", letterSpacing: 0.4 },
   td: { padding: "12px", borderBottom: "1px solid #f0f0f3", whiteSpace: "nowrap", verticalAlign: "top" },
-  tdName: { padding: "12px", borderBottom: "1px solid #f0f0f3", fontWeight: 800, verticalAlign: "top" },
+  tdName: { padding: "12px", borderBottom: "1px solid #f0f0f3", fontWeight: 800, verticalAlign: "top", whiteSpace: "nowrap" },
   rank: { padding: "12px", borderBottom: "1px solid #f0f0f3", fontWeight: 900, fontSize: 16, color: "#999", fontVariantNumeric: "tabular-nums", width: 40, verticalAlign: "top" },
   status: { marginLeft: 8, fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 999, background: "#e6edfa", color: BLUE },
   badge: { display: "inline-flex", alignItems: "center", gap: 8, padding: "4px 10px", borderRadius: 999, border: "1px solid", fontSize: 13 },
