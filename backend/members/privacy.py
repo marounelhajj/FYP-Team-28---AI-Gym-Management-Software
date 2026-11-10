@@ -14,6 +14,7 @@ from billing.models import PaymentMethod
 from checkins.models import CheckInFlag
 from classes.rules import release_future_bookings
 from notifications.models import MemberNotification, NotificationSettings, SentReminder
+from feedback.models import CoachFeedback
 from progress.models import BodyMetric, WorkoutEntry
 from training.events import delete_training_events_for_member
 
@@ -41,6 +42,8 @@ from .models import AccessCardReissue, Member
 #         stay, the typed signature name is replaced),
 #       - check-ins (kept for branch headcount history; they only point at
 #         the anonymized member),
+#       - ratings left for coaches (SCRUM-40): the stars stay in the coach's
+#         average, the written comment is erased,
 #       - audit log entries (permanent by design, SCRUM-124): entries by or
 #         about the member keep their action, time and branch, but names,
 #         free-text summaries, IP address and profile-change values are scrubbed.
@@ -178,6 +181,14 @@ def build_export(member):
             }
             for b in member.body_metrics.all()
         ],
+        # SCRUM-40: ratings they left for coaches.
+        "coachFeedback": [
+            {
+                "coach": f.coach.full_name, "session": f.session_name, "sessionAt": _stamp(f.session_starts_at),
+                "rating": f.rating, "comment": f.comment, "createdAt": _stamp(f.created_at),
+            }
+            for f in member.coach_feedback.select_related("coach")
+        ],
         "trainingEvents": [
             {
                 "eventType": e.event_type, "occurredAt": _stamp(e.occurred_at), "branch": e.branch,
@@ -238,6 +249,9 @@ def anonymize_member(member):
         NotificationSettings.objects.filter(member=member).delete()
         SentReminder.objects.filter(member=member).delete()
         BodyMetric.objects.filter(member=member).delete()
+        # SCRUM-40: the stars stay in the coach's average (now from an
+        # anonymized member); the comment is their own words, so it goes.
+        CoachFeedback.objects.filter(member=member).update(comment="")
         delete_training_events_for_member(member.pk)
         _scrub_audit_entries(member)
 

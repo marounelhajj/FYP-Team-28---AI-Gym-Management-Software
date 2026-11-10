@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     'classes',
     'notifications',
     'progress',
+    'feedback',
 ]
 
 MIDDLEWARE = [
