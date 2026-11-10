@@ -28,6 +28,8 @@ PERMISSION_CHOICES = [
     ("view_coach_ratings", "View personal trainer ratings & feedback by branch"),
     ("view_marketing_campaigns", "View marketing campaigns & spending by branch"),
     ("approve_purchase_orders", "Approve supply orders & manage suppliers"),
+    ("view_at_risk_members", "View members at risk of leaving"),
+    ("manage_at_risk_list", "Refresh the at-risk list and set call capacity"),
 ]
 PERMISSION_KEYS = {key for key, _ in PERMISSION_CHOICES}
 
