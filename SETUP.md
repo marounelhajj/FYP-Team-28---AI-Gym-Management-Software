@@ -321,6 +321,22 @@ session, so that I can help improve service quality."*
   comment.
 - Tests: `python manage.py test feedback`
 
+### A coach's ratings (SCRUM-37)
+
+Story: *"As a coach, I want to view ratings and feedback left by my clients,
+so that I can improve my coaching approach."*
+
+- **My Ratings** tab for coaches: the overall average with how many of each
+  star, the average for the last 30 days, the average for each class (and
+  for private training), and every rating with its comment and the member's
+  name, newest first. Filter by stars, or show only ratings with a comment.
+- `GET /api/feedback/me?rating=1-5&withComments=1` - `{coach, summary:
+  {count, average, stars, recent}, bySession, results, matching}`. The
+  filters narrow `results` only, never the summary. It only ever returns
+  ratings left for the signed-in staff account, so no permission is needed
+  (the same as My Schedule and My Clients).
+- Tests: `python manage.py test feedback`
+
 ## Folder structure
 
 ```

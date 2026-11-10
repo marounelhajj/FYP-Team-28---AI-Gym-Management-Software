@@ -20,6 +20,7 @@ urlpatterns = [
     path("api/doors", include("doors.urls")),
     path("api/notifications", include("notifications.urls")),
     path("api/progress", include("progress.urls")),
+    path("api/feedback", include("feedback.urls")),
     path("api/retail", include("retail.urls")),
     path("api/classes", include("classes.urls")),
     path("api", include("administration.urls")),

@@ -25,6 +25,7 @@ import MemberSignupPage from "./components/member/MemberSignupPage.jsx";
 import MemberDashboard from "./components/member/MemberDashboard.jsx";
 import PlanBrowser from "./components/member/PlanBrowser.jsx";
 import MyClients from "./components/progress/MyClients.jsx";
+import MyRatings from "./components/feedback/MyRatings.jsx";
 import NotificationBell from "./components/NotificationBell.jsx";
 import { memberNotificationsApi } from "./api/notifications.js";
 import Logo from "./components/Logo.jsx";
@@ -67,6 +68,8 @@ function availableScreens(account) {
     screens.push({ key: "mytimeoff", label: "My Time Off", render: () => <MyTimeOff /> });
     // SCRUM-60: read-only view of what private-training clients log themselves.
     screens.push({ key: "myclients", label: "My Clients", render: () => <MyClients /> });
+    // SCRUM-37: the ratings and comments members left after their sessions.
+    screens.push({ key: "myratings", label: "My Ratings", render: () => <MyRatings /> });
   }
   if (has("manage_membership_plans")) {
     screens.push({ key: "plans", label: "Plans & Pricing", render: () => <PlanManager /> });
