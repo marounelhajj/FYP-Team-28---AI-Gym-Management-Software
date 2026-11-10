@@ -4,14 +4,15 @@ from rest_framework.response import Response
 from administration.permissions import authorize
 from headcount.views import resolve_branch
 
-from .models import ChurnRun, ChurnScore
+from .calls import LOG, call_data, calls_this_week, contacted
+from .models import ChurnRun, ChurnScore, RetentionCall
 from .reasons import explain
 from .scoring import ensure_current, refresh_branch
 
 # The At-Risk Members page (SCRUM-118).
 #
 # view_at_risk_members opens the list; manage_at_risk_list also lets the
-# caller refresh it. The branch rule is the same as every branch screen
+# caller refresh it; log_retention_calls (SCRUM-68) lets them log calls. The branch rule is the same as every branch screen
 # (headcount.views.resolve_branch): a branch manager only ever gets their own
 # branch - asking for another is a 403 - and a role with view_all_branches
 # (General Manager) picks any.
@@ -48,7 +49,7 @@ def _run_data(run):
     }
 
 
-def member_row(score):
+def member_row(score, calls=()):
     member = score.member
     return {
         "rank": score.rank,
@@ -62,6 +63,8 @@ def member_row(score):
         "reasons": explain(score.reasons, score.features, score.run.as_of),
         "lastVisit": score.features.get("last_visit"),
         "membershipEndsAt": member.subscription_expires_at,
+        # SCRUM-68: calls logged this week, newest first.
+        "callsThisWeek": [call_data(c) for c in calls],
     }
 
 
@@ -69,13 +72,23 @@ def list_payload(account, branch, branches, run):
     scores = (
         ChurnScore.objects.filter(run=run).select_related("member", "run").order_by("rank")
     )
+    calls = calls_this_week(branch, run.week_start)
+    active, done = [], []
+    for s in scores:
+        member_calls = calls.get(s.member_id, [])
+        # Contacted this week (anything but "no answer"): off the active list.
+        (done if contacted(member_calls) else active).append(member_row(s, member_calls))
+    permissions = account.role.permissions
     return {
         "branch": branch,
         "branches": branches,
         "canChooseBranch": len(branches) > 1,
-        "canRefresh": MANAGE in account.role.permissions,
+        "canRefresh": MANAGE in permissions,
+        "canLogCalls": LOG in permissions,
+        "outcomes": [{"value": v, "label": l} for v, l in RetentionCall.Outcome.choices],
         "run": _run_data(run),
-        "members": [member_row(s) for s in scores],
+        "members": active,
+        "contacted": done,
     }
 
 
@@ -84,7 +97,7 @@ def list_payload(account, branch, branches, run):
 #     made this week's list yet, it is made now.
 @api_view(["GET"])
 def at_risk_list(request):
-    account, denied = authorize(request, VIEW, MANAGE)
+    account, denied = authorize(request, VIEW, MANAGE, LOG)
     if denied:
         return denied
     branch, branches, error = resolve_branch(account, request.query_params.get("branch"), subject=SUBJECT)

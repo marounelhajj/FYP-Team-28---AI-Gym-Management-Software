@@ -420,6 +420,35 @@ the call."*
   names are sent to the page (`churn/reasons.py`).
 - Tests: `python manage.py test churn.test_reasons`
 
+### Retention calls (SCRUM-68)
+
+Story: *"As a receptionist, I want to log the outcome of a retention call on
+an at-risk member's record, so that the team knows who has been contacted and
+the system captures whether the outreach worked."*
+
+- On the At-Risk Members list, staff with `log_retention_calls` (migration
+  `churn/0004` grants it to Receptionist and Branch Manager, and gives
+  Receptionists the list itself) press **Log call**: outcome (Reached / No
+  answer / Saved / Cancelled anyway), an optional note and an optional
+  follow-up date.
+- **Who comes off the list:** any outcome except "No answer" removes the
+  member from this week's active list and moves them to "Contacted this
+  week". "No answer" keeps them on the list until the end of the week, with
+  "Try again". A new week's list starts fresh. "Cancelled anyway" only
+  records what the member said; cancelling the membership is still done
+  from the member record.
+- The member record (Member Directory -> Subscription Details) shows every
+  call with date, staff member, outcome, note and follow-up date.
+- Each call writes an audit entry (`retention.call_logged`) and a
+  `retention_call` training event with the outcome plus the member's score,
+  level, rank, reasons and scoring method at the time of the call (the note
+  is left out) - the labelled data for a future model.
+- Calls are in the member's data export; a deletion request removes their
+  calls and weekly churn scores.
+- `POST /api/churn/calls` `{memberId, outcome, note?, followUpOn?}`;
+  `GET /api/churn/members/<id>/calls`. Same branch rule as the list.
+- Tests: `python manage.py test churn.test_calls`
+
 ## Folder structure
 
 ```

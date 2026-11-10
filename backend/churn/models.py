@@ -107,3 +107,57 @@ class ChurnScore(models.Model):
 
     def __str__(self):
         return f"#{self.rank} {self.member_id} {self.score} ({self.branch}, {self.week_start})"
+
+
+# Retention calls (SCRUM-68).
+#
+# User story: "As a receptionist, I want to log the outcome of a retention
+# call on an at-risk member's record, so that the team knows who has been
+# contacted and the system captures whether the outreach worked."
+#
+# One row per call. The member's score, level, reasons and scoring method
+# at the time of the call are copied onto it (and onto the matching
+# "retention_call" training event), so each outcome is a labelled example
+# for the model later even after the weekly list has moved on.
+class RetentionCall(models.Model):
+    class Outcome(models.TextChoices):
+        REACHED = "reached", "Reached"
+        NO_ANSWER = "no_answer", "No answer"
+        SAVED = "saved", "Saved"
+        CANCELLED_ANYWAY = "cancelled_anyway", "Cancelled anyway"
+
+    member = models.ForeignKey(Member, on_delete=models.CASCADE, related_name="retention_calls")
+    branch = models.CharField(max_length=30, choices=Member.Branch.choices)
+    # Monday of the week whose at-risk list the call was made from.
+    week_start = models.DateField()
+    outcome = models.CharField(max_length=20, choices=Outcome.choices)
+    note = models.CharField(max_length=500, blank=True)
+    follow_up_on = models.DateField(null=True, blank=True)
+    called_at = models.DateTimeField(default=timezone.now)
+    called_by = models.ForeignKey(
+        "administration.StaffAccount", on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+    # Copied so the history still reads right after the account is renamed or removed.
+    called_by_name = models.CharField(max_length=150, blank=True)
+    # The list entry the call was made from, and what it said at the time.
+    churn_score = models.ForeignKey(ChurnScore, on_delete=models.SET_NULL, null=True, blank=True, related_name="calls")
+    score = models.PositiveSmallIntegerField(null=True, blank=True)
+    level = models.CharField(max_length=10, blank=True)
+    rank = models.PositiveIntegerField(null=True, blank=True)
+    method = models.CharField(max_length=10, choices=Method.choices, blank=True)
+    model_version = models.CharField(max_length=60, blank=True)
+    reasons = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        ordering = ["-called_at", "-id"]
+        indexes = [models.Index(fields=["branch", "week_start"], name="retention_call_week_idx")]
+
+    def __str__(self):
+        return f"{self.member_id} {self.outcome} ({self.called_at:%Y-%m-%d})"
+
+    # Every outcome but "no answer" means the member was contacted this
+    # week and comes off the active call list. "No answer" keeps them on it
+    # until the end of the week so the call can be tried again.
+    @property
+    def contacted(self):
+        return self.outcome != self.Outcome.NO_ANSWER
