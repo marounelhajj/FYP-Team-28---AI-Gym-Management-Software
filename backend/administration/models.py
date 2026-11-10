@@ -11,6 +11,7 @@ PERMISSION_CHOICES = [
     ("manage_staff_accounts", "Manage staff accounts"),
     ("manage_roles", "Manage roles & permissions"),
     ("manage_class_schedule", "Manage class schedule"),
+    ("view_class_reservations", "View class reservations & utilization"),
     ("manage_billing", "Manage billing & payments"),
     ("manage_membership_plans", "Manage membership plans & pricing"),
     ("manage_branch_promotions", "Manage branch promotions"),

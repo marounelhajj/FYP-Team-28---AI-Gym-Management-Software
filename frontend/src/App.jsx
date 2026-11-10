@@ -5,6 +5,7 @@ import MemberDirectory from "./components/MemberDirectory.jsx";
 import AdminConsole from "./components/admin/AdminConsole.jsx";
 import CheckIn from "./components/CheckIn.jsx";
 import ClassSchedule from "./components/classes/ClassSchedule.jsx";
+import ClassReservations from "./components/classes/ClassReservations.jsx";
 import MySchedule from "./components/classes/MySchedule.jsx";
 import MyAvailability from "./components/classes/MyAvailability.jsx";
 import MyTimeOff from "./components/classes/MyTimeOff.jsx";
@@ -85,6 +86,11 @@ function availableScreens(account) {
   // (Branch Manager), and read-only for the front desk.
   if (has("manage_class_schedule") || has("manage_members")) {
     screens.push({ key: "classes", label: "Class Schedule", render: () => <ClassSchedule /> });
+  }
+  // SCRUM-22: how full each branch's classes are, read-only. The General
+  // Manager's way into the schedule (they don't run a branch's calendar).
+  if (has("view_class_reservations")) {
+    screens.push({ key: "reservations", label: "Class Reservations", render: () => <ClassReservations /> });
   }
   // Point of sale at the front desk, and the catalog/stock behind it.
   if (has("process_sales")) {
