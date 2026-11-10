@@ -263,3 +263,10 @@ export function markAttendance(classId, bookingId, attendance) {
 export function addWalkIn(classId, memberId) {
   return staffSend("POST", `/${classId}/attendance/walk-ins`, { memberId });
 }
+
+// SCRUM-22: a week of reservations at one branch, read-only.
+// { branch, branches, canSeeAllBranches, weekStart, weekEnd, today, days, summary, byClassType,
+//   branchSummaries, classes }
+export function fetchReservations(filters) {
+  return staffRequest(`/reservations${query(filters)}`);
+}

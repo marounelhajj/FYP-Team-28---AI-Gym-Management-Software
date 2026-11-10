@@ -22,7 +22,7 @@ ROLES = [
         "description": "Cross-branch oversight: organization-wide membership plans, pricing, and reporting.",
         "permissions": [
             "manage_membership_plans", "manage_branch_promotions", "view_financial_reports", "view_audit_log",
-            "view_branch_headcount", "view_all_branches", "manage_retail_products",
+            "view_branch_headcount", "view_all_branches", "manage_retail_products", "view_class_reservations",
         ],
     },
     {

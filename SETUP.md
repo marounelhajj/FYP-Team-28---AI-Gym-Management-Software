@@ -300,6 +300,28 @@ current day, so that I can see when my peaks actually fall."*
   line the hours up with the gyms.
 - Tests: `python manage.py test headcount`
 
+### Class reservations by branch (SCRUM-22)
+
+Story: *"As a general manager, I want to view the class reservation schedule
+for each branch, so that I can monitor class utilization and demand."*
+
+- **Class Reservations** tab (read-only) for roles with the new
+  `view_class_reservations` permission (the General Manager; migration
+  `classes/0010` adds it to an existing GM role) and for Branch Managers.
+- For one branch and week: fill rate (booked spots out of spots offered),
+  classes, full classes, members on waitlists and, for classes that have
+  ended, how many booked members showed up. Then a table per class type,
+  busiest first, and the week's schedule day by day with each class's
+  bookings, waitlist and attendance. Cancelled classes are listed but left
+  out of the totals.
+- Cards across the top compare the same week at every branch; click one to
+  switch to it. Week arrows move through past and future weeks.
+- `GET /api/classes/reservations?week=YYYY-MM-DD&branch=` - `{branch,
+  branches, canSeeAllBranches, weekStart, weekEnd, days, summary,
+  byClassType, branchSummaries, classes}`. Same branch rule as headcount: a
+  Branch Manager only ever gets their own branch (403 for another).
+- Tests: `python manage.py test classes.test_reservations`
+
 ## Folder structure
 
 ```
@@ -348,6 +370,7 @@ account takes effect immediately, even for sessions already open.
 | `GET /api/audit-log`, `/api/audit-log/meta`, `/api/audit-log/export` | `view_audit_log` |
 | `GET /api/training-events` | `view_training_data` |
 | `GET /api/headcount/live`, `/api/headcount/hourly` | `view_branch_headcount` (+ `view_all_branches` to pick any branch) |
+| `GET /api/classes/reservations` | `view_class_reservations` or `manage_class_schedule` (+ `view_all_branches` to pick any branch) |
 
 Not logged in -> `401`; logged in without the permission -> `403`. Public:
 `/api/plans` reads, `/api/members/meta`, member sign-up/login.
