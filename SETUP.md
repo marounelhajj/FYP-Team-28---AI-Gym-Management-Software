@@ -359,6 +359,50 @@ so that I can improve my coaching approach."*
   (the same as My Schedule and My Clients).
 - Tests: `python manage.py test feedback`
 
+### At-risk members (SCRUM-118)
+
+Story: *"As a branch manager, I want to view a ranked list of members at
+risk of leaving, so that I know who to contact first."*
+
+- **At-Risk Members** tab for roles with `view_at_risk_members`
+  (migration `churn/0002` grants it, and `manage_at_risk_list` for
+  "Refresh now", to Branch Manager and General Manager). Same branch rule as
+  headcount: a Branch Manager only ever gets their own branch (403 for
+  another), a General Manager picks any.
+- Every non-cancelled member of the branch gets a score from 0 to 100,
+  ranked highest first, with a level (High / Medium / Low), last visit and
+  membership end date. The "At risk" tab shows High and Medium.
+- **One scoring interface, two methods** (`churn/scoring.py`,
+  `score_members(branch) -> [(member_id, score, reasons)]`):
+  - *Rule-based* (always available): a weighted sum of seven 0-1 signals -
+    attendance in the last 4 weeks vs the previous 8 (25), days since the
+    last check-in (20), class/PT no-shows in 30 days (12), a lapsed
+    subscription or late renewals (15), a freeze now or in the last 6
+    months (10), first 90 days of membership (8), membership ending within
+    30 days (10). All weights and thresholds are in `churn/config.py`.
+  - *Learned model*: a logistic regression on the same signals, trained per
+    branch on past cutoffs (label = cancelled within the next 30 days) and
+    validated on the newest quarter of cutoffs. A branch uses it only with
+    at least 30 cancellations and 200 members in the training window and a
+    validation AUC of 0.6 or more; otherwise it falls back to the rules.
+    Coefficients are stored in the `ChurnModel` table (no model file).
+  - There is no "failed payment" record in the app (payments are only
+    stored once made), so the payment signal uses lapsed subscriptions and
+    renewals paid more than 3 days late.
+- **Weekly refresh.** Each week's list is saved as a snapshot
+  (`ChurnRun` + one `ChurnScore` per member: score, level, reasons, method,
+  model version, week). A background thread in the web server makes any
+  missing week's list (same approach as the reminders; `CHURN_AUTORUN=false`
+  turns it off). For cron instead, every Monday at 03:00:
+  `0 3 * * 1  cd backend && .venv/bin/python manage.py refresh_churn_scores`.
+  Opening the page before the weekly run makes that week's list on the spot.
+- Every member scored writes a `churn_scored` training event (SCRUM-73) with
+  the score, rank, method and reasons, so the scores can be evaluated later.
+- `GET /api/churn/at-risk?branch=` - `{branch, branches, canChooseBranch,
+  canRefresh, run, members}`. `POST /api/churn/refresh` `{branch}`.
+- After pulling: `python manage.py migrate`.
+- Tests: `python manage.py test churn`
+
 ## Folder structure
 
 ```

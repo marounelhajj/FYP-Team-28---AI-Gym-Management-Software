@@ -17,6 +17,7 @@ import BranchFinances from "./components/finance/BranchFinances.jsx";
 import FinancialReport from "./components/finance/FinancialReport.jsx";
 import ExpenseLedger from "./components/finance/ExpenseLedger.jsx";
 import HeadcountDashboard from "./components/headcount/HeadcountDashboard.jsx";
+import AtRiskMembers from "./components/churn/AtRiskMembers.jsx";
 import PointOfSale from "./components/retail/PointOfSale.jsx";
 import ProductManager from "./components/retail/ProductManager.jsx";
 import LoginPage from "./components/LoginPage.jsx";
@@ -102,6 +103,11 @@ function availableScreens(account) {
   // SCRUM-127: Branch Managers see their own branch, General Managers any.
   if (has("view_branch_headcount")) {
     screens.push({ key: "headcount", label: "Live Headcount", render: () => <HeadcountDashboard /> });
+  }
+  // SCRUM-118: this week's ranked list of members at risk of leaving.
+  // Branch Managers see their own branch, General Managers any.
+  if (has("view_at_risk_members") || has("manage_at_risk_list")) {
+    screens.push({ key: "atrisk", label: "At-Risk Members", render: () => <AtRiskMembers /> });
   }
   if (has("view_audit_log")) {
     screens.push({ key: "audit", label: "Audit Log", render: () => <AuditLog /> });

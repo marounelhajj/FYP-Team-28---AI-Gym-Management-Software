@@ -24,6 +24,8 @@ PERMISSION_CHOICES = [
     ("manage_doors", "Manage door readers"),
     ("process_sales", "Process retail sales (point of sale)"),
     ("manage_retail_products", "Manage retail products & stock"),
+    ("view_at_risk_members", "View members at risk of leaving"),
+    ("manage_at_risk_list", "Refresh the at-risk list and set call capacity"),
 ]
 PERMISSION_KEYS = {key for key, _ in PERMISSION_CHOICES}
 
