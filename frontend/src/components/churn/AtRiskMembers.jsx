@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { fetchAtRisk, refreshAtRisk } from "../../api/churn.js";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { fetchAtRisk, logRetentionCall, refreshAtRisk } from "../../api/churn.js";
+import RetentionCallHistory, { OutcomeBadge } from "./RetentionCallHistory.jsx";
 import AccessDenied from "../AccessDenied.jsx";
 import { BUTTON_COLORS } from "../../styles/buttonColors.js";
 
@@ -84,6 +85,10 @@ export default function AtRiskMembers() {
   const [query, setQuery] = useState("");
   // SCRUM-119: a suggested line for the call under each reason.
   const [showTalkingPoints, setShowTalkingPoints] = useState(true);
+  // SCRUM-68: the member whose call is being logged, and the last result.
+  const [openCall, setOpenCall] = useState(null);
+  const [notice, setNotice] = useState(null);
+  const [showContacted, setShowContacted] = useState(false);
 
   const load = useCallback((which) => {
     setLoading(true);
@@ -112,7 +117,24 @@ export default function AtRiskMembers() {
       .finally(() => setRefreshing(false));
   }
 
+  function callLogged(member, call) {
+    setOpenCall(null);
+    setNotice(
+      call.outcome === "no_answer"
+        ? `No answer logged for ${member.name}. They stay on this week's list so you can try again.`
+        : `Logged "${call.outcomeLabel}" for ${member.name}. They're off this week's call list.`,
+    );
+    load(data.branch);
+  }
+
+  useEffect(() => {
+    if (!notice) return undefined;
+    const timer = setTimeout(() => setNotice(null), 6000);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
   const members = data?.members || [];
+  const contactedList = data?.contacted || [];
   const counts = useMemo(() => {
     const c = { all: members.length, High: 0, Medium: 0, Low: 0 };
     members.forEach((m) => { c[m.level] += 1; });
@@ -138,6 +160,7 @@ export default function AtRiskMembers() {
       </header>
 
       {error && <div style={styles.errorBox} role="alert">{error}</div>}
+      {notice && <div style={styles.notice} role="status" className="ar-notice">{notice}</div>}
       {!data && loading && <p style={styles.muted}>Loading...</p>}
 
       {data && (
@@ -225,45 +248,207 @@ export default function AtRiskMembers() {
               <div style={styles.empty}>{!members.length ? "No members to score at this branch yet."
                 : level === "risk" && !query ? "Nobody is at medium or high risk this week." : "No members match."}</div>
             ) : (
-              <table style={styles.table}>
-                <thead>
-                  <tr>
-                    <th style={styles.th}>#</th>
-                    <th style={styles.th}>Member</th>
-                    <th style={styles.th}>Risk</th>
-                    <th style={styles.th}>Why they're on the list</th>
-                    <th style={styles.th}>Last visit</th>
-                    <th style={styles.th}>Membership ends</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {shown.map((m) => {
-                    const ends = daysFromToday(m.membershipEndsAt);
-                    return (
-                      <tr key={m.memberId} className="ar-row">
-                        <td style={styles.rank}>{m.rank}</td>
-                        <td style={styles.tdName}>
-                          {m.name}
-                          {m.status !== "Active" && <span style={styles.status}>{m.status}</span>}
-                        </td>
-                        <td style={styles.td}><RiskBadge level={m.level} score={m.score} /></td>
-                        <td style={styles.tdReasons}><Reasons reasons={m.reasons} talkingPoints={showTalkingPoints} /></td>
-                        <td style={styles.td}>{m.lastVisit ? formatDate(m.lastVisit) : "Never"}</td>
-                        <td style={styles.td}>
-                          {formatDate(m.membershipEndsAt)}
-                          {ends != null && ends >= 0 && ends <= 30 && <span style={styles.soon}> · in {ends} day{ends === 1 ? "" : "s"}</span>}
-                          {ends != null && ends < 0 && <span style={styles.lapsed}> · lapsed</span>}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              <MemberTable
+                members={shown}
+                talkingPoints={showTalkingPoints}
+                canLogCalls={data.canLogCalls}
+                outcomes={data.outcomes}
+                openCall={openCall}
+                setOpenCall={setOpenCall}
+                onLogged={callLogged}
+              />
             )}
           </div>
+
+          {/* SCRUM-68: contacted this week - off the active list, kept visible. */}
+          {contactedList.length > 0 && (
+            <div style={styles.subSection}>
+              <button
+                type="button"
+                className="ar-press"
+                style={styles.disclosure}
+                aria-expanded={showContacted}
+                onClick={() => setShowContacted((v) => !v)}
+              >
+                <span style={styles.chevron} className={showContacted ? "ar-open" : ""} aria-hidden="true">›</span>
+                Contacted this week <span style={styles.tabCount}>{contactedList.length}</span>
+              </button>
+              {showContacted && (
+                <ul style={styles.contactedList} className="ar-say">
+                  {contactedList.map((m) => {
+                    const last = m.callsThisWeek.find((c) => c.outcome !== "no_answer") || m.callsThisWeek[0];
+                    return (
+                      <li key={m.memberId} style={styles.contactedItem}>
+                        <span style={styles.contactedName}>{m.name}</span>
+                        <OutcomeBadge outcome={last.outcome} label={last.outcomeLabel} />
+                        <span style={styles.meta}>{formatDateTime(last.calledAt)} by {last.calledBy}</span>
+                        {last.note && <span style={styles.contactedNote}>"{last.note}"</span>}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          )}
         </section>
       )}
     </div>
+  );
+}
+
+function MemberTable({ members, talkingPoints, canLogCalls, outcomes, openCall, setOpenCall, onLogged }) {
+  const columns = canLogCalls ? 7 : 6;
+  return (
+    <table style={styles.table}>
+      <thead>
+        <tr>
+          <th style={styles.th}>#</th>
+          <th style={styles.th}>Member</th>
+          <th style={styles.th}>Risk</th>
+          <th style={styles.th}>Why they're on the list</th>
+          <th style={styles.th}>Last visit</th>
+          <th style={styles.th}>Membership ends</th>
+          {canLogCalls && <th style={styles.th}><span style={styles.srOnly}>Call</span></th>}
+        </tr>
+      </thead>
+      <tbody>
+        {members.map((m) => {
+          const ends = daysFromToday(m.membershipEndsAt);
+          const open = openCall === m.memberId;
+          const tries = m.callsThisWeek.filter((c) => c.outcome === "no_answer");
+          return (
+            <Fragment key={m.memberId}>
+              <tr className="ar-row" style={open ? styles.openRow : null}>
+                <td style={styles.rank}>{m.rank}</td>
+                <td style={styles.tdName}>
+                  {m.name}
+                  {m.status !== "Active" && <span style={styles.status}>{m.status}</span>}
+                  {tries.length > 0 && (
+                    <div style={styles.tried}>
+                      No answer{tries.length > 1 ? ` ${tries.length} times` : ""} · {formatDateTime(tries[0].calledAt)}
+                    </div>
+                  )}
+                </td>
+                <td style={styles.td}><RiskBadge level={m.level} score={m.score} /></td>
+                <td style={styles.tdReasons}><Reasons reasons={m.reasons} talkingPoints={talkingPoints} /></td>
+                <td style={styles.td}>{m.lastVisit ? formatDate(m.lastVisit) : "Never"}</td>
+                <td style={styles.td}>
+                  {formatDate(m.membershipEndsAt)}
+                  {ends != null && ends >= 0 && ends <= 30 && <span style={styles.soon}> · in {ends} day{ends === 1 ? "" : "s"}</span>}
+                  {ends != null && ends < 0 && <span style={styles.lapsed}> · lapsed</span>}
+                </td>
+                {canLogCalls && (
+                  <td style={styles.td}>
+                    <button
+                      type="button"
+                      className="ar-press"
+                      style={open ? styles.callButtonOpen : styles.callButton}
+                      aria-expanded={open}
+                      onClick={() => setOpenCall(open ? null : m.memberId)}
+                    >
+                      {open ? "Close" : tries.length ? "Try again" : "Log call"}
+                    </button>
+                  </td>
+                )}
+              </tr>
+              {open && (
+                <tr>
+                  <td colSpan={columns} style={styles.formCell}>
+                    <CallForm member={m} outcomes={outcomes} onCancel={() => setOpenCall(null)} onLogged={onLogged} />
+                  </td>
+                </tr>
+              )}
+            </Fragment>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+// SCRUM-68: outcome, an optional note and an optional follow-up date.
+function CallForm({ member, outcomes, onCancel, onLogged }) {
+  const [outcome, setOutcome] = useState("");
+  const [note, setNote] = useState("");
+  const [followUpOn, setFollowUpOn] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [errors, setErrors] = useState({});
+  const [error, setError] = useState(null);
+
+  function submit(e) {
+    e.preventDefault();
+    if (!outcome) {
+      setErrors({ outcome: "Pick how the call went." });
+      return;
+    }
+    setSaving(true);
+    setErrors({});
+    setError(null);
+    logRetentionCall({ memberId: member.memberId, outcome, note, followUpOn })
+      .then((call) => onLogged(member, call))
+      .catch((err) => {
+        if (err.fieldErrors) setErrors(err.fieldErrors);
+        else setError(err.message);
+      })
+      .finally(() => setSaving(false));
+  }
+
+  return (
+    <form onSubmit={submit} style={styles.form} className="ar-say" aria-label={`Log a call to ${member.name}`}>
+      <div style={styles.formGrid}>
+        <div style={styles.formMain}>
+          <div style={styles.fieldLabel} id={`outcome-${member.memberId}`}>How did the call go?</div>
+          <div style={styles.tray} role="radiogroup" aria-labelledby={`outcome-${member.memberId}`}>
+            {outcomes.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                role="radio"
+                aria-checked={outcome === o.value}
+                className="ar-tab"
+                onClick={() => setOutcome(o.value)}
+                style={outcome === o.value ? { ...styles.tab, ...styles.tabSelected } : styles.tab}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+          {errors.outcome && <div style={styles.fieldError}>{errors.outcome}</div>}
+          {outcome === "no_answer" && <div style={styles.hint}>They'll stay on this week's list so you can try again.</div>}
+          <label style={styles.fieldLabel} htmlFor={`note-${member.memberId}`}>Note (optional)</label>
+          <textarea
+            id={`note-${member.memberId}`}
+            value={note}
+            maxLength={500}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="What did they say?"
+            style={styles.textarea}
+            className="ar-input"
+          />
+          {errors.note && <div style={styles.fieldError}>{errors.note}</div>}
+        </div>
+        <div style={styles.formSide}>
+          <label style={styles.fieldLabel} htmlFor={`follow-${member.memberId}`}>Follow up on (optional)</label>
+          <input
+            id={`follow-${member.memberId}`}
+            type="date"
+            value={followUpOn}
+            onChange={(e) => setFollowUpOn(e.target.value)}
+            style={styles.dateInput}
+            className="ar-input"
+          />
+          {errors.followUpOn && <div style={styles.fieldError}>{errors.followUpOn}</div>}
+          <RetentionCallHistory memberId={member.memberId} title="Earlier calls" />
+        </div>
+      </div>
+      {error && <div style={styles.errorBox} role="alert">{error}</div>}
+      <div style={styles.formActions}>
+        <button type="button" className="ar-press" style={styles.secondary} onClick={onCancel} disabled={saving}>Cancel</button>
+        <button type="submit" className="ar-press" style={styles.primary} disabled={saving}>
+          {saving ? "Saving..." : "Save call"}
+        </button>
+      </div>
+    </form>
   );
 }
 
@@ -278,6 +463,9 @@ const CSS = `
 .ar-press:disabled { opacity: 0.6; cursor: progress; }
 .ar-body { transition: opacity 180ms ease; }
 .ar-body[data-loading="true"] { opacity: 0.55; }
+.ar-open { transform: rotate(90deg); }
+.ar-notice { animation: ar-toast 260ms cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+@keyframes ar-toast { from { opacity: 0; transform: translate(-50%, 12px); } to { opacity: 1; transform: translate(-50%, 0); } }
 .ar-say { animation: ar-in 220ms ease-out both; }
 .ar-row { animation: ar-in 260ms ease-out both; }
 .ar-row:hover td { background: #f6f8fd; }
@@ -291,13 +479,13 @@ const CSS = `
 @keyframes ar-pop { from { transform: scale(0.85); opacity: 0.4; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
   .ar-tab, .ar-press, .ar-body { transition: none; }
-  .ar-row, .ar-pop, .ar-say { animation: none; }
+  .ar-row, .ar-pop, .ar-say, .ar-notice { animation: none; }
   .ar-tab:active, .ar-press:active:not(:disabled) { transform: none; }
 }
 `;
 
 export const styles = {
-  page: { fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif", maxWidth: 1100, margin: "0 auto", padding: "32px 20px", color: "#1a1a1a" },
+  page: { fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif", maxWidth: 1240, margin: "0 auto", padding: "32px 20px", color: "#1a1a1a" },
   header: { marginBottom: 16 },
   title: { fontSize: 24, fontWeight: 800, margin: 0 },
   subtitle: { fontSize: 14, color: "#666", marginTop: 4 },
@@ -330,12 +518,40 @@ export const styles = {
   toolRight: { display: "flex", alignItems: "center", gap: 10, flex: "1 1 340px", justifyContent: "flex-end", minWidth: 0 },
   toggle: { flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 8, height: 48, padding: "0 14px", border: "1px solid #d0d0d5", borderRadius: 14, fontSize: 14, fontWeight: 800, color: "#333", cursor: "pointer", background: "#fff", userSelect: "none" },
   toggleBox: { width: 18, height: 18, accentColor: BLUE, margin: 0 },
-  tdReasons: { padding: "12px", borderBottom: "1px solid #f0f0f3", verticalAlign: "top", minWidth: 280, whiteSpace: "normal" },
+  tdReasons: { padding: "12px", borderBottom: "1px solid #f0f0f3", verticalAlign: "top", minWidth: 260, whiteSpace: "normal" },
   reasonList: { listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8 },
   reason: { display: "flex", flexDirection: "column", gap: 2, paddingLeft: 12, borderLeft: "3px solid #f1c27a" },
   reasonText: { fontWeight: 700, fontSize: 14 },
   talkingPoint: { fontSize: 13, color: BLUE, fontWeight: 600 },
   noReasons: { fontSize: 13, color: "#888" },
+  notice: {
+    position: "fixed", left: "50%", bottom: "calc(24px + env(safe-area-inset-bottom, 0px))", transform: "translateX(-50%)", zIndex: 50,
+    maxWidth: "min(560px, calc(100vw - 32px))", background: "#1e6b34", color: "#fff", padding: "14px 20px", borderRadius: 16,
+    fontSize: 15, fontWeight: 800, boxShadow: "0 10px 30px rgba(0,0,0,0.25)",
+  },
+  tried: { fontSize: 12, fontWeight: 700, color: "#8a5a00", marginTop: 4 },
+  openRow: { background: "#f6f8fd" },
+  callButton: { height: 40, padding: "0 16px", fontSize: 14, fontWeight: 800, border: "none", borderRadius: 12, ...BUTTON_COLORS.blue, cursor: "pointer", boxShadow: "0 2px 0 #0b2a66", fontFamily: "inherit", whiteSpace: "nowrap" },
+  callButtonOpen: { height: 40, padding: "0 16px", fontSize: 14, fontWeight: 800, border: "1px solid #d0d0d5", borderRadius: 12, background: "#fff", color: "#333", cursor: "pointer", fontFamily: "inherit" },
+  formCell: { padding: "0 12px 16px", background: "#f6f8fd", borderBottom: "1px solid #e4e4e8" },
+  form: { background: "#fff", border: "1px solid #dfe5f3", borderRadius: 16, padding: 16, boxShadow: "0 6px 18px rgba(18,64,150,0.08)", whiteSpace: "normal" },
+  formGrid: { display: "flex", flexWrap: "wrap", gap: 20 },
+  formMain: { flex: "2 1 360px", display: "flex", flexDirection: "column", gap: 8, minWidth: 0 },
+  formSide: { flex: "1 1 240px", display: "flex", flexDirection: "column", gap: 8, minWidth: 0 },
+  fieldLabel: { fontSize: 12, fontWeight: 800, color: "#444", textTransform: "uppercase", letterSpacing: 0.4, marginTop: 4 },
+  fieldError: { fontSize: 13, color: "#b3261e", fontWeight: 700 },
+  hint: { fontSize: 13, color: "#8a5a00", fontWeight: 700 },
+  textarea: { minHeight: 80, padding: 12, fontSize: 15, border: "1px solid #d0d0d5", borderRadius: 14, fontFamily: "inherit", resize: "vertical" },
+  dateInput: { height: 48, padding: "0 14px", fontSize: 15, fontWeight: 600, border: "1px solid #d0d0d5", borderRadius: 14, fontFamily: "inherit", background: "#fff" },
+  formActions: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 12 },
+  secondary: { height: 48, padding: "0 20px", fontSize: 15, fontWeight: 800, border: "1px solid #d0d0d5", borderRadius: 14, background: "#fff", color: "#333", cursor: "pointer", fontFamily: "inherit" },
+  subSection: { marginTop: 16, borderTop: "2px solid #ececf0", paddingTop: 12 },
+  disclosure: { display: "inline-flex", alignItems: "center", gap: 10, height: 48, padding: "0 16px", border: "none", borderRadius: 14, background: "#f1f1f5", fontSize: 15, fontWeight: 800, color: "#333", cursor: "pointer", fontFamily: "inherit" },
+  chevron: { display: "inline-block", fontSize: 20, lineHeight: 1, transition: "transform 160ms ease" },
+  contactedList: { listStyle: "none", margin: "10px 0 0", padding: 0, display: "flex", flexDirection: "column", gap: 6 },
+  contactedItem: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10, padding: "10px 12px", border: "1px solid #ececf0", borderRadius: 12 },
+  contactedName: { fontWeight: 800 },
+  contactedNote: { fontSize: 13, color: "#555", fontStyle: "italic" },
   table: { width: "100%", minWidth: 860, borderCollapse: "collapse", fontSize: 14 },
   th: { textAlign: "left", padding: "10px 12px", fontSize: 12, fontWeight: 800, color: "#666", borderBottom: "2px solid #ececf0", whiteSpace: "nowrap", textTransform: "uppercase", letterSpacing: 0.4 },
   td: { padding: "12px", borderBottom: "1px solid #f0f0f3", whiteSpace: "nowrap", verticalAlign: "top" },

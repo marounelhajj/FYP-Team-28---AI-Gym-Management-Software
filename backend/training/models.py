@@ -43,6 +43,8 @@ class TrainingEvent(models.Model):
         SESSION_LOGGED = "session_logged", "Coach logged a training session"
         # SCRUM-118: a member was scored by the weekly at-risk run (churn app).
         CHURN_SCORED = "churn_scored", "Churn risk scored"
+        # SCRUM-68: staff logged the outcome of a retention call (the label).
+        RETENTION_CALL = "retention_call", "Retention call"
         TRAINER_ACCEPT = "trainer_accept", "Trainer accepted"
         TRAINER_REJECT = "trainer_reject", "Trainer rejected"
 
