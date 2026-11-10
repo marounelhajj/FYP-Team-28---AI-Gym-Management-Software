@@ -1,10 +1,12 @@
 from datetime import timedelta
 
 from django.db import IntegrityError, transaction
+from django.db.models import Avg, Count
 from django.utils import timezone
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
+from administration.permissions import get_staff_account
 from classes import rules
 from classes.models import ClassBooking, GymClass, PTSession
 from members.models import Member
@@ -202,3 +204,71 @@ def my_feedback_detail(request, feedback_id):
         setattr(feedback, field, value)
     feedback.save(update_fields=[*cleaned, "updated_at"])
     return Response(_payload(feedback, now))
+
+
+# --- the coach's side --------------------------------------------------------
+
+# User story (SCRUM-37): "As a coach, I want to view ratings and feedback left
+# by my clients, so that I can improve my coaching approach."
+#
+# A coach only ever sees the ratings left for them. No permission is needed,
+# the same as My Schedule and My Clients: the query is scoped to the
+# signed-in staff account, so anyone else just gets an empty list.
+
+COACH_LIMIT = 200
+RECENT_DAYS = 30
+
+
+def _average(queryset):
+    value = queryset.aggregate(avg=Avg("rating"))["avg"]
+    return None if value is None else round(value, 2)
+
+
+# GET /api/feedback/me?rating=1-5&withComments=1 - the signed-in coach's
+#     ratings: an overall summary (count, average, how many of each star, the
+#     last RECENT_DAYS days), the average per class (and for private
+#     training), and the ratings themselves, newest first. The filters only
+#     narrow the list, never the summary.
+@api_view(["GET"])
+def coach_ratings(request):
+    coach = get_staff_account(request)
+    if coach is None:
+        return Response({"error": "Not authenticated."}, status=401)
+
+    mine = CoachFeedback.objects.filter(coach=coach)
+    counts = dict(mine.order_by().values("rating").annotate(n=Count("id")).values_list("rating", "n"))
+    recent = mine.filter(created_at__gte=timezone.now() - timedelta(days=RECENT_DAYS))
+    by_session = (mine.values("session_name").annotate(count=Count("id"), average=Avg("rating"))
+                  .order_by("-count", "session_name"))
+
+    listed = mine.select_related("member")
+    rating = request.query_params.get("rating")
+    if rating:
+        if rating not in {"1", "2", "3", "4", "5"}:
+            return Response({"error": "rating must be 1 to 5."}, status=400)
+        listed = listed.filter(rating=int(rating))
+    if request.query_params.get("withComments") in ("1", "true"):
+        listed = listed.exclude(comment="")
+
+    return Response({
+        "coach": {"id": coach.pk, "name": coach.full_name},
+        "summary": {
+            "count": sum(counts.values()),
+            "average": _average(mine),
+            "stars": {str(n): counts.get(n, 0) for n in range(5, 0, -1)},
+            "recent": {"days": RECENT_DAYS, "count": recent.count(), "average": _average(recent)},
+        },
+        "bySession": [
+            {"name": row["session_name"], "count": row["count"], "average": round(row["average"], 2)}
+            for row in by_session
+        ],
+        "results": [
+            {
+                "id": f.pk, "kind": f.kind, "memberName": f.member.name, "sessionName": f.session_name,
+                "sessionAt": _stamp(f.session_starts_at), "branch": f.branch, "rating": f.rating,
+                "comment": f.comment, "createdAt": _stamp(f.created_at),
+            }
+            for f in listed[:COACH_LIMIT]
+        ],
+        "matching": listed.count(),
+    })

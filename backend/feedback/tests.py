@@ -3,8 +3,9 @@ from datetime import timedelta
 from django.test import TestCase
 from django.utils import timezone
 
+from administration.testing import staff_login
 from classes.models import ClassBooking, PTSession
-from classes.tests import PASSWORD, _class, _coach, _day, _member
+from classes.tests import PASSWORD, _class, _coach, _day, _member, _staff
 from members import privacy
 
 from .models import CoachFeedback
@@ -149,3 +150,86 @@ class MemberFeedbackTests(TestCase):
         privacy.anonymize_member(self.member)
         feedback = CoachFeedback.objects.get()
         self.assertEqual((feedback.rating, feedback.comment), (4, ""))
+
+
+def _feedback(member, gym_class, rating, comment="", days_ago=1):
+    booking = _attended(gym_class, member)
+    feedback = CoachFeedback.objects.create(
+        member=member, coach=gym_class.coach, class_booking=booking, branch=gym_class.branch,
+        session_name=gym_class.name, session_starts_at=gym_class.starts_at, session_ends_at=gym_class.ends_at,
+        rating=rating, comment=comment,
+    )
+    CoachFeedback.objects.filter(pk=feedback.pk).update(created_at=timezone.now() - timedelta(days=days_ago))
+    return feedback
+
+
+class CoachRatingsTests(TestCase):
+    def setUp(self):
+        self.coach = _coach("hnasser")
+        self.other_coach = _coach("raoun")
+        self.lina = _member("Lina Haddad", "lina")
+        self.sami = _member("Sami Khoury", "sami")
+        yoga, spin = _class("Yoga", self.coach, _day(-2)), _class("Spin", self.coach, _day(-1), start="19:00")
+        _feedback(self.lina, yoga, 5, "Loved the flow", days_ago=2)
+        _feedback(self.sami, yoga, 3, days_ago=40)
+        _feedback(self.lina, spin, 4, "Music too loud")
+        _feedback(self.sami, _class("Boxing", self.other_coach, _day(-1)), 1, "Not for me")
+
+    def get(self, query=""):
+        return self.client.get(f"/api/feedback/me{query}")
+
+    def test_coach_sees_only_their_own_ratings(self):
+        staff_login(self.client, "hnasser", PASSWORD)
+        body = self.get().json()
+        self.assertEqual(body["coach"]["name"], self.coach.full_name)
+        self.assertEqual([r["sessionName"] for r in body["results"]], ["Spin", "Yoga", "Yoga"])
+        self.assertNotIn("Not for me", [r["comment"] for r in body["results"]])
+        self.assertEqual(body["results"][0]["memberName"], "Lina Haddad")
+
+    def test_summary_counts_stars_and_recent_average(self):
+        staff_login(self.client, "hnasser", PASSWORD)
+        summary = self.get().json()["summary"]
+        self.assertEqual(summary["count"], 3)
+        self.assertEqual(summary["average"], 4.0)
+        self.assertEqual(summary["stars"], {"5": 1, "4": 1, "3": 1, "2": 0, "1": 0})
+        self.assertEqual(summary["recent"], {"days": 30, "count": 2, "average": 4.5})
+
+    def test_average_per_session(self):
+        staff_login(self.client, "hnasser", PASSWORD)
+        by_session = self.get().json()["bySession"]
+        self.assertEqual(by_session, [{"name": "Yoga", "count": 2, "average": 4.0},
+                                      {"name": "Spin", "count": 1, "average": 4.0}])
+
+    def test_filters_narrow_the_list_not_the_summary(self):
+        staff_login(self.client, "hnasser", PASSWORD)
+        body = self.get("?rating=5").json()
+        self.assertEqual([r["rating"] for r in body["results"]], [5])
+        self.assertEqual((body["matching"], body["summary"]["count"]), (1, 3))
+        with_comments = self.get("?withComments=1").json()["results"]
+        self.assertEqual([r["comment"] for r in with_comments], ["Music too loud", "Loved the flow"])
+        self.assertEqual(self.get("?rating=9").status_code, 400)
+
+    def test_coach_with_no_ratings_gets_an_empty_summary(self):
+        _coach("omar")
+        staff_login(self.client, "omar", PASSWORD)
+        body = self.get().json()
+        self.assertEqual((body["summary"]["count"], body["summary"]["average"], body["results"]), (0, None, []))
+
+    def test_other_staff_do_not_see_coaches_ratings(self):
+        _staff("kabboud", ["manage_class_schedule", "manage_members"], branch="Hamra")
+        staff_login(self.client, "kabboud", PASSWORD)
+        self.assertEqual(self.get().json()["results"], [])
+
+    def test_requires_a_staff_session(self):
+        self.assertEqual(self.get().status_code, 401)
+        self.client.post("/api/members/login", {"username": "lina", "password": PASSWORD},
+                         content_type="application/json")
+        self.assertEqual(self.get().status_code, 401)
+
+    def test_deleted_members_ratings_stay_anonymized(self):
+        privacy.anonymize_member(self.lina)
+        staff_login(self.client, "hnasser", PASSWORD)
+        body = self.get().json()
+        self.assertEqual(body["summary"]["count"], 3)
+        lina_rows = [r for r in body["results"] if r["rating"] in (4, 5)]
+        self.assertTrue(all(r["comment"] == "" and r["memberName"] != "Lina Haddad" for r in lina_rows))
