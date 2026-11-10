@@ -108,6 +108,7 @@ class AuditLog(models.Model):
         PURCHASE_ORDER_CLOSED = "purchasing.order_closed", "Supply order closed with items missing"
         # At-risk members (SCRUM-68)
         RETENTION_CALL_LOGGED = "retention.call_logged", "Retention call logged"
+        CALL_CAPACITY_UPDATED = "retention.capacity_updated", "Weekly call capacity changed"
         # The log itself (SCRUM-126) - who took a copy of which entries.
         AUDIT_LOG_EXPORTED = "audit_log.exported", "Audit log exported"
 

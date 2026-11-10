@@ -37,3 +37,8 @@ export function logRetentionCall({ memberId, outcome, note, followUpOn }) {
 export function fetchMemberCalls(memberId) {
   return request(`/members/${memberId}/calls`);
 }
+
+// SCRUM-120: set the branch's weekly call capacity. Returns the list (same shape as fetchAtRisk).
+export function saveCallCapacity(branch, weeklyCapacity) {
+  return send("PUT", "/capacity", { branch, weeklyCapacity });
+}

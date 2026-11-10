@@ -70,6 +70,10 @@ class ChurnRun(models.Model):
     method_note = models.CharField(max_length=255, blank=True)
     members_scored = models.PositiveIntegerField(default=0)
     trigger = models.CharField(max_length=10, choices=Trigger.choices)
+    # SCRUM-120: the branch's weekly call capacity for this week's list
+    # (kept in step if a manager changes it during the week). The top
+    # `call_capacity` ranks are the week's call list.
+    call_capacity = models.PositiveIntegerField(default=20)
     triggered_by = models.ForeignKey(
         "administration.StaffAccount", on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
     )
@@ -161,3 +165,27 @@ class RetentionCall(models.Model):
     @property
     def contacted(self):
         return self.outcome != self.Outcome.NO_ANSWER
+
+
+# Weekly call capacity per branch (SCRUM-120).
+#
+# User story: "As a branch manager, I want to cap the at-risk list to the
+# number of calls my staff can make per week, so that the list stays
+# actionable."
+class BranchCallSettings(models.Model):
+    branch = models.CharField(max_length=30, choices=Member.Branch.choices, unique=True)
+    weekly_capacity = models.PositiveIntegerField(default=20)
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(
+        "administration.StaffAccount", on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+
+    def __str__(self):
+        return f"{self.branch}: {self.weekly_capacity} calls a week"
+
+
+def call_capacity(branch):
+    from . import config
+
+    setting = BranchCallSettings.objects.filter(branch=branch).first()
+    return setting.weekly_capacity if setting else config.DEFAULT_CALL_CAPACITY

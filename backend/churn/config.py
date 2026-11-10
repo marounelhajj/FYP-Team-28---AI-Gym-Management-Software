@@ -87,3 +87,16 @@ LEVELS = {
 
 # How often the background thread checks whether this week's list exists.
 SCHEDULER_INTERVAL_SECONDS = 3600
+
+# ---------------------------------------------------------------------------
+# Weekly call capacity and accuracy (SCRUM-120)
+# ---------------------------------------------------------------------------
+
+# Calls a branch's staff can make per week, until a manager sets their own.
+DEFAULT_CALL_CAPACITY = 20
+MAX_CALL_CAPACITY = 500
+# The accuracy panel needs at least this many finished weeks (30 days have
+# passed since the list was made) and this many listed members across them
+# before it shows a number instead of "Not enough data yet".
+ACCURACY_MIN_WEEKS = 2
+ACCURACY_MIN_LISTED = 10

@@ -10,7 +10,7 @@ from training.models import TrainingEvent
 
 from . import config, learned
 from .features import FEATURE_KEYS, BranchHistory, day_end, live_history, signals, week_start
-from .models import ChurnModel, ChurnRun, ChurnScore, Method
+from .models import ChurnModel, ChurnRun, ChurnScore, Method, call_capacity
 
 # The single scoring interface for the at-risk list (SCRUM-118):
 #
@@ -135,6 +135,7 @@ def refresh_branch(branch, *, as_of=None, trigger=ChurnRun.Trigger.SCHEDULED, st
         run = ChurnRun.objects.create(
             branch=branch, week_start=monday, as_of=as_of, method=scored.method, model=scored.model,
             method_note=scored.note[:255], members_scored=len(scored.scores), trigger=trigger, triggered_by=staff,
+            call_capacity=call_capacity(branch),
         )
         ChurnScore.objects.bulk_create([
             ChurnScore(
