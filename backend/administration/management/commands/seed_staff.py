@@ -23,6 +23,7 @@ ROLES = [
         "permissions": [
             "manage_membership_plans", "manage_branch_promotions", "view_financial_reports", "view_audit_log",
             "view_branch_headcount", "view_all_branches", "manage_retail_products", "view_class_reservations",
+            "view_at_risk_members", "manage_at_risk_list",
         ],
     },
     {
@@ -31,12 +32,13 @@ ROLES = [
         "permissions": [
             "manage_members", "manage_class_schedule", "manage_branch_promotions", "view_financial_reports",
             "view_branch_headcount", "process_sales", "manage_retail_products", "manage_billing",
+            "view_at_risk_members", "manage_at_risk_list", "log_retention_calls",
         ],
     },
     {
         "name": "Receptionist",
         "description": "Front-desk operations: member check-in, registration, and directory lookups.",
-        "permissions": ["manage_members", "process_sales"],
+        "permissions": ["manage_members", "process_sales", "view_at_risk_members", "log_retention_calls"],
     },
     {
         "name": "Marketing Staff",

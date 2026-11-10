@@ -359,6 +359,96 @@ so that I can improve my coaching approach."*
   (the same as My Schedule and My Clients).
 - Tests: `python manage.py test feedback`
 
+### At-risk members (SCRUM-118)
+
+Story: *"As a branch manager, I want to view a ranked list of members at
+risk of leaving, so that I know who to contact first."*
+
+- **At-Risk Members** tab for roles with `view_at_risk_members`
+  (migration `churn/0002` grants it, and `manage_at_risk_list` for
+  "Refresh now", to Branch Manager and General Manager). Same branch rule as
+  headcount: a Branch Manager only ever gets their own branch (403 for
+  another), a General Manager picks any.
+- Every non-cancelled member of the branch gets a score from 0 to 100,
+  ranked highest first, with a level (High / Medium / Low), last visit and
+  membership end date. The "At risk" tab shows High and Medium.
+- **One scoring interface, two methods** (`churn/scoring.py`,
+  `score_members(branch) -> [(member_id, score, reasons)]`):
+  - *Rule-based* (always available): a weighted sum of seven 0-1 signals -
+    attendance in the last 4 weeks vs the previous 8 (25), days since the
+    last check-in (20), class/PT no-shows in 30 days (12), a lapsed
+    subscription or late renewals (15), a freeze now or in the last 6
+    months (10), first 90 days of membership (8), membership ending within
+    30 days (10). All weights and thresholds are in `churn/config.py`.
+  - *Learned model*: a logistic regression on the same signals, trained per
+    branch on past cutoffs (label = cancelled within the next 30 days) and
+    validated on the newest quarter of cutoffs. A branch uses it only with
+    at least 30 cancellations and 200 members in the training window and a
+    validation AUC of 0.6 or more; otherwise it falls back to the rules.
+    Coefficients are stored in the `ChurnModel` table (no model file).
+  - There is no "failed payment" record in the app (payments are only
+    stored once made), so the payment signal uses lapsed subscriptions and
+    renewals paid more than 3 days late.
+- **Weekly refresh.** Each week's list is saved as a snapshot
+  (`ChurnRun` + one `ChurnScore` per member: score, level, reasons, method,
+  model version, week). A background thread in the web server makes any
+  missing week's list (same approach as the reminders; `CHURN_AUTORUN=false`
+  turns it off). For cron instead, every Monday at 03:00:
+  `0 3 * * 1  cd backend && .venv/bin/python manage.py refresh_churn_scores`.
+  Opening the page before the weekly run makes that week's list on the spot.
+- Every member scored writes a `churn_scored` training event (SCRUM-73) with
+  the score, rank, method and reasons, so the scores can be evaluated later.
+- `GET /api/churn/at-risk?branch=` - `{branch, branches, canChooseBranch,
+  canRefresh, run, members}`. `POST /api/churn/refresh` `{branch}`.
+- After pulling: `python manage.py migrate`.
+- Tests: `python manage.py test churn`
+
+### Why a member is at risk (SCRUM-119)
+
+Story: *"As a branch manager, I want each at-risk member to show the two or
+three reasons behind their ranking, so that staff know what to talk about on
+the call."*
+
+- Each member on the list shows their top two or three reasons: the largest
+  weighted terms of the rule-based score, or the largest coefficient x value
+  pushes of the learned model (only features that add at least 3 points).
+- Reasons are plain sentences with the member's real numbers - "Visits
+  dropped from 3 a week to 1 a week", "Missed 2 booked classes or sessions
+  in the last 30 days", "Membership payment overdue since 4 Nov", "Joined 6
+  weeks ago", "Membership ends in 12 days (22 Nov)" - each with a one-line
+  talking point for the call ("Talking points" toggle). No scores or feature
+  names are sent to the page (`churn/reasons.py`).
+- Tests: `python manage.py test churn.test_reasons`
+
+### Retention calls (SCRUM-68)
+
+Story: *"As a receptionist, I want to log the outcome of a retention call on
+an at-risk member's record, so that the team knows who has been contacted and
+the system captures whether the outreach worked."*
+
+- On the At-Risk Members list, staff with `log_retention_calls` (migration
+  `churn/0004` grants it to Receptionist and Branch Manager, and gives
+  Receptionists the list itself) press **Log call**: outcome (Reached / No
+  answer / Saved / Cancelled anyway), an optional note and an optional
+  follow-up date.
+- **Who comes off the list:** any outcome except "No answer" removes the
+  member from this week's active list and moves them to "Contacted this
+  week". "No answer" keeps them on the list until the end of the week, with
+  "Try again". A new week's list starts fresh. "Cancelled anyway" only
+  records what the member said; cancelling the membership is still done
+  from the member record.
+- The member record (Member Directory -> Subscription Details) shows every
+  call with date, staff member, outcome, note and follow-up date.
+- Each call writes an audit entry (`retention.call_logged`) and a
+  `retention_call` training event with the outcome plus the member's score,
+  level, rank, reasons and scoring method at the time of the call (the note
+  is left out) - the labelled data for a future model.
+- Calls are in the member's data export; a deletion request removes their
+  calls and weekly churn scores.
+- `POST /api/churn/calls` `{memberId, outcome, note?, followUpOn?}`;
+  `GET /api/churn/members/<id>/calls`. Same branch rule as the list.
+- Tests: `python manage.py test churn.test_calls`
+
 ## Folder structure
 
 ```
