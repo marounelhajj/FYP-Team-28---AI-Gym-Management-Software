@@ -56,6 +56,7 @@ INSTALLED_APPS = [
     'notifications',
     'progress',
     'feedback',
+    'churn',
 ]
 
 MIDDLEWARE = [
@@ -69,6 +70,8 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     # Starts the background reminder sender once, then steps out of the way.
     'notifications.scheduler.ReminderSchedulerMiddleware',
+    # Same idea for the weekly at-risk member list (churn/jobs.py).
+    'churn.jobs.ChurnSchedulerMiddleware',
 ]
 
 ROOT_URLCONF = 'gym_backend.urls'
@@ -181,6 +184,11 @@ DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'Fitness Factory <no-r
 # from cron / Task Scheduler instead.
 REMINDERS_AUTORUN = os.environ.get('REMINDERS_AUTORUN', 'false' if sys.argv[1:2] == ['test'] else 'true').lower() == 'true'
 REMINDER_INTERVAL_SECONDS = int(os.environ.get('REMINDER_INTERVAL_SECONDS', '60'))
+
+# The weekly at-risk member list (churn/jobs.py) is made by a background
+# thread too. Off for tests; set CHURN_AUTORUN=false to use
+# "manage.py refresh_churn_scores" from cron / Task Scheduler instead.
+CHURN_AUTORUN = os.environ.get('CHURN_AUTORUN', 'false' if sys.argv[1:2] == ['test'] else 'true').lower() == 'true'
 
 # Our URL patterns deliberately omit trailing slashes to match the
 # frontend's fetch() calls exactly (e.g. /api/members, /api/members/meta),

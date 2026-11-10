@@ -3,6 +3,7 @@ import { cancelMembership, fetchMemberBilling } from "../api/members.js";
 import { BUTTON_COLORS } from "../styles/buttonColors.js";
 import AccessCardPanel from "./AccessCardPanel.jsx";
 import PaymentMethodForm from "./PaymentMethodForm.jsx";
+import RetentionCallHistory from "./churn/RetentionCallHistory.jsx";
 
 const STATUS_STYLES = { Active: BUTTON_COLORS.green, Frozen: BUTTON_COLORS.blue, Cancelled: BUTTON_COLORS.red };
 
@@ -139,6 +140,9 @@ export default function SubscriptionDetails({ member, onClose, onCancelled, onRe
 
           <h3 style={styles.sectionTitle}>Payment history</h3>
           {billing && <PaymentHistory payments={billing.payments} total={billing.paymentCount} />}
+
+          {/* SCRUM-68: calls logged from the at-risk list. */}
+          <RetentionCallHistory memberId={current.id} />
 
           {error && <div style={styles.errorBox}>{error}</div>}
 
