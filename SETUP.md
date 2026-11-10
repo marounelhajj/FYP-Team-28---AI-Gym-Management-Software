@@ -449,6 +449,29 @@ the system captures whether the outreach worked."*
   `GET /api/churn/members/<id>/calls`. Same branch rule as the list.
 - Tests: `python manage.py test churn.test_calls`
 
+### Weekly call capacity (SCRUM-120)
+
+Story: *"As a branch manager, I want to cap the at-risk list to the number of
+calls my staff can make per week, so that the list stays actionable."*
+
+- **Calls a week** in the list's header: each branch's weekly call capacity
+  (default 20, 1-500), set by roles with `manage_at_risk_list` (Branch
+  Manager for their own branch, General Manager for any). Changing it
+  updates this week's list straight away and is written to the audit log.
+- The call list is the top N ranks of the week's list, minus members already
+  contacted, so calls made count against the week's capacity. Everyone ranked
+  below N stays visible in the collapsed **Below the cap** section.
+- **How the calls are working** panel: this week's calls done out of the
+  capacity, saved, no answer and cancelled anyway; the same over every
+  week's list; and, once at least 2 weeks' lists are 30 days old with 10+
+  members on them, the share of call-list members who cancelled within 30
+  days (precision at N) next to the share of everyone else, and how many of
+  the members staff reached still left. Before that it says "Not enough data
+  yet".
+- `PUT /api/churn/capacity` `{branch, weeklyCapacity}`; the list payload
+  now has `belowCap`, `capacity` and `accuracy`.
+- Tests: `python manage.py test churn.test_capacity`
+
 ## Folder structure
 
 ```

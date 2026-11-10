@@ -1,11 +1,17 @@
+from django.utils import timezone
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from administration.permissions import authorize
+from audit.log import record
+from audit.models import AuditLog
 from headcount.views import resolve_branch
 
+from . import config
+from .accuracy import branch_accuracy
 from .calls import LOG, call_data, calls_this_week, contacted
-from .models import ChurnRun, ChurnScore, RetentionCall
+from .features import week_start
+from .models import BranchCallSettings, ChurnRun, ChurnScore, RetentionCall
 from .reasons import explain
 from .scoring import ensure_current, refresh_branch
 
@@ -73,11 +79,19 @@ def list_payload(account, branch, branches, run):
         ChurnScore.objects.filter(run=run).select_related("member", "run").order_by("rank")
     )
     calls = calls_this_week(branch, run.week_start)
-    active, done = [], []
+    active, below_cap, done = [], [], []
     for s in scores:
         member_calls = calls.get(s.member_id, [])
+        row = member_row(s, member_calls)
         # Contacted this week (anything but "no answer"): off the active list.
-        (done if contacted(member_calls) else active).append(member_row(s, member_calls))
+        if contacted(member_calls):
+            done.append(row)
+        # SCRUM-120: the top `call_capacity` ranks are this week's calls;
+        # everyone else stays visible, collapsed, below the cap.
+        elif s.rank <= run.call_capacity:
+            active.append(row)
+        else:
+            below_cap.append(row)
     permissions = account.role.permissions
     return {
         "branch": branch,
@@ -88,7 +102,15 @@ def list_payload(account, branch, branches, run):
         "outcomes": [{"value": v, "label": l} for v, l in RetentionCall.Outcome.choices],
         "run": _run_data(run),
         "members": active,
+        "belowCap": below_cap,
         "contacted": done,
+        "capacity": {
+            "weekly": run.call_capacity,
+            "default": config.DEFAULT_CALL_CAPACITY,
+            "max": config.MAX_CALL_CAPACITY,
+            "canEdit": MANAGE in permissions,
+        },
+        "accuracy": branch_accuracy(branch),
     }
 
 
@@ -120,3 +142,44 @@ def refresh(request):
     run = refresh_branch(branch, trigger=ChurnRun.Trigger.MANUAL, staff=account)
     return Response(list_payload(account, branch, branches, run))
 
+
+
+# PUT /api/churn/capacity {"branch": "Hamra", "weeklyCapacity": 5}
+#     SCRUM-120: how many calls the branch's staff can make per week. Takes
+#     effect on this week's list straight away (and on every list after).
+@api_view(["PUT"])
+def capacity(request):
+    account, denied = authorize(request, MANAGE)
+    if denied:
+        return denied
+    body = request.data or {}
+    branch, branches, error = resolve_branch(account, body.get("branch"), subject=SUBJECT)
+    if error:
+        return error
+    try:
+        weekly = int(body.get("weeklyCapacity"))
+    except (TypeError, ValueError):
+        weekly = None
+    if weekly is None or not 1 <= weekly <= config.MAX_CALL_CAPACITY:
+        return Response(
+            {"error": {"weeklyCapacity": f"Enter a whole number from 1 to {config.MAX_CALL_CAPACITY}."}}, status=400,
+        )
+
+    setting, _ = BranchCallSettings.objects.get_or_create(
+        branch=branch, defaults={"weekly_capacity": config.DEFAULT_CALL_CAPACITY},
+    )
+    previous = setting.weekly_capacity
+    setting.weekly_capacity = weekly
+    setting.updated_by = account
+    setting.save()
+    run = ensure_current(branch)
+    if run.week_start == week_start(timezone.localdate()):
+        ChurnRun.objects.filter(branch=branch, week_start=run.week_start).update(call_capacity=weekly)
+        run.refresh_from_db()
+    if previous != weekly:
+        record(
+            request, AuditLog.Action.CALL_CAPACITY_UPDATED, actor=account, branch=branch,
+            summary=f"Set {branch}'s weekly call capacity to {weekly} (was {previous})",
+            details={"changes": {"weeklyCapacity": [previous, weekly]}},
+        )
+    return Response(list_payload(account, branch, branches, run))

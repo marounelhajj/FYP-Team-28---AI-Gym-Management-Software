@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
-import { fetchAtRisk, logRetentionCall, refreshAtRisk } from "../../api/churn.js";
+import { fetchAtRisk, logRetentionCall, refreshAtRisk, saveCallCapacity } from "../../api/churn.js";
+import AccuracyPanel from "./AccuracyPanel.jsx";
 import RetentionCallHistory, { OutcomeBadge } from "./RetentionCallHistory.jsx";
 import AccessDenied from "../AccessDenied.jsx";
 import { BUTTON_COLORS } from "../../styles/buttonColors.js";
@@ -80,8 +81,9 @@ export default function AtRiskMembers() {
   const [forbidden, setForbidden] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  // "risk" = High and Medium: the people worth a call. "all" includes Low.
-  const [level, setLevel] = useState("risk");
+  // "risk" = High and Medium. The call list is already capped to the
+  // branch's capacity (SCRUM-120), so it opens on everyone in it.
+  const [level, setLevel] = useState("all");
   const [query, setQuery] = useState("");
   // SCRUM-119: a suggested line for the call under each reason.
   const [showTalkingPoints, setShowTalkingPoints] = useState(true);
@@ -89,6 +91,8 @@ export default function AtRiskMembers() {
   const [openCall, setOpenCall] = useState(null);
   const [notice, setNotice] = useState(null);
   const [showContacted, setShowContacted] = useState(false);
+  // SCRUM-120: members ranked below the week's call capacity.
+  const [showBelowCap, setShowBelowCap] = useState(false);
 
   const load = useCallback((which) => {
     setLoading(true);
@@ -133,19 +137,26 @@ export default function AtRiskMembers() {
     return () => clearTimeout(timer);
   }, [notice]);
 
+  function capacitySaved(body) {
+    setData(body);
+    setNotice(`Call capacity set to ${body.capacity.weekly} a week. The list now shows the top ${body.capacity.weekly}.`);
+  }
+
   const members = data?.members || [];
+  const belowCap = data?.belowCap || [];
   const contactedList = data?.contacted || [];
   const counts = useMemo(() => {
-    const c = { all: members.length, High: 0, Medium: 0, Low: 0 };
-    members.forEach((m) => { c[m.level] += 1; });
+    const c = { all: 0, High: 0, Medium: 0, Low: 0 };
+    [...members, ...belowCap].forEach((m) => { c[m.level] += 1; c.all += 1; });
     c.risk = c.High + c.Medium;
     return c;
-  }, [members]);
-  const atRisk = counts.risk;
-  const inTab = (m) => level === "all" || m.level === level || (level === "risk" && m.level !== "Low");
-  const shown = members.filter(
-    (m) => inTab(m) && (!query || m.name.toLowerCase().includes(query.trim().toLowerCase())),
-  );
+  }, [members, belowCap]);
+  const matches = (m) =>
+    (level === "all" || m.level === level || (level === "risk" && m.level !== "Low")) &&
+    (!query || m.name.toLowerCase().includes(query.trim().toLowerCase()));
+  const shown = members.filter(matches);
+  const shownBelow = belowCap.filter(matches);
+  const week = data?.accuracy?.thisWeek;
 
   if (forbidden) return <AccessDenied message="Your role doesn't include the at-risk members list." />;
 
@@ -167,11 +178,15 @@ export default function AtRiskMembers() {
         <section style={styles.card} aria-label={`At-risk members at ${data.branch}`}>
           <div style={styles.cardHeader}>
             <div style={styles.headline}>
-              <span style={styles.count} key={`${data.branch}-${atRisk}`} className="ar-pop">{atRisk}</span>
-              <span style={styles.countLabelStrong}>members at risk</span>
-              <span style={styles.countLabel}>at {data.branch} this week</span>
+              <span style={styles.count} key={`${data.branch}-${members.length}`} className="ar-pop">{members.length}</span>
+              <span style={styles.countLabelStrong}>{members.length === 1 ? "call" : "calls"} to make</span>
+              <span style={styles.countLabel}>
+                at {data.branch} this week
+                {week ? ` · ${week.contacted} of ${week.capacity} done` : ""} · {counts.risk} at risk
+              </span>
             </div>
             <div style={styles.controls}>
+              <CapacityControl key={`${data.branch}-${data.capacity.weekly}`} data={data} onSaved={capacitySaved} />
               {data.canChooseBranch && (
                 <label style={styles.inline}>
                   <span style={styles.srOnly}>Branch</span>
@@ -245,8 +260,8 @@ export default function AtRiskMembers() {
 
           <div style={styles.scroll} className="ar-body" data-loading={loading || refreshing}>
             {shown.length === 0 ? (
-              <div style={styles.empty}>{!members.length ? "No members to score at this branch yet."
-                : level === "risk" && !query ? "Nobody is at medium or high risk this week." : "No members match."}</div>
+              <div style={styles.empty}>{!members.length && !belowCap.length && !contactedList.length ? "No members to score at this branch yet."
+                : !members.length ? "Every call on this week's list is done." : "No members on the call list match."}</div>
             ) : (
               <MemberTable
                 members={shown}
@@ -259,6 +274,40 @@ export default function AtRiskMembers() {
               />
             )}
           </div>
+
+          {/* SCRUM-120: ranked below the week's call capacity - collapsed, never hidden. */}
+          {belowCap.length > 0 && (
+            <div style={styles.subSection}>
+              <button
+                type="button"
+                className="ar-press"
+                style={styles.disclosure}
+                aria-expanded={showBelowCap}
+                onClick={() => setShowBelowCap((v) => !v)}
+              >
+                <span style={styles.chevron} className={showBelowCap ? "ar-open" : ""} aria-hidden="true">›</span>
+                Below the cap <span style={styles.tabCount}>{belowCap.length}</span>
+                <span style={styles.disclosureHint}>ranked after the top {data.capacity.weekly}</span>
+              </button>
+              {showBelowCap && (
+                <div style={{ ...styles.scroll, marginTop: 10 }} className="ar-say">
+                  {shownBelow.length === 0 ? (
+                    <div style={styles.empty}>No members below the cap match.</div>
+                  ) : (
+                    <MemberTable
+                      members={shownBelow}
+                      talkingPoints={showTalkingPoints}
+                      canLogCalls={data.canLogCalls}
+                      outcomes={data.outcomes}
+                      openCall={openCall}
+                      setOpenCall={setOpenCall}
+                      onLogged={callLogged}
+                    />
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* SCRUM-68: contacted this week - off the active list, kept visible. */}
           {contactedList.length > 0 && (
@@ -292,7 +341,52 @@ export default function AtRiskMembers() {
           )}
         </section>
       )}
+
+      {data && <AccuracyPanel accuracy={data.accuracy} branch={data.branch} />}
     </div>
+  );
+}
+
+// SCRUM-120: how many calls the branch's staff can make per week.
+function CapacityControl({ data, onSaved }) {
+  const [value, setValue] = useState(String(data.capacity.weekly));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  if (!data.capacity.canEdit) {
+    return <span style={styles.capacityRead}>Capacity <strong>{data.capacity.weekly}</strong> calls a week</span>;
+  }
+  const changed = value !== String(data.capacity.weekly);
+
+  function save(e) {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    saveCallCapacity(data.branch, Number(value))
+      .then(onSaved)
+      .catch((err) => setError(err.fieldErrors?.weeklyCapacity || err.message))
+      .finally(() => setSaving(false));
+  }
+
+  return (
+    <form onSubmit={save} style={styles.capacityForm} aria-label="Weekly call capacity">
+      <label htmlFor="call-capacity" style={styles.capacityLabel}>Calls a week</label>
+      <input
+        id="call-capacity"
+        type="number"
+        min={1}
+        max={data.capacity.max}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        style={styles.capacityInput}
+        className="ar-input"
+        aria-invalid={Boolean(error)}
+        aria-describedby={error ? "call-capacity-error" : undefined}
+      />
+      <button type="submit" className="ar-press" style={changed ? styles.capacitySave : styles.capacitySaveIdle} disabled={saving || !changed}>
+        {saving ? "Saving..." : "Set"}
+      </button>
+      {error && <span id="call-capacity-error" style={styles.capacityError} role="alert">{error}</span>}
+    </form>
   );
 }
 
@@ -464,6 +558,8 @@ const CSS = `
 .ar-body { transition: opacity 180ms ease; }
 .ar-body[data-loading="true"] { opacity: 0.55; }
 .ar-open { transform: rotate(90deg); }
+.ap-grow { animation: ap-grow 520ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+@keyframes ap-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 .ar-notice { animation: ar-toast 260ms cubic-bezier(0.34, 1.56, 0.64, 1) both; }
 @keyframes ar-toast { from { opacity: 0; transform: translate(-50%, 12px); } to { opacity: 1; transform: translate(-50%, 0); } }
 .ar-say { animation: ar-in 220ms ease-out both; }
@@ -479,7 +575,7 @@ const CSS = `
 @keyframes ar-pop { from { transform: scale(0.85); opacity: 0.4; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
   .ar-tab, .ar-press, .ar-body { transition: none; }
-  .ar-row, .ar-pop, .ar-say, .ar-notice { animation: none; }
+  .ar-row, .ar-pop, .ar-say, .ar-notice, .ap-grow { animation: none; }
   .ar-tab:active, .ar-press:active:not(:disabled) { transform: none; }
 }
 `;
@@ -552,6 +648,14 @@ export const styles = {
   contactedItem: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10, padding: "10px 12px", border: "1px solid #ececf0", borderRadius: 12 },
   contactedName: { fontWeight: 800 },
   contactedNote: { fontSize: 13, color: "#555", fontStyle: "italic" },
+  capacityRead: { fontSize: 14, fontWeight: 700, color: "#444", padding: "0 6px" },
+  capacityForm: { display: "flex", alignItems: "center", gap: 8, padding: 5, borderRadius: 16, background: "#e9e9ee", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.12)", flexWrap: "wrap" },
+  capacityLabel: { fontSize: 13, fontWeight: 800, color: "#444", padding: "0 6px 0 10px", whiteSpace: "nowrap" },
+  capacityInput: { width: 76, height: 38, padding: "0 10px", fontSize: 16, fontWeight: 900, border: "none", borderRadius: 12, background: "#fff", boxShadow: "0 3px 8px rgba(18,64,150,0.18)", fontFamily: "inherit", fontVariantNumeric: "tabular-nums", textAlign: "center" },
+  capacitySave: { height: 38, padding: "0 16px", fontSize: 14, fontWeight: 800, border: "none", borderRadius: 12, ...BUTTON_COLORS.blue, cursor: "pointer", fontFamily: "inherit" },
+  capacitySaveIdle: { height: 38, padding: "0 16px", fontSize: 14, fontWeight: 800, border: "none", borderRadius: 12, background: "transparent", color: "#888", cursor: "default", fontFamily: "inherit" },
+  capacityError: { flexBasis: "100%", fontSize: 13, fontWeight: 700, color: "#b3261e", padding: "0 10px 4px" },
+  disclosureHint: { fontSize: 13, fontWeight: 600, color: "#777" },
   table: { width: "100%", minWidth: 860, borderCollapse: "collapse", fontSize: 14 },
   th: { textAlign: "left", padding: "10px 12px", fontSize: 12, fontWeight: 800, color: "#666", borderBottom: "2px solid #ececf0", whiteSpace: "nowrap", textTransform: "uppercase", letterSpacing: 0.4 },
   td: { padding: "12px", borderBottom: "1px solid #f0f0f3", whiteSpace: "nowrap", verticalAlign: "top" },
