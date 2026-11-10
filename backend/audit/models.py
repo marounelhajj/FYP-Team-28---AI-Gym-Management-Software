@@ -86,6 +86,9 @@ class AuditLog(models.Model):
         TIME_OFF_REMOVED = "class.time_off_removed", "Coach time off removed"
         CLASS_DESK_BOOKED = "class.desk_booked", "Member booked into a class at the front desk"
         CLASS_DESK_BOOKING_REMOVED = "class.desk_booking_removed", "Class booking removed at the front desk"
+        # At-risk members (SCRUM-68)
+        RETENTION_CALL_LOGGED = "retention.call_logged", "Retention call logged"
+        CALL_CAPACITY_UPDATED = "retention.capacity_updated", "Weekly call capacity changed"
         # The log itself (SCRUM-126) - who took a copy of which entries.
         AUDIT_LOG_EXPORTED = "audit_log.exported", "Audit log exported"
 
