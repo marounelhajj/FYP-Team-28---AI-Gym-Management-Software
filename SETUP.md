@@ -300,6 +300,27 @@ current day, so that I can see when my peaks actually fall."*
   line the hours up with the gyms.
 - Tests: `python manage.py test headcount`
 
+### Rating your coach (SCRUM-40)
+
+Story: *"As a member, I want to rate and leave feedback for my coach after a
+session, so that I can help improve service quality."*
+
+- **Rate your coaches** on the member dashboard lists the classes and
+  private sessions the member **attended** (from check-ins, or marked by the
+  coach) in the last 14 days that they haven't rated yet. They pick 1-5
+  stars and can add a comment (up to 500 characters).
+- One rating per session. It can be edited until 14 days after the session,
+  then it's final. No-shows, cancelled classes and sessions that haven't
+  ended can't be rated.
+- `GET /api/members/me/feedback` - `{toRate, given, windowDays}`.
+  `POST /api/members/me/feedback` - `{kind: "class"|"pt", sessionId, rating,
+  comment?}` (`sessionId` is the class id or the PT session id).
+  `PATCH /api/members/me/feedback/<id>` - `{rating?, comment?}`.
+- The member data export includes their ratings. A data deletion request
+  keeps the stars (so the coach's average doesn't change) but erases the
+  comment.
+- Tests: `python manage.py test feedback`
+
 ## Folder structure
 
 ```

@@ -2,6 +2,7 @@ from django.urls import path
 
 from billing import views as billing_views
 from classes import views as class_views
+from feedback import views as feedback_views
 from headcount import busy as headcount_busy
 from notifications import views as notification_views
 from progress import views as progress_views
@@ -28,6 +29,8 @@ urlpatterns = [
     path("/me/workouts/<int:entry_id>", progress_views.my_workout_detail),
     path("/me/metrics", progress_views.my_metrics),
     path("/me/metrics/<int:metric_id>", progress_views.my_metric_detail),
+    path("/me/feedback", feedback_views.my_feedback),
+    path("/me/feedback/<int:feedback_id>", feedback_views.my_feedback_detail),
     path("/me/classes", class_views.my_classes),
     path("/me/classes/<int:class_id>/book", class_views.book_class),
     path("/me/classes/<int:class_id>/cancel", class_views.cancel_booking),

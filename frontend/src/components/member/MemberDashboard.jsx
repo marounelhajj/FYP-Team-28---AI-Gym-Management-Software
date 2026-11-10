@@ -11,6 +11,7 @@ import { BUTTON_COLORS } from "../../styles/buttonColors.js";
 import BranchBusyLevel from "./BranchBusyLevel.jsx";
 import MemberBooking from "./MemberBooking.jsx";
 import MyTrainingLog from "../progress/MyTrainingLog.jsx";
+import RateMyCoaches from "../feedback/RateMyCoaches.jsx";
 import MemberPaymentMethodForm from "./MemberPaymentMethodForm.jsx";
 import MemberPrivacyPanel from "./MemberPrivacyPanel.jsx";
 import MemberProfileForm from "./MemberProfileForm.jsx";
@@ -211,6 +212,9 @@ export default function MemberDashboard({ member: initialMember, onDeleted }) {
 
       <h2 style={styles.sectionTitle}>My training log</h2>
       <MyTrainingLog />
+
+      <h2 style={styles.sectionTitle}>Rate your coaches</h2>
+      <RateMyCoaches />
 
       <h2 style={styles.sectionTitle}>Billing history</h2>
       {billingError && <div style={styles.errorBox}>Couldn't load your billing history: {billingError}</div>}
