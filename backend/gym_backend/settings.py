@@ -56,6 +56,8 @@ INSTALLED_APPS = [
     'notifications',
     'progress',
     'feedback',
+    'healthnotes',
+    'payroll',
 ]
 
 MIDDLEWARE = [

@@ -4,6 +4,7 @@ from billing import views as billing_views
 from classes import views as class_views
 from feedback import views as feedback_views
 from headcount import busy as headcount_busy
+from healthnotes import views as health_views
 from notifications import views as notification_views
 from progress import views as progress_views
 
@@ -31,6 +32,9 @@ urlpatterns = [
     path("/me/metrics/<int:metric_id>", progress_views.my_metric_detail),
     path("/me/feedback", feedback_views.my_feedback),
     path("/me/feedback/<int:feedback_id>", feedback_views.my_feedback_detail),
+    path("/me/health", health_views.my_health),
+    path("/me/health/confirm", health_views.my_health_confirm),
+    path("/me/health/<int:note_id>", health_views.my_health_note),
     path("/me/classes", class_views.my_classes),
     path("/me/classes/<int:class_id>/book", class_views.book_class),
     path("/me/classes/<int:class_id>/cancel", class_views.cancel_booking),

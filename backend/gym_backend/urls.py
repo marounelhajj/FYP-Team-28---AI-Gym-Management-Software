@@ -21,6 +21,8 @@ urlpatterns = [
     path("api/notifications", include("notifications.urls")),
     path("api/progress", include("progress.urls")),
     path("api/feedback", include("feedback.urls")),
+    path("api/health-notes", include("healthnotes.urls")),
+    path("api/payroll", include("payroll.urls")),
     path("api/retail", include("retail.urls")),
     path("api/classes", include("classes.urls")),
     path("api", include("administration.urls")),

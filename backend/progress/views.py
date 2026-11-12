@@ -3,6 +3,7 @@ from rest_framework.response import Response
 
 from administration.permissions import get_staff_account
 from classes.models import PTSession
+from healthnotes import access as health_access
 from members.models import Member
 from training.events import log_training_event
 from training.models import TrainingEvent
@@ -157,12 +158,16 @@ def coach_clients(request):
     if denied:
         return denied
     results = []
-    for m in assigned_members(coach):
+    members = list(assigned_members(coach))
+    health = health_access.client_badges(coach, [m.id for m in members])
+    for m in members:
         last_workout = m.workouts.values_list("performed_on", flat=True).first()
         last_metric = m.body_metrics.values_list("measured_on", flat=True).first()
         results.append({
             "memberId": m.id, "name": m.name, "branch": m.branch,
             "workouts": m.workouts.count(), "lastWorkout": last_workout, "lastMetrics": last_metric,
+            # Null when their last session with this coach is too long ago (healthnotes/access.py).
+            "health": health[m.id],
         })
     return Response({"results": results})
 

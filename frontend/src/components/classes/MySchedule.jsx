@@ -3,6 +3,8 @@ import { fetchMySchedule } from "../../api/classes.js";
 import { addDays, dayOfMonth, formatLongDay, weekdayShort, weekLabel } from "./dates.js";
 import useServerClock, { offsetLabel } from "./useServerClock.js";
 import AttendanceSheet from "./AttendanceSheet.jsx";
+import HealthBriefing from "../health/HealthBriefing.jsx";
+import { BADGE_TONES, healthBadge } from "../health/HealthViews.jsx";
 
 // A coach's own daily/weekly schedule: their classes and private training
 // sessions, read-only (editing a class or PT hours is the branch manager's
@@ -12,6 +14,12 @@ import AttendanceSheet from "./AttendanceSheet.jsx";
 //
 // User story: "As a coach, I want to view my daily and weekly schedule of
 // classes and PT sessions, so that I can plan my working day."
+//
+// Each class and private session that's coming up (or just over) also shows
+// what the coach needs to know about its members' health, and opens the
+// health briefing: "As a coach, I want to view a client's health restrictions
+// and injuries before starting a session, so that I can adapt the workout
+// safely." (HealthBriefing.jsx)
 //
 // Time-off blocks (see MyAvailability.jsx... actually MyTimeOff.jsx - "As a
 // coach, I want to block off time on my calendar when I'm unavailable, so
@@ -40,7 +48,20 @@ function fmtTime(dt) {
   return `${String(dt.getHours()).padStart(2, "0")}:${String(dt.getMinutes()).padStart(2, "0")}`;
 }
 
+// The health line for a class: how many of its members need something adapted.
+function classHealthBadge(counts) {
+  if (!counts) return null;
+  if (counts.booked === 0) return { text: "No one booked yet", tone: "grey" };
+  if (counts.restricted > 0) {
+    const text = `${counts.restricted} with health notes${counts.undeclared ? ` · ${counts.undeclared} not declared` : ""}`;
+    return { text, tone: counts.severe ? "red" : "amber" };
+  }
+  if (counts.undeclared > 0) return { text: `${counts.undeclared} not declared`, tone: "grey" };
+  return { text: "No restrictions", tone: "green" };
+}
+
 function itemsFor(data) {
+  const health = data.health || { classes: {}, ptSessions: {} };
   const classes = (data.classes || []).map((c) => ({
     id: `class-${c.id}`,
     classId: c.id,
@@ -53,6 +74,8 @@ function itemsFor(data) {
     branch: c.branch,
     state: c.state,
     cancelReason: c.cancelReason,
+    health: c.state === "cancelled" ? null : classHealthBadge(health.classes[c.id]),
+    briefing: { kind: "class", id: c.id },
   }));
   const pt = (data.ptSessions || []).map((s) => ({
     id: `pt-${s.id}`,
@@ -65,6 +88,8 @@ function itemsFor(data) {
     branch: s.branch,
     state: s.state,
     cancelReason: s.cancelReason,
+    health: s.state === "cancelled" ? null : healthBadge(health.ptSessions[s.id]),
+    briefing: { kind: "pt", id: s.id },
   }));
   const timeOff = (data.timeOff || []).flatMap((block) => {
     const blockStart = parseServerDateTime(block.startsAt);
@@ -97,6 +122,7 @@ export default function MySchedule() {
   const [selected, setSelected] = useState(null);
   const [error, setError] = useState(null);
   const [attendanceFor, setAttendanceFor] = useState(null);
+  const [briefing, setBriefing] = useState(null);
   const clock = useServerClock(data?.nowIso, data?.timeZone);
 
   const load = useCallback(() => {
@@ -186,17 +212,23 @@ export default function MySchedule() {
       {dayItems.length === 0 && <div style={styles.empty}>Nothing on your schedule this day.</div>}
 
       {dayItems.map((item) => (
-        <ScheduleRow key={item.id} item={item} onAttendance={() => setAttendanceFor(item.classId)} />
+        <ScheduleRow
+          key={item.id}
+          item={item}
+          onAttendance={() => setAttendanceFor(item.classId)}
+          onHealth={() => setBriefing(item.briefing)}
+        />
       ))}
 
       {attendanceFor && (
         <AttendanceSheet classId={attendanceFor} onClose={() => setAttendanceFor(null)} onChanged={load} />
       )}
+      {briefing && <HealthBriefing kind={briefing.kind} id={briefing.id} onClose={() => setBriefing(null)} />}
     </div>
   );
 }
 
-function ScheduleRow({ item, onAttendance }) {
+function ScheduleRow({ item, onAttendance, onHealth }) {
   // SCRUM-36: attendance opens when a class starts.
   const canTakeAttendance = item.kind === "Class" && (item.state === "in_progress" || item.state === "finished");
   let tag = null;
@@ -225,9 +257,17 @@ function ScheduleRow({ item, onAttendance }) {
           {item.branch && ` · ${item.branch}`}
         </span>
         {item.state !== "cancelled" && <span style={styles.cardDetail}>{item.detail}</span>}
+        {item.health && (
+          <span style={{ ...styles.healthBadge, ...BADGE_TONES[item.health.tone] }}>{item.health.text}</span>
+        )}
       </div>
       <div style={styles.cardTag}>
         {tag}
+        {item.health && (
+          <button type="button" onClick={onHealth} style={styles.healthButton} aria-label={`Health briefing for ${item.title}`}>
+            Health briefing
+          </button>
+        )}
         {canTakeAttendance && (
           <button type="button" onClick={onAttendance} style={styles.attendanceButton}>
             Attendance
@@ -306,6 +346,19 @@ const styles = {
   cardMeta: { fontSize: 12, opacity: 0.8 },
   cardDetail: { fontSize: 12, opacity: 0.7 },
   cardTag: { flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 },
+  healthBadge: { alignSelf: "flex-start", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 4, marginTop: 2 },
+  healthButton: {
+    height: 30,
+    padding: "0 12px",
+    border: "1px solid #124096",
+    borderRadius: 8,
+    background: "#fff",
+    color: "#124096",
+    fontSize: 12,
+    fontWeight: 700,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+  },
   attendanceButton: {
     height: 30,
     padding: "0 12px",

@@ -1,14 +1,22 @@
 import { useEffect, useState } from "react";
+import { fetchClientHealth } from "../../api/health.js";
 import { fetchClientLog, fetchMyClients } from "../../api/progress.js";
+import { BADGE_TONES, MemberHealth, healthBadge } from "../health/HealthViews.jsx";
 import { MetricList, WeightChart, WorkoutList } from "./TrainingLogViews.jsx";
 
 // SCRUM-60, the coach's side: the members they coach (booked private
 // training with them) and each one's self-logged workouts and body metrics,
 // read-only. The server only ever returns members assigned to this coach.
+//
+// Each client's health notes come first ("As a coach, I want to view a
+// client's health restrictions and injuries before starting a session, so
+// that I can adapt the workout safely") - shown only while the client has a
+// recent or upcoming session with this coach.
 export default function MyClients() {
   const [clients, setClients] = useState(null);
   const [selected, setSelected] = useState(null);
   const [log, setLog] = useState(null);
+  const [health, setHealth] = useState(null);
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -23,13 +31,20 @@ export default function MyClients() {
   useEffect(() => {
     if (!selected) return;
     setLog(null);
+    setHealth(null);
     fetchClientLog(selected).then(setLog).catch((e) => setError(e.message));
+    // Not an error when it's refused: the last session was just too long ago.
+    fetchClientHealth(selected)
+      .then((b) => setHealth({ member: b.member }))
+      .catch((e) => setHealth({ unavailable: e.message }));
   }, [selected]);
+
+  const badgeFor = (c) => healthBadge(c.health);
 
   return (
     <div style={styles.page}>
       <h1 style={styles.title}>My Clients</h1>
-      <p style={styles.subtitle}>Workouts and body metrics your private-training clients log between sessions. View only.</p>
+      <p style={styles.subtitle}>Your private-training clients: their health notes, and the workouts and body metrics they log between sessions. View only.</p>
       {error && <div style={styles.errorBox}>{error}</div>}
       {clients && clients.length === 0 && <div style={styles.empty}>No private-training clients yet.</div>}
       {clients && clients.length > 0 && (
@@ -48,6 +63,9 @@ export default function MyClients() {
                     {c.workouts} workout{c.workouts === 1 ? "" : "s"}
                     {c.lastWorkout ? ` · last ${c.lastWorkout}` : ""}
                   </span>
+                  {badgeFor(c) && (
+                    <span style={{ ...styles.healthBadge, ...BADGE_TONES[badgeFor(c).tone] }}>{badgeFor(c).text}</span>
+                  )}
                 </button>
               </li>
             ))}
@@ -60,6 +78,10 @@ export default function MyClients() {
                   <h2 style={styles.detailTitle}>{log.member.name}</h2>
                   <span style={styles.readOnly}>Read-only</span>
                 </div>
+                <h3 style={styles.section}>Health &amp; injuries</h3>
+                {!health && <p style={styles.muted}>Loading...</p>}
+                {health?.member && <MemberHealth member={health.member} />}
+                {health?.unavailable && <p style={styles.muted}>{health.unavailable}</p>}
                 <h3 style={styles.section}>Body metrics</h3>
                 <WeightChart metrics={log.metrics} />
                 <MetricList metrics={log.metrics.slice(0, 5)} />
@@ -90,6 +112,7 @@ const styles = {
   clientSelected: { borderColor: "#124096", boxShadow: "inset 0 0 0 1px #124096", background: "#eef2fa" },
   clientName: { fontSize: 14, fontWeight: 700 },
   clientMeta: { fontSize: 12, color: "#666" },
+  healthBadge: { fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 4, marginTop: 2 },
   detail: { padding: 16, border: "1px solid #e4e4e8", borderRadius: 14, background: "#fff", minWidth: 0 },
   detailHeader: { display: "flex", alignItems: "center", gap: 10 },
   detailTitle: { fontSize: 18, fontWeight: 800, margin: 0 },

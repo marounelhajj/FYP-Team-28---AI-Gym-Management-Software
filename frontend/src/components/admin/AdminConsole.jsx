@@ -8,6 +8,7 @@ import ExpenseLedger from "../finance/ExpenseLedger.jsx";
 import AccessDenied from "../AccessDenied.jsx";
 import DoorManager from "./DoorManager.jsx";
 import ClassSchedule from "../classes/ClassSchedule.jsx";
+import CoachPayManager from "../payroll/CoachPayManager.jsx";
 
 // Each tab needs its own permission, so a role that only has one of the two
 // (e.g. manage_roles without manage_staff_accounts) sees just that tab.
@@ -18,6 +19,7 @@ const TABS = [
   { key: "retention", label: "Retention", permission: "view_audit_log", render: () => <RetentionReport /> },
   { key: "finance", label: "Financial Report", permission: "view_financial_reports", render: () => <FinancialReport /> },
   { key: "expenses", label: "Expenses", permission: "manage_billing", render: () => <ExpenseLedger /> },
+  { key: "coachpay", label: "Coach Pay", permission: "manage_billing", render: () => <CoachPayManager /> },
   { key: "doors", label: "Doors", permission: "manage_doors", render: () => <DoorManager /> },
   { key: "classes", label: "Class Schedule", permission: "manage_class_schedule", render: () => <ClassSchedule /> },
 ];
@@ -32,7 +34,7 @@ const TABS = [
 // banner is left out.
 export default function AdminConsole({ permissions = [], embedded = false }) {
   // Embedded, these screens are already their own top-level tabs (App.jsx).
-  const EMBEDDED_ELSEWHERE = new Set(["audit", "retention", "finance", "expenses", "classes"]);
+  const EMBEDDED_ELSEWHERE = new Set(["audit", "retention", "finance", "expenses", "classes", "coachpay"]);
   const tabs = TABS.filter((t) => permissions.includes(t.permission) && !(embedded && EMBEDDED_ELSEWHERE.has(t.key)));
   const [tabKey, setTabKey] = useState(null);
   const activeTab = tabs.find((t) => t.key === tabKey) || tabs[0];

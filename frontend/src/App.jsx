@@ -27,6 +27,8 @@ import MemberDashboard from "./components/member/MemberDashboard.jsx";
 import PlanBrowser from "./components/member/PlanBrowser.jsx";
 import MyClients from "./components/progress/MyClients.jsx";
 import MyRatings from "./components/feedback/MyRatings.jsx";
+import MyPay from "./components/payroll/MyPay.jsx";
+import CoachPayManager from "./components/payroll/CoachPayManager.jsx";
 import NotificationBell from "./components/NotificationBell.jsx";
 import { memberNotificationsApi } from "./api/notifications.js";
 import Logo from "./components/Logo.jsx";
@@ -71,6 +73,10 @@ function availableScreens(account) {
     screens.push({ key: "myclients", label: "My Clients", render: () => <MyClients /> });
     // SCRUM-37: the ratings and comments members left after their sessions.
     screens.push({ key: "myratings", label: "My Ratings", render: () => <MyRatings /> });
+    // User story: "As a coach, I want to view my completed session count
+    // and earnings for the current pay period, so that I can verify my pay
+    // is correct."
+    screens.push({ key: "mypay", label: "My Pay", render: () => <MyPay /> });
   }
   if (has("manage_membership_plans")) {
     screens.push({ key: "plans", label: "Plans & Pricing", render: () => <PlanManager /> });
@@ -117,6 +123,11 @@ function availableScreens(account) {
   }
   if (has("view_financial_reports") && has("view_all_branches")) {
     screens.push({ key: "finance", label: "Financial Report", render: () => <FinancialReport /> });
+  }
+  // Coaches' hourly rates and pay statements - a Branch Manager for their own
+  // branch's coaches (the server holds them to it).
+  if (has("manage_billing")) {
+    screens.push({ key: "coachpay", label: "Coach Pay", render: () => <CoachPayManager /> });
   }
   if (has("manage_billing") && has("view_all_branches")) {
     screens.push({ key: "expenses", label: "Expenses", render: () => <ExpenseLedger /> });

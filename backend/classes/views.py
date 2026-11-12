@@ -14,6 +14,7 @@ from audit.log import changes, record
 from audit.models import AuditLog
 from checkins.models import active_flags
 from headcount.views import resolve_branch
+from healthnotes import access as health_access
 from members import qr
 from members.access import door_access
 from members.models import Member
@@ -527,13 +528,16 @@ def my_schedule(request):
     )
     sessions = rules.booked_pt().filter(coach=account, starts_at__gte=window_start, starts_at__lt=window_end)
     time_off = rules.overlapping(TimeOff.objects.filter(coach=account), window_start, window_end)
+    sessions = list(sessions.select_related("coach", "member"))
     return Response({
         "coachId": account.id,
         "coachName": account.full_name,
         **_week_payload(start),
         "classes": GymClassSerializer(classes, many=True).data,
-        "ptSessions": PTSessionSerializer(sessions.select_related("coach", "member"), many=True).data,
+        "ptSessions": PTSessionSerializer(sessions, many=True).data,
         "timeOff": TimeOffSerializer(time_off, many=True).data,
+        # Who has health restrictions to know about before each session.
+        "health": health_access.schedule_badges(list(classes), sessions),
     })
 
 

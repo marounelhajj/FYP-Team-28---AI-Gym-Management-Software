@@ -16,6 +16,7 @@ from members.models import Member
 class StaffNotification(models.Model):
     class Kind(models.TextChoices):
         CAPACITY_ALERT = "capacity_alert", "Branch near capacity"
+        PAY_RATE_CHANGED = "pay_rate_changed", "Your pay rate changed"
 
     recipient = models.ForeignKey(StaffAccount, on_delete=models.CASCADE, related_name="notifications")
     kind = models.CharField(max_length=30, choices=Kind.choices)

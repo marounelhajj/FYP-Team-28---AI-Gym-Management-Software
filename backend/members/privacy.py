@@ -15,6 +15,7 @@ from checkins.models import CheckInFlag
 from classes.rules import release_future_bookings
 from notifications.models import MemberNotification, NotificationSettings, SentReminder
 from feedback.models import CoachFeedback
+from healthnotes.models import HealthDeclaration, HealthNote
 from progress.models import BodyMetric, WorkoutEntry
 from training.events import delete_training_events_for_member
 
@@ -30,7 +31,8 @@ from .models import AccessCardReissue, Member
 # Deletion - the retention rule:
 #   * Personal data is REMOVED outright: login credentials, contact details,
 #     the payment method on file, access-card reissue notes, check-in flag
-#     notes, the self-logged workouts and body metrics (SCRUM-60), and every
+#     notes, the self-logged workouts and body metrics (SCRUM-60), their
+#     health notes (injuries and restrictions), and every
 #     AI training event (training.events.delete_training_events_for_member).
 #   * Records the gym has to keep are KEPT but ANONYMIZED, not hard-deleted:
 #       - the Member row itself, so the records below keep their anchor
@@ -189,6 +191,14 @@ def build_export(member):
             }
             for f in member.coach_feedback.select_related("coach")
         ],
+        "healthNotes": [
+            {
+                "kind": n.kind, "bodyArea": n.body_area, "severity": n.severity, "title": n.title, "details": n.details,
+                "since": _stamp(n.since), "status": n.status, "resolvedOn": _stamp(n.resolved_on),
+                "updatedAt": _stamp(n.updated_at),
+            }
+            for n in member.health_notes.all()
+        ],
         "trainingEvents": [
             {
                 "eventType": e.event_type, "occurredAt": _stamp(e.occurred_at), "branch": e.branch,
@@ -244,6 +254,9 @@ def anonymize_member(member):
         release_future_bookings(member, "Member data deleted")
         # SCRUM-60: the self-logged training log is personal data, not a record the gym must keep.
         WorkoutEntry.objects.filter(member=member).delete()
+        # Health notes are theirs alone - nothing the gym has to keep.
+        HealthNote.objects.filter(member=member).delete()
+        HealthDeclaration.objects.filter(member=member).delete()
         # Notifications are messages to them, not a record the gym must keep.
         MemberNotification.objects.filter(recipient=member).delete()
         NotificationSettings.objects.filter(member=member).delete()
