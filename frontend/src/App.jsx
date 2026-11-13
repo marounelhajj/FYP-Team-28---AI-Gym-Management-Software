@@ -29,6 +29,7 @@ import MyClients from "./components/progress/MyClients.jsx";
 import MyRatings from "./components/feedback/MyRatings.jsx";
 import MyPay from "./components/payroll/MyPay.jsx";
 import CoachPayManager from "./components/payroll/CoachPayManager.jsx";
+import BranchFeedback from "./components/branchfeedback/BranchFeedback.jsx";
 import NotificationBell from "./components/NotificationBell.jsx";
 import { memberNotificationsApi } from "./api/notifications.js";
 import Logo from "./components/Logo.jsx";
@@ -123,6 +124,12 @@ function availableScreens(account) {
   }
   if (has("view_financial_reports") && has("view_all_branches")) {
     screens.push({ key: "finance", label: "Financial Report", render: () => <FinancialReport /> });
+  }
+  // User story: "As a branch manager, I want to view member feedback and
+  // complaints specific to my branch..." - their own branch only (server-side);
+  // roles that see every branch pick one.
+  if (has("manage_member_feedback")) {
+    screens.push({ key: "feedback", label: "Member Feedback", render: () => <BranchFeedback /> });
   }
   // Coaches' hourly rates and pay statements - a Branch Manager for their own
   // branch's coaches (the server holds them to it).

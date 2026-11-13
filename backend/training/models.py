@@ -39,6 +39,8 @@ class TrainingEvent(models.Model):
         # SCRUM-60: a member logged a workout or body metrics themselves.
         WORKOUT_LOGGED = "workout_logged", "Workout logged"
         METRICS_LOGGED = "metrics_logged", "Body metrics logged"
+        # A coach logged a private session's exercises (never their notes).
+        SESSION_LOGGED = "session_logged", "Coach logged a training session"
         TRAINER_ACCEPT = "trainer_accept", "Trainer accepted"
         TRAINER_REJECT = "trainer_reject", "Trainer rejected"
 

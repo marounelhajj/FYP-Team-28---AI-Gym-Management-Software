@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { fetchClientHealth } from "../../api/health.js";
 import { fetchClientLog, fetchMyClients } from "../../api/progress.js";
 import { BADGE_TONES, MemberHealth, healthBadge } from "../health/HealthViews.jsx";
-import { MetricList, WeightChart, WorkoutList } from "./TrainingLogViews.jsx";
+import ClientProgress from "../coaching/ClientProgress.jsx";
+import { MetricList, WorkoutList } from "./TrainingLogViews.jsx";
 
 // SCRUM-60, the coach's side: the members they coach (booked private
 // training with them) and each one's self-logged workouts and body metrics,
@@ -12,6 +13,11 @@ import { MetricList, WeightChart, WorkoutList } from "./TrainingLogViews.jsx";
 // client's health restrictions and injuries before starting a session, so
 // that I can adapt the workout safely") - shown only while the client has a
 // recent or upcoming session with this coach.
+//
+// Then their development ("As a coach, I want to log client workout sessions
+// and progress notes, so that I can track each client's development over
+// time"): goals, strength, body weight, attendance and session notes -
+// see ../coaching/ClientProgress.jsx.
 export default function MyClients() {
   const [clients, setClients] = useState(null);
   const [selected, setSelected] = useState(null);
@@ -44,7 +50,7 @@ export default function MyClients() {
   return (
     <div style={styles.page}>
       <h1 style={styles.title}>My Clients</h1>
-      <p style={styles.subtitle}>Your private-training clients: their health notes, and the workouts and body metrics they log between sessions. View only.</p>
+      <p style={styles.subtitle}>Your private-training clients: health notes, goals and progress, your session notes, and what they log themselves.</p>
       {error && <div style={styles.errorBox}>{error}</div>}
       {clients && clients.length === 0 && <div style={styles.empty}>No private-training clients yet.</div>}
       {clients && clients.length > 0 && (
@@ -76,16 +82,19 @@ export default function MyClients() {
               <>
                 <div style={styles.detailHeader}>
                   <h2 style={styles.detailTitle}>{log.member.name}</h2>
-                  <span style={styles.readOnly}>Read-only</span>
                 </div>
                 <h3 style={styles.section}>Health &amp; injuries</h3>
                 {!health && <p style={styles.muted}>Loading...</p>}
                 {health?.member && <MemberHealth member={health.member} />}
                 {health?.unavailable && <p style={styles.muted}>{health.unavailable}</p>}
-                <h3 style={styles.section}>Body metrics</h3>
-                <WeightChart metrics={log.metrics} />
+                <h2 style={styles.part}>Progress</h2>
+                <ClientProgress memberId={selected} />
+                <h2 style={styles.part}>
+                  Logged by {log.member.name.split(" ")[0]} <span style={styles.readOnly}>Read-only</span>
+                </h2>
+                <h3 style={styles.section}>Body measurements</h3>
                 <MetricList metrics={log.metrics.slice(0, 5)} />
-                <h3 style={styles.section}>Recent workouts</h3>
+                <h3 style={styles.section}>Their own workouts</h3>
                 <WorkoutList workouts={log.workouts.slice(0, 12)} />
               </>
             )}
@@ -118,4 +127,5 @@ const styles = {
   detailTitle: { fontSize: 18, fontWeight: 800, margin: 0 },
   readOnly: { fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: "#ececf0", color: "#555" },
   section: { fontSize: 14, fontWeight: 800, margin: "16px 0 8px" },
+  part: { display: "flex", alignItems: "center", gap: 8, fontSize: 16, fontWeight: 800, margin: "22px 0 0", paddingTop: 14, borderTop: "1px solid #ececf0" },
 };

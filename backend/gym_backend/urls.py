@@ -23,6 +23,8 @@ urlpatterns = [
     path("api/feedback", include("feedback.urls")),
     path("api/health-notes", include("healthnotes.urls")),
     path("api/payroll", include("payroll.urls")),
+    path("api/coaching", include("coaching.urls")),
+    path("api/branch-feedback", include("branchfeedback.urls")),
     path("api/retail", include("retail.urls")),
     path("api/classes", include("classes.urls")),
     path("api", include("administration.urls")),

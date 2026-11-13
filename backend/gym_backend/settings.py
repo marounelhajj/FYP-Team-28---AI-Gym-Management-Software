@@ -58,6 +58,8 @@ INSTALLED_APPS = [
     'feedback',
     'healthnotes',
     'payroll',
+    'coaching',
+    'branchfeedback',
 ]
 
 MIDDLEWARE = [

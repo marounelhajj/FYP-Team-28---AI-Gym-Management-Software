@@ -17,6 +17,7 @@ class StaffNotification(models.Model):
     class Kind(models.TextChoices):
         CAPACITY_ALERT = "capacity_alert", "Branch near capacity"
         PAY_RATE_CHANGED = "pay_rate_changed", "Your pay rate changed"
+        NEW_COMPLAINT = "new_complaint", "A member complaint at your branch"
 
     recipient = models.ForeignKey(StaffAccount, on_delete=models.CASCADE, related_name="notifications")
     kind = models.CharField(max_length=30, choices=Kind.choices)
@@ -51,6 +52,7 @@ class MemberNotification(models.Model):
         CLASS_REMINDER = "class_reminder", "Upcoming class reminder"
         PT_REMINDER = "pt_reminder", "Upcoming private session reminder"
         RENEWAL_REMINDER = "renewal_reminder", "Membership renewal reminder"
+        COMPLAINT_UPDATE = "complaint_update", "An answer or update on your complaint"
 
     recipient = models.ForeignKey(Member, on_delete=models.CASCADE, related_name="notifications")
     kind = models.CharField(max_length=30, choices=Kind.choices)

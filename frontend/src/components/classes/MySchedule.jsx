@@ -4,6 +4,7 @@ import { addDays, dayOfMonth, formatLongDay, weekdayShort, weekLabel } from "./d
 import useServerClock, { offsetLabel } from "./useServerClock.js";
 import AttendanceSheet from "./AttendanceSheet.jsx";
 import HealthBriefing from "../health/HealthBriefing.jsx";
+import SessionLogForm from "../coaching/SessionLogForm.jsx";
 import { BADGE_TONES, healthBadge } from "../health/HealthViews.jsx";
 
 // A coach's own daily/weekly schedule: their classes and private training
@@ -90,6 +91,8 @@ function itemsFor(data) {
     cancelReason: s.cancelReason,
     health: s.state === "cancelled" ? null : healthBadge(health.ptSessions[s.id]),
     briefing: { kind: "pt", id: s.id },
+    ptId: s.id,
+    logged: (data.ptLogged || []).includes(s.id),
   }));
   const timeOff = (data.timeOff || []).flatMap((block) => {
     const blockStart = parseServerDateTime(block.startsAt);
@@ -123,6 +126,7 @@ export default function MySchedule() {
   const [error, setError] = useState(null);
   const [attendanceFor, setAttendanceFor] = useState(null);
   const [briefing, setBriefing] = useState(null);
+  const [logFor, setLogFor] = useState(null);
   const clock = useServerClock(data?.nowIso, data?.timeZone);
 
   const load = useCallback(() => {
@@ -217,18 +221,30 @@ export default function MySchedule() {
           item={item}
           onAttendance={() => setAttendanceFor(item.classId)}
           onHealth={() => setBriefing(item.briefing)}
+          onLog={() => setLogFor(item.ptId)}
         />
       ))}
 
       {attendanceFor && (
         <AttendanceSheet classId={attendanceFor} onClose={() => setAttendanceFor(null)} onChanged={load} />
       )}
+      {logFor && (
+        <SessionLogForm
+          sessionId={logFor}
+          onClose={() => {
+            setLogFor(null);
+            load();
+          }}
+        />
+      )}
       {briefing && <HealthBriefing kind={briefing.kind} id={briefing.id} onClose={() => setBriefing(null)} />}
     </div>
   );
 }
 
-function ScheduleRow({ item, onAttendance, onHealth }) {
+function ScheduleRow({ item, onAttendance, onHealth, onLog }) {
+  // Coaching notes can be written once a private session starts.
+  const canLog = item.kind === "Private training" && (item.state === "in_progress" || item.state === "finished");
   // SCRUM-36: attendance opens when a class starts.
   const canTakeAttendance = item.kind === "Class" && (item.state === "in_progress" || item.state === "finished");
   let tag = null;
@@ -266,6 +282,11 @@ function ScheduleRow({ item, onAttendance, onHealth }) {
         {item.health && (
           <button type="button" onClick={onHealth} style={styles.healthButton} aria-label={`Health briefing for ${item.title}`}>
             Health briefing
+          </button>
+        )}
+        {canLog && (
+          <button type="button" onClick={onLog} style={item.logged ? styles.loggedButton : styles.attendanceButton} aria-label={`${item.logged ? "View log" : "Log session"} for ${item.title}`}>
+            {item.logged ? "✓ Logged" : "Log session"}
           </button>
         )}
         {canTakeAttendance && (
@@ -358,6 +379,17 @@ const styles = {
     fontWeight: 700,
     cursor: "pointer",
     whiteSpace: "nowrap",
+  },
+  loggedButton: {
+    height: 30,
+    padding: "0 12px",
+    border: "1px solid #129638",
+    borderRadius: 8,
+    background: "#e3f5e8",
+    color: "#0f6e2b",
+    fontSize: 12,
+    fontWeight: 700,
+    cursor: "pointer",
   },
   attendanceButton: {
     height: 30,

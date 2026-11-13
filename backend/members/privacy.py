@@ -11,6 +11,8 @@ from rest_framework.response import Response
 from audit.log import record
 from audit.models import AuditLog
 from billing.models import PaymentMethod
+from branchfeedback.models import BranchSurvey, Complaint, ComplaintMessage
+from coaching.models import ClientGoal, SessionLog
 from checkins.models import CheckInFlag
 from classes.rules import release_future_bookings
 from notifications.models import MemberNotification, NotificationSettings, SentReminder
@@ -32,7 +34,8 @@ from .models import AccessCardReissue, Member
 #   * Personal data is REMOVED outright: login credentials, contact details,
 #     the payment method on file, access-card reissue notes, check-in flag
 #     notes, the self-logged workouts and body metrics (SCRUM-60), their
-#     health notes (injuries and restrictions), and every
+#     health notes (injuries and restrictions), their coaches' session logs
+#     and goals, and every
 #     AI training event (training.events.delete_training_events_for_member).
 #   * Records the gym has to keep are KEPT but ANONYMIZED, not hard-deleted:
 #       - the Member row itself, so the records below keep their anchor
@@ -191,6 +194,56 @@ def build_export(member):
             }
             for f in member.coach_feedback.select_related("coach")
         ],
+        # What their coaches logged about them, and the goals set with them.
+        "coachSessionLogs": [
+            {
+                "coach": log.coach.full_name, "sessionStartsAt": _stamp(log.session.starts_at),
+                "subjective": log.subjective, "objective": log.objective, "assessment": log.assessment,
+                "plan": log.plan, "bodyWeightKg": str(log.body_weight_kg) if log.body_weight_kg is not None else None,
+                "sessionRpe": log.session_rpe,
+                "exercises": [
+                    {
+                        "exercise": e.exercise, "kind": e.kind, "sets": e.sets, "reps": e.reps,
+                        "weightKg": str(e.weight_kg) if e.weight_kg is not None else None,
+                        "durationMinutes": e.duration_minutes,
+                        "distanceKm": str(e.distance_km) if e.distance_km is not None else None,
+                        "rpe": e.rpe, "note": e.note,
+                    }
+                    for e in log.exercises.all()
+                ],
+            }
+            for log in member.coach_session_logs.select_related("coach", "session").prefetch_related("exercises")
+        ],
+        "goals": [
+            {
+                "title": g.title, "kind": g.kind, "exercise": g.exercise,
+                "startValue": str(g.start_value) if g.start_value is not None else None,
+                "targetValue": str(g.target_value) if g.target_value is not None else None,
+                "targetDate": _stamp(g.target_date), "status": g.status, "closedOn": _stamp(g.closed_on),
+                "note": g.note, "createdAt": _stamp(g.created_at),
+            }
+            for g in member.goals.all()
+        ],
+        # Branch surveys (anonymous ones included - they are still theirs) and complaints.
+        "branchSurveys": [
+            {
+                "branch": s.branch, "nps": s.nps, "cleanliness": s.cleanliness, "equipment": s.equipment,
+                "staff": s.staff, "classes": s.classes, "atmosphere": s.atmosphere, "comment": s.comment,
+                "anonymous": s.anonymous, "createdAt": _stamp(s.created_at),
+            }
+            for s in member.branch_surveys.all()
+        ],
+        "complaints": [
+            {
+                "branch": c.branch, "category": c.category, "subject": c.subject, "description": c.description,
+                "status": c.status, "createdAt": _stamp(c.created_at), "resolvedAt": _stamp(c.resolved_at),
+                "messages": [
+                    {"from": "you" if m.author_member_id else "staff", "body": m.body, "at": _stamp(m.created_at)}
+                    for m in c.messages.filter(internal=False)
+                ],
+            }
+            for c in member.complaints.all()
+        ],
         "healthNotes": [
             {
                 "kind": n.kind, "bodyArea": n.body_area, "severity": n.severity, "title": n.title, "details": n.details,
@@ -257,6 +310,13 @@ def anonymize_member(member):
         # Health notes are theirs alone - nothing the gym has to keep.
         HealthNote.objects.filter(member=member).delete()
         HealthDeclaration.objects.filter(member=member).delete()
+        # Coaches' session logs and goals are about them, not a record the gym must keep.
+        SessionLog.objects.filter(member=member).delete()
+        # Branch scores still count, without them; their words and complaints are removed.
+        BranchSurvey.objects.filter(member=member).update(member=None, comment="")
+        ComplaintMessage.objects.filter(complaint__member=member).delete()
+        Complaint.objects.filter(member=member).update(member=None, subject=REDACTED, description=REDACTED)
+        ClientGoal.objects.filter(member=member).delete()
         # Notifications are messages to them, not a record the gym must keep.
         MemberNotification.objects.filter(recipient=member).delete()
         NotificationSettings.objects.filter(member=member).delete()

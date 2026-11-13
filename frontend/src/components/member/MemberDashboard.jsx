@@ -13,6 +13,8 @@ import MemberBooking from "./MemberBooking.jsx";
 import MyTrainingLog from "../progress/MyTrainingLog.jsx";
 import RateMyCoaches from "../feedback/RateMyCoaches.jsx";
 import MyHealthNotes from "../health/MyHealthNotes.jsx";
+import MyProgress from "../coaching/MyProgress.jsx";
+import MyBranchFeedback from "../branchfeedback/MyBranchFeedback.jsx";
 import MemberPaymentMethodForm from "./MemberPaymentMethodForm.jsx";
 import MemberPrivacyPanel from "./MemberPrivacyPanel.jsx";
 import MemberProfileForm from "./MemberProfileForm.jsx";
@@ -214,11 +216,17 @@ export default function MemberDashboard({ member: initialMember, onDeleted }) {
       <h2 style={styles.sectionTitle}>Health &amp; injuries</h2>
       <MyHealthNotes />
 
+      <h2 style={styles.sectionTitle}>My progress</h2>
+      <MyProgress />
+
       <h2 style={styles.sectionTitle}>My training log</h2>
       <MyTrainingLog />
 
       <h2 style={styles.sectionTitle}>Rate your coaches</h2>
       <RateMyCoaches />
+
+      <h2 style={styles.sectionTitle}>Feedback &amp; complaints</h2>
+      <MyBranchFeedback />
 
       <h2 style={styles.sectionTitle}>Billing history</h2>
       {billingError && <div style={styles.errorBox}>Couldn't load your billing history: {billingError}</div>}

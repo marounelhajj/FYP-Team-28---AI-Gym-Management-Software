@@ -1,6 +1,8 @@
 from django.urls import path
 
 from billing import views as billing_views
+from branchfeedback import views as branch_feedback_views
+from coaching import views as coaching_views
 from classes import views as class_views
 from feedback import views as feedback_views
 from headcount import busy as headcount_busy
@@ -26,6 +28,11 @@ urlpatterns = [
     path("/me/resume", views.my_resume),
     path("/me/cancel", views.my_cancel),
     path("/me/busy", headcount_busy.my_branch_busy),
+    path("/me/progress", coaching_views.my_progress),
+    path("/me/branch-feedback", branch_feedback_views.my_branch_feedback),
+    path("/me/branch-feedback/surveys", branch_feedback_views.submit_survey),
+    path("/me/complaints", branch_feedback_views.submit_complaint),
+    path("/me/complaints/<int:complaint_id>/messages", branch_feedback_views.member_reply),
     path("/me/workouts", progress_views.my_workouts),
     path("/me/workouts/<int:entry_id>", progress_views.my_workout_detail),
     path("/me/metrics", progress_views.my_metrics),

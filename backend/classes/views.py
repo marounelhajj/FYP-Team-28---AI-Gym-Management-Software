@@ -14,6 +14,7 @@ from audit.log import changes, record
 from audit.models import AuditLog
 from checkins.models import active_flags
 from headcount.views import resolve_branch
+from coaching.models import SessionLog
 from healthnotes import access as health_access
 from members import qr
 from members.access import door_access
@@ -538,6 +539,8 @@ def my_schedule(request):
         "timeOff": TimeOffSerializer(time_off, many=True).data,
         # Who has health restrictions to know about before each session.
         "health": health_access.schedule_badges(list(classes), sessions),
+        # Private sessions this coach has already logged (coaching app).
+        "ptLogged": list(SessionLog.objects.filter(session__in=sessions).values_list("session_id", flat=True)),
     })
 
 
