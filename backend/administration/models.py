@@ -25,6 +25,7 @@ PERMISSION_CHOICES = [
     ("process_sales", "Process retail sales (point of sale)"),
     ("manage_retail_products", "Manage retail products & stock"),
     ("manage_member_feedback", "View & answer member feedback and complaints"),
+    ("view_coach_ratings", "View personal trainer ratings & feedback by branch"),
 ]
 PERMISSION_KEYS = {key for key, _ in PERMISSION_CHOICES}
 
