@@ -6,7 +6,7 @@ from django.utils import timezone
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from administration.permissions import get_staff_account
+from administration.permissions import authorize, get_staff_account
 from classes import rules
 from classes.models import ClassBooking, GymClass, PTSession
 from members.models import Member
@@ -271,4 +271,63 @@ def coach_ratings(request):
             for f in listed[:COACH_LIMIT]
         ],
         "matching": listed.count(),
+    })
+
+
+# --- the general manager's side ---------------------------------------------
+
+# User story: "As a general manager, I want to view personal trainer ratings
+# by branch, so that I can inform staffing, coaching, and incentive
+# decisions."
+#
+# Grouped by CoachFeedback.branch - where the session actually happened, not
+# a coach's home branch - so a floating coach's sessions still land under
+# whichever branch they were delivered at, same as everywhere else branch
+# shows up on a rating/session. Every branch is always listed, even at zero
+# (same idea as audit.views.retention_report and finance.views.financial_report),
+# and each branch lists its coaches ranked by average rating (best first) so
+# a GM can spot who to recognise or who needs coaching without digging.
+
+RATINGS_PERMISSION = "view_coach_ratings"
+
+
+# GET /api/feedback/report?branch= - every branch the caller can see (or
+#     just one, narrowed with ?branch=), each with its overall rating count,
+#     average and star breakdown, plus its coaches ranked by average rating.
+@api_view(["GET"])
+def ratings_by_branch(request):
+    _, denied = authorize(request, RATINGS_PERMISSION)
+    if denied:
+        return denied
+
+    requested = (request.query_params.get("branch") or "").strip()
+    if requested and requested not in Member.Branch.values:
+        return Response({
+            "error": f'Invalid branch "{requested}". Must be one of: {", ".join(Member.Branch.values)}',
+        }, status=400)
+    branch_list = [requested] if requested else list(Member.Branch.values)
+
+    all_ratings = CoachFeedback.objects.filter(branch__in=branch_list)
+
+    branches = []
+    for branch in branch_list:
+        rows = all_ratings.filter(branch=branch)
+        counts = dict(rows.order_by().values("rating").annotate(n=Count("id")).values_list("rating", "n"))
+        by_coach = (rows.values("coach_id", "coach__full_name").annotate(count=Count("id"), average=Avg("rating"))
+                    .order_by("-average", "-count", "coach__full_name"))
+        branches.append({
+            "branch": branch,
+            "count": sum(counts.values()),
+            "average": _average(rows),
+            "stars": {str(n): counts.get(n, 0) for n in range(5, 0, -1)},
+            "coaches": [
+                {"id": row["coach_id"], "name": row["coach__full_name"], "count": row["count"],
+                 "average": round(row["average"], 2)}
+                for row in by_coach
+            ],
+        })
+
+    return Response({
+        "branches": branches,
+        "totals": {"count": all_ratings.count(), "average": _average(all_ratings)},
     })

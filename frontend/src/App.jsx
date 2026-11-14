@@ -27,6 +27,7 @@ import MemberDashboard from "./components/member/MemberDashboard.jsx";
 import PlanBrowser from "./components/member/PlanBrowser.jsx";
 import MyClients from "./components/progress/MyClients.jsx";
 import MyRatings from "./components/feedback/MyRatings.jsx";
+import PTRatingsReport from "./components/feedback/PTRatingsReport.jsx";
 import MyPay from "./components/payroll/MyPay.jsx";
 import CoachPayManager from "./components/payroll/CoachPayManager.jsx";
 import BranchFeedback from "./components/branchfeedback/BranchFeedback.jsx";
@@ -130,6 +131,12 @@ function availableScreens(account) {
   // roles that see every branch pick one.
   if (has("manage_member_feedback")) {
     screens.push({ key: "feedback", label: "Member Feedback", render: () => <BranchFeedback /> });
+  }
+  // User story: "As a general manager, I want to view personal trainer
+  // ratings by branch, so that I can inform staffing, coaching, and
+  // incentive decisions."
+  if (has("view_coach_ratings")) {
+    screens.push({ key: "ptratings", label: "PT Ratings", render: () => <PTRatingsReport /> });
   }
   // Coaches' hourly rates and pay statements - a Branch Manager for their own
   // branch's coaches (the server holds them to it).

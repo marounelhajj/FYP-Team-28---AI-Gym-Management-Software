@@ -3,6 +3,7 @@ from datetime import timedelta
 from django.test import TestCase
 from django.utils import timezone
 
+from administration.models import StaffAccount
 from administration.testing import staff_login
 from classes.models import ClassBooking, PTSession
 from classes.tests import PASSWORD, _class, _coach, _day, _member, _staff
@@ -233,3 +234,75 @@ class CoachRatingsTests(TestCase):
         self.assertEqual(body["summary"]["count"], 3)
         lina_rows = [r for r in body["results"] if r["rating"] in (4, 5)]
         self.assertTrue(all(r["comment"] == "" and r["memberName"] != "Lina Haddad" for r in lina_rows))
+
+
+# User story: "As a general manager, I want to view personal trainer
+# ratings by branch, so that I can inform staffing, coaching, and
+# incentive decisions."
+class RatingsByBranchTests(TestCase):
+    def setUp(self):
+        self.hadi = _coach("hadi", branch="Hamra")
+        self.rita = _coach("rita", branch="Hamra")
+        self.lara = _coach("lara", branch="Jnah")
+        self.lina = _member("Lina Haddad", "lina")
+        self.sami = _member("Sami Khoury", "sami")
+        _feedback(self.lina, _class("Yoga", self.hadi, _day(-2), branch="Hamra"), 5)
+        _feedback(self.sami, _class("Spin", self.hadi, _day(-1), branch="Hamra"), 3)
+        _feedback(self.lina, _class("Boxing", self.rita, _day(-3), branch="Hamra"), 4)
+        _feedback(self.sami, _class("Pilates", self.lara, _day(-1), branch="Jnah"), 2)
+
+    def get(self, query=""):
+        return self.client.get(f"/api/feedback/report{query}")
+
+    def gm(self):
+        return _staff("rhaddad", ["view_coach_ratings"], branch=None, job_title=StaffAccount.JobTitle.GENERAL_MANAGER)
+
+    def test_requires_authentication(self):
+        self.assertEqual(self.get().status_code, 401)
+
+    def test_requires_the_permission(self):
+        _staff("kabboud", ["manage_class_schedule", "manage_members"], branch="Hamra")
+        staff_login(self.client, "kabboud", PASSWORD)
+        self.assertEqual(self.get().status_code, 403)
+
+    def test_every_branch_is_listed_even_with_no_ratings(self):
+        self.gm()
+        staff_login(self.client, "rhaddad", PASSWORD)
+        body = self.get().json()
+        self.assertEqual([b["branch"] for b in body["branches"]], ["Hamra", "Achrafieh", "Jnah", "Zalka"])
+        achrafieh = next(b for b in body["branches"] if b["branch"] == "Achrafieh")
+        self.assertEqual((achrafieh["count"], achrafieh["average"], achrafieh["coaches"]), (0, None, []))
+
+    def test_branch_totals_and_star_breakdown(self):
+        self.gm()
+        staff_login(self.client, "rhaddad", PASSWORD)
+        hamra = next(b for b in self.get().json()["branches"] if b["branch"] == "Hamra")
+        self.assertEqual(hamra["count"], 3)
+        self.assertEqual(hamra["average"], 4.0)
+        self.assertEqual(hamra["stars"], {"5": 1, "4": 1, "3": 1, "2": 0, "1": 0})
+
+    def test_coaches_within_a_branch_are_ranked_by_average(self):
+        self.gm()
+        staff_login(self.client, "rhaddad", PASSWORD)
+        hamra = next(b for b in self.get().json()["branches"] if b["branch"] == "Hamra")
+        self.assertEqual(
+            [(c["name"], c["count"], c["average"]) for c in hamra["coaches"]],
+            [("Hadi", 2, 4.0), ("Rita", 1, 4.0)],
+        )  # tied average, so the richer sample (more ratings) sorts first
+
+    def test_narrowing_to_one_branch(self):
+        self.gm()
+        staff_login(self.client, "rhaddad", PASSWORD)
+        body = self.get("?branch=Jnah").json()
+        self.assertEqual([b["branch"] for b in body["branches"]], ["Jnah"])
+        self.assertEqual(body["totals"], {"count": 1, "average": 2.0})
+
+    def test_invalid_branch_is_rejected(self):
+        self.gm()
+        staff_login(self.client, "rhaddad", PASSWORD)
+        self.assertEqual(self.get("?branch=Nowhere").status_code, 400)
+
+    def test_totals_combine_every_branch(self):
+        self.gm()
+        staff_login(self.client, "rhaddad", PASSWORD)
+        self.assertEqual(self.get().json()["totals"], {"count": 4, "average": 3.5})
