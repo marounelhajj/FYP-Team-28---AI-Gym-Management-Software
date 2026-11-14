@@ -60,6 +60,7 @@ INSTALLED_APPS = [
     'payroll',
     'coaching',
     'branchfeedback',
+    'marketing',
 ]
 
 MIDDLEWARE = [

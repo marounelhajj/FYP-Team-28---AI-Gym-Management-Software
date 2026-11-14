@@ -47,6 +47,8 @@ class AuditLog(models.Model):
         PLAN_UPDATED = "plan.updated", "Membership plan edited"
         PROMOTION_CREATED = "promotion.created", "Branch promotion created"
         PROMOTION_UPDATED = "promotion.updated", "Branch promotion edited"
+        CAMPAIGN_CREATED = "campaign.created", "Marketing campaign started"
+        CAMPAIGN_UPDATED = "campaign.updated", "Marketing campaign edited"
         # Members and billing
         MEMBER_REGISTERED = "member.registered", "Walk-in member registered"
         MEMBER_SIGNED_UP = "member.signed_up", "Member signed up online"

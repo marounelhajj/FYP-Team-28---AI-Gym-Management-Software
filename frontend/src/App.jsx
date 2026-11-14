@@ -28,6 +28,8 @@ import PlanBrowser from "./components/member/PlanBrowser.jsx";
 import MyClients from "./components/progress/MyClients.jsx";
 import MyRatings from "./components/feedback/MyRatings.jsx";
 import PTRatingsReport from "./components/feedback/PTRatingsReport.jsx";
+import CampaignManager from "./components/marketing/CampaignManager.jsx";
+import CampaignsByBranch from "./components/marketing/CampaignsByBranch.jsx";
 import MyPay from "./components/payroll/MyPay.jsx";
 import CoachPayManager from "./components/payroll/CoachPayManager.jsx";
 import BranchFeedback from "./components/branchfeedback/BranchFeedback.jsx";
@@ -137,6 +139,15 @@ function availableScreens(account) {
   // incentive decisions."
   if (has("view_coach_ratings")) {
     screens.push({ key: "ptratings", label: "PT Ratings", render: () => <PTRatingsReport /> });
+  }
+  // User story: "As a general manager, I want to view the marketing
+  // campaigns and strategies being run at each branch, so that I can
+  // assess alignment with overall brand direction and spending."
+  if (has("manage_marketing_campaigns")) {
+    screens.push({ key: "campaigns", label: "Marketing Campaigns", render: () => <CampaignManager /> });
+  }
+  if (has("view_marketing_campaigns")) {
+    screens.push({ key: "campaignsbybranch", label: "Campaigns by Branch", render: () => <CampaignsByBranch /> });
   }
   // Coaches' hourly rates and pay statements - a Branch Manager for their own
   // branch's coaches (the server holds them to it).
