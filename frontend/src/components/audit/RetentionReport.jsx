@@ -32,14 +32,38 @@ function BranchBar({ value, max }) {
   );
 }
 
+// The retention rate itself, not relative to the other branches in view
+// (it's already a percentage, so 0-100% is the natural scale) - colored so
+// a branch with a retention issue stands out without reading the number.
+// Thresholds are a starting point for what counts as a "problem", not a
+// fixed policy - easy to retune once the General Manager has a feel for it.
+function RateBar({ value }) {
+  if (value === null) return <span style={styles.noRate}>No members yet</span>;
+  const color = value < 85 ? BUTTON_COLORS.red.background : value < 95 ? "#e8a400" : BUTTON_COLORS.green.background;
+  return (
+    <div style={styles.rateRow}>
+      <div style={styles.barTrack}>
+        <div style={{ ...styles.barFill, width: `${Math.max(2, value)}%`, background: color }} />
+      </div>
+      <span style={{ ...styles.rateNumber, color }}>{value.toFixed(1)}%</span>
+    </div>
+  );
+}
+
 // General Manager (and System Administrator, from the Admin Console) view
 // of freezes and cancellations across branches - a focused read of the
 // audit log (reuses its model, permission and branch/date filters), not a
-// second place anything gets logged.
+// second place anything gets logged. The Retention Rate column is a
+// separate, simpler number alongside that history: the share of each
+// branch's current members who haven't cancelled, so branches of very
+// different sizes can be compared on equal footing in this one view,
+// rather than by raw freeze/cancel counts alone.
 //
 // User story: "As a general manager, I want to view a history of
 // membership freezes and cancellations by branch, so that I can spot
-// patterns affecting retention."
+// patterns affecting retention." Extended by: "As a general manager, I
+// want to compare branch membership retention rates in a single view,
+// so that I can identify branches with retention issues."
 export default function RetentionReport() {
   const [branches, setBranches] = useState([]);
   const [filters, setFilters] = useState(EMPTY_FILTERS);
@@ -142,6 +166,7 @@ export default function RetentionReport() {
               <th style={styles.th}>Cancelled</th>
               <th style={styles.th}>Total</th>
               <th style={styles.th}></th>
+              <th style={styles.th}>Retention Rate</th>
             </tr>
           </thead>
           <tbody>
@@ -154,6 +179,9 @@ export default function RetentionReport() {
                 <td style={{ ...styles.td, width: 160 }}>
                   <BranchBar value={b.total} max={maxTotal} />
                 </td>
+                <td style={{ ...styles.td, width: 180 }}>
+                  <RateBar value={b.retentionRate} />
+                </td>
               </tr>
             ))}
           </tbody>
@@ -165,6 +193,9 @@ export default function RetentionReport() {
                 <td style={{ ...styles.td, ...styles.totalRow }}>{data.totals.cancelled}</td>
                 <td style={{ ...styles.td, ...styles.totalRow }}>{data.totals.total}</td>
                 <td style={{ ...styles.td, ...styles.totalRow }}></td>
+                <td style={{ ...styles.td, ...styles.totalRow }}>
+                  <RateBar value={data.totals.retentionRate} />
+                </td>
               </tr>
             </tfoot>
           )}
@@ -296,8 +327,11 @@ const styles = {
   },
   td: { padding: "10px 12px", borderBottom: "1px solid #f0f0f3", verticalAlign: "middle" },
   totalRow: { fontWeight: 700, background: "#fafafb", borderTop: "2px solid #e4e4e8", borderBottom: "none" },
-  barTrack: { height: 8, borderRadius: 999, background: "#eef1f8", overflow: "hidden" },
+  barTrack: { flex: 1, height: 8, borderRadius: 999, background: "#eef1f8", overflow: "hidden" },
   barFill: { height: "100%", borderRadius: 999, background: "#124096" },
+  rateRow: { display: "flex", alignItems: "center", gap: 8 },
+  rateNumber: { fontSize: 13, fontWeight: 700, width: 48, textAlign: "right", flexShrink: 0 },
+  noRate: { fontSize: 13, color: "#999" },
   sectionTitle: { fontSize: 16, fontWeight: 700, margin: "4px 0 10px" },
   empty: { fontSize: 14, color: "#888", padding: "16px 0" },
   badge: {
