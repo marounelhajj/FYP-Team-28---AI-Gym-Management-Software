@@ -155,6 +155,22 @@ def filtered_entries(params):
 RETENTION_ACTIONS = [AuditLog.Action.MEMBER_FROZEN, AuditLog.Action.MEMBER_CANCELLED]
 
 
+# Each branch's current membership base, independent of the date filter
+# above (that one narrows the event history below; a retention rate is
+# about the branch's members right now, not events in a past window). A
+# member who isn't Cancelled counts as retained - Frozen is a pause, not a
+# departure, same distinction the freeze/cancel split already makes.
+def _retention_rates():
+    by_branch = Member.objects.values("branch").annotate(
+        total=Count("id"), cancelled=Count("id", filter=Q(status=Member.Status.CANCELLED)),
+    )
+    return {row["branch"]: (row["total"], row["cancelled"]) for row in by_branch}
+
+
+def _rate(total, cancelled):
+    return None if total == 0 else round((total - cancelled) / total * 100, 1)
+
+
 # GET /api/audit-log/retention?branch=&dateFrom=&dateTo=&limit=&offset=
 #
 # Freezes and cancellations, broken down by branch, plus the underlying
@@ -162,15 +178,20 @@ RETENTION_ACTIONS = [AuditLog.Action.MEMBER_FROZEN, AuditLog.Action.MEMBER_CANCE
 # filtered_entries so "branch"/"dateFrom"/"dateTo" behave identically -
 # "user" and "action" are simply not sent by this screen's filter bar).
 # Every branch is always listed, even at zero, so a quiet branch is as
-# visible as a noisy one.
+# visible as a noisy one. Each branch also carries a retentionRate (percent
+# of its current members who aren't Cancelled - null if it has none), so
+# branches of very different sizes can be compared on equal footing rather
+# than by raw counts alone.
 #
-# 200 + {"branches": [{"branch", "frozen", "cancelled", "total"}, ...],
-#        "totals": {"frozen", "cancelled", "total"},
+# 200 + {"branches": [{"branch", "frozen", "cancelled", "total", "retentionRate"}, ...],
+#        "totals": {"frozen", "cancelled", "total", "retentionRate"},
 #        "events": {"total", "limit", "offset", "results"}}
 #
 # User story: "As a general manager, I want to view a history of membership
 # freezes and cancellations by branch, so that I can spot patterns
-# affecting retention."
+# affecting retention." Extended by: "As a general manager, I want to
+# compare branch membership retention rates in a single view, so that I
+# can identify branches with retention issues."
 @api_view(["GET"])
 def retention_report(request):
     _, denied = authorize(request, VIEW_PERMISSION)
@@ -187,17 +208,31 @@ def retention_report(request):
         key = "frozen" if row["action"] == AuditLog.Action.MEMBER_FROZEN else "cancelled"
         counts[row["branch"]][key] = row["count"]
 
+    # Already validated by filtered_entries above (an invalid value would
+    # have returned a 400 before this point) - reused here so the
+    # retentionRate totals narrow to one branch exactly like the event
+    # totals above already do.
+    branch_filter = (request.query_params.get("branch") or "").strip()
+
+    rates = _retention_rates()
     branches = []
     totals = {"frozen": 0, "cancelled": 0}
+    overall_total = overall_cancelled = 0
     for branch in Member.Branch.values:
         bucket = counts[branch]
+        branch_total, branch_cancelled = rates.get(branch, (0, 0))
         branches.append({
             "branch": branch, "frozen": bucket["frozen"], "cancelled": bucket["cancelled"],
             "total": bucket["frozen"] + bucket["cancelled"],
+            "retentionRate": _rate(branch_total, branch_cancelled),
         })
         totals["frozen"] += bucket["frozen"]
         totals["cancelled"] += bucket["cancelled"]
+        if not branch_filter or branch == branch_filter:
+            overall_total += branch_total
+            overall_cancelled += branch_cancelled
     totals["total"] = totals["frozen"] + totals["cancelled"]
+    totals["retentionRate"] = _rate(overall_total, overall_cancelled)
 
     try:
         limit = int(request.query_params.get("limit", 50))

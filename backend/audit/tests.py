@@ -464,17 +464,20 @@ class RetentionReportTests(TestCase):
         body = self.report()
         by_branch = {b["branch"]: b for b in body["branches"]}
         self.assertEqual(set(by_branch), {"Hamra", "Achrafieh", "Jnah", "Zalka"})
-        self.assertEqual(by_branch["Achrafieh"], {"branch": "Achrafieh", "frozen": 0, "cancelled": 0, "total": 0})
+        self.assertEqual(by_branch["Achrafieh"],
+                        {"branch": "Achrafieh", "frozen": 0, "cancelled": 0, "total": 0, "retentionRate": None})
 
     def test_counts_split_frozen_and_cancelled_per_branch(self):
         body = self.report()
         by_branch = {b["branch"]: b for b in body["branches"]}
-        self.assertEqual(by_branch["Hamra"], {"branch": "Hamra", "frozen": 1, "cancelled": 1, "total": 2})
-        self.assertEqual(by_branch["Jnah"], {"branch": "Jnah", "frozen": 0, "cancelled": 1, "total": 1})
+        self.assertEqual(by_branch["Hamra"],
+                        {"branch": "Hamra", "frozen": 1, "cancelled": 1, "total": 2, "retentionRate": None})
+        self.assertEqual(by_branch["Jnah"],
+                        {"branch": "Jnah", "frozen": 0, "cancelled": 1, "total": 1, "retentionRate": None})
 
     def test_totals_sum_every_branch(self):
         body = self.report()
-        self.assertEqual(body["totals"], {"frozen": 1, "cancelled": 2, "total": 3})
+        self.assertEqual(body["totals"], {"frozen": 1, "cancelled": 2, "total": 3, "retentionRate": None})
 
     def test_resumes_and_unrelated_actions_are_excluded(self):
         body = self.report()
@@ -492,14 +495,14 @@ class RetentionReportTests(TestCase):
     def test_branch_filter_narrows_both_counts_and_events(self):
         body = self.report("?branch=Hamra")
         self.assertEqual([b["branch"] for b in body["branches"]], ["Hamra", "Achrafieh", "Jnah", "Zalka"])
-        self.assertEqual(body["totals"], {"frozen": 1, "cancelled": 1, "total": 2})
+        self.assertEqual(body["totals"], {"frozen": 1, "cancelled": 1, "total": 2, "retentionRate": None})
         self.assertEqual({e["id"] for e in body["events"]["results"]}, {self.hamra_freeze.id, self.hamra_cancel.id})
 
     def test_date_range_filter(self):
         today = timezone.localdate()
         since = today - timedelta(days=2)
         body = self.report(f"?dateFrom={since}")
-        self.assertEqual(body["totals"], {"frozen": 0, "cancelled": 1, "total": 1})
+        self.assertEqual(body["totals"], {"frozen": 0, "cancelled": 1, "total": 1, "retentionRate": None})
         self.assertEqual([e["id"] for e in body["events"]["results"]], [self.jnah_cancel.id])
 
     def test_invalid_branch_is_rejected(self):
@@ -515,3 +518,67 @@ class RetentionReportTests(TestCase):
         self.assertEqual(self.client.get("/api/audit-log/retention").status_code, 401)
         staff_login(self.client, "desk", PASSWORD)
         self.assertEqual(self.client.get("/api/audit-log/retention").status_code, 403)
+
+
+def _member(name, username, branch, status=Member.Status.ACTIVE):
+    member = Member(name=name, email=f"{username}@example.com", phone="70000000", branch=branch,
+                    join_date=timezone.localdate(), username=username, status=status)
+    member.set_password(PASSWORD)
+    member.save()
+    return member
+
+
+# User story: "As a general manager, I want to compare branch membership
+# retention rates in a single view, so that I can identify branches with
+# retention issues." Extends audit.views.retention_report (above) with a
+# retentionRate per branch, computed from the members themselves rather
+# than from audit log events, so branches of different sizes are
+# comparable on equal footing.
+class RetentionRateTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        _staff("gm", "Rami GM", ["view_audit_log"], role_name="General Manager")
+        # Hamra: 3 kept (2 active, 1 frozen - a pause, not a departure) and
+        # 1 cancelled -> 75% retained.
+        _member("Lea", "lea", "Hamra", Member.Status.ACTIVE)
+        _member("Sami", "sami", "Hamra", Member.Status.ACTIVE)
+        _member("Omar", "omar", "Hamra", Member.Status.FROZEN)
+        _member("Nadia", "nadia", "Hamra", Member.Status.CANCELLED)
+        # Jnah: everyone kept -> 100%.
+        _member("Rita", "rita", "Jnah", Member.Status.ACTIVE)
+        # Zalka: the only member there cancelled -> 0%.
+        _member("Karim", "karim", "Zalka", Member.Status.CANCELLED)
+        # Achrafieh: nobody has ever joined -> no rate to show.
+
+    def setUp(self):
+        staff_login(self.client, "gm", PASSWORD)
+
+    def report(self, query=""):
+        res = self.client.get(f"/api/audit-log/retention{query}")
+        self.assertEqual(res.status_code, 200, res.content)
+        return {b["branch"]: b["retentionRate"] for b in res.json()["branches"]}, res.json()["totals"]["retentionRate"]
+
+    def test_rate_is_the_share_of_current_members_who_are_not_cancelled(self):
+        rates, _ = self.report()
+        self.assertEqual(rates, {"Hamra": 75.0, "Achrafieh": None, "Jnah": 100.0, "Zalka": 0.0})
+
+    def test_overall_rate_combines_every_branch(self):
+        _, overall = self.report()
+        self.assertEqual(overall, 66.7)  # 4 of 6 members across every branch are retained
+
+    def test_narrowing_to_one_branch_narrows_the_overall_rate_too(self):
+        _, overall = self.report("?branch=Hamra")
+        self.assertEqual(overall, 75.0)
+
+    def test_the_rate_does_not_move_with_the_event_date_filter(self):
+        # The date filter narrows the freeze/cancel EVENT history below,
+        # not the membership snapshot the rate is built from.
+        AuditLog.objects.create(
+            created_at=timezone.now() - timedelta(days=60), action=AuditLog.Action.MEMBER_CANCELLED,
+            actor_type=AuditLog.ActorType.MEMBER, actor_username="nadia", actor_name="Nadia",
+            branch="Hamra", summary="x",
+        )
+        unfiltered, _ = self.report()
+        since = timezone.localdate() - timedelta(days=1)
+        filtered, _ = self.report(f"?dateFrom={since}")
+        self.assertEqual(unfiltered["Hamra"], filtered["Hamra"])
