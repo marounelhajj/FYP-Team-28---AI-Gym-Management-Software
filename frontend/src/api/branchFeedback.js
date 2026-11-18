@@ -34,3 +34,6 @@ export const setComplaintStatus = (id, status, message) =>
   send("PATCH", `/api/branch-feedback/complaints/${id}`, { status, message });
 // SCRUM-94: pass a complaint up to the general manager, with the reason.
 export const escalateComplaint = (id, reason) => send("POST", `/api/branch-feedback/complaints/${id}/escalate`, { reason });
+
+// SCRUM-23: every branch's month side by side (roles that see every branch).
+export const fetchFeedbackOverview = (params) => request(query("/api/branch-feedback/overview", params));

@@ -33,6 +33,7 @@ import CampaignsByBranch from "./components/marketing/CampaignsByBranch.jsx";
 import MyPay from "./components/payroll/MyPay.jsx";
 import CoachPayManager from "./components/payroll/CoachPayManager.jsx";
 import BranchFeedback from "./components/branchfeedback/BranchFeedback.jsx";
+import FeedbackOverview from "./components/branchfeedback/FeedbackOverview.jsx";
 import NotificationBell from "./components/NotificationBell.jsx";
 import { memberNotificationsApi } from "./api/notifications.js";
 import Logo from "./components/Logo.jsx";
@@ -133,6 +134,12 @@ function availableScreens(account) {
   // roles that see every branch pick one.
   if (has("manage_member_feedback")) {
     screens.push({ key: "feedback", label: "Member Feedback", render: () => <BranchFeedback /> });
+  }
+  // SCRUM-23: "As a general manager, I want to view customer reviews,
+  // feedback, and suggestions across branches, so that I can identify
+  // recurring service issues..." - every branch side by side.
+  if (has("manage_member_feedback") && has("view_all_branches")) {
+    screens.push({ key: "feedbackoverview", label: "Feedback Overview", render: () => <FeedbackOverview /> });
   }
   // User story: "As a general manager, I want to view personal trainer
   // ratings by branch, so that I can inform staffing, coaching, and
