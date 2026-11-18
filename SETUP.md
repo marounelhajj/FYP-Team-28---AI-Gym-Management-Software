@@ -242,6 +242,31 @@ first release, so that the models have a dataset to learn from later."*
 - After pulling: `python manage.py migrate` (new `training` app).
 - Tests: `python manage.py test training`
 
+### Comparing branch revenue (SCRUM-105)
+
+Story: *"As a general manager, I want to compare branch revenue performance
+in a single view, so that I can identify branches underperforming
+financially."*
+
+- **Branch Comparison** tab, for roles with `view_financial_reports` and
+  `view_all_branches` (General Manager, System Administrator).
+- Period: this month / last month / this quarter / last quarter / this year /
+  custom (up to 366 days). Each is compared with the period before: a period
+  still running with the same stretch of the previous one (1-18 Nov against
+  1-18 Oct), a finished one with the whole previous one, a custom range with
+  the same number of days just before it.
+- Every branch ranked by revenue (memberships + retail, the same as the
+  Financial Report): share of company revenue, growth, expenses, net, margin
+  and revenue per active member, plus six months of revenue per branch on one
+  chart.
+- A branch is flagged **underperforming** for any of: a loss; revenue below
+  75% of the branch average; revenue down 15% or more on the period before;
+  revenue per active member below 75% of the company figure. The reasons are
+  listed on its card. Thresholds are in `finance/compare.py`. Active members
+  are counted as of today.
+- `GET /api/finance/compare?period=&dateFrom=&dateTo=`.
+- Tests: `python manage.py test finance`
+
 ### Class reservations by branch (SCRUM-22)
 
 Story: *"As a general manager, I want to view the class reservation schedule

@@ -15,6 +15,7 @@ import AuditLog from "./components/audit/AuditLog.jsx";
 import RetentionReport from "./components/audit/RetentionReport.jsx";
 import BranchFinances from "./components/finance/BranchFinances.jsx";
 import FinancialReport from "./components/finance/FinancialReport.jsx";
+import BranchComparison from "./components/finance/BranchComparison.jsx";
 import ExpenseLedger from "./components/finance/ExpenseLedger.jsx";
 import HeadcountDashboard from "./components/headcount/HeadcountDashboard.jsx";
 import PointOfSale from "./components/retail/PointOfSale.jsx";
@@ -127,6 +128,10 @@ function availableScreens(account) {
   }
   if (has("view_financial_reports") && has("view_all_branches")) {
     screens.push({ key: "finance", label: "Financial Report", render: () => <FinancialReport /> });
+    // SCRUM-105: "As a general manager, I want to compare branch revenue
+    // performance in a single view, so that I can identify branches
+    // underperforming financially."
+    screens.push({ key: "branchcompare", label: "Branch Comparison", render: () => <BranchComparison /> });
   }
   // User story: "As a branch manager, I want to view member feedback and
   // complaints specific to my branch..." - their own branch only (server-side);

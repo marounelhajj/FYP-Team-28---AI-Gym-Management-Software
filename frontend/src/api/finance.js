@@ -69,3 +69,19 @@ export async function deleteExpense(id) {
   const res = await fetch(`/api/finance/expenses/${id}`, { method: "DELETE" });
   if (!res.ok) throw await parseError(res);
 }
+
+// SCRUM-105: every branch's revenue over a period, ranked, with the
+// reasons a branch is flagged as underperforming.
+// params: { period, dateFrom?, dateTo? } - period is this_month, last_month,
+// this_quarter, last_quarter, this_year or custom.
+export async function fetchBranchComparison({ period, dateFrom, dateTo } = {}) {
+  const params = new URLSearchParams();
+  if (period) params.set("period", period);
+  if (period === "custom") {
+    if (dateFrom) params.set("dateFrom", dateFrom);
+    if (dateTo) params.set("dateTo", dateTo);
+  }
+  const res = await fetch(`/api/finance/compare?${params.toString()}`);
+  if (!res.ok) throw await parseError(res);
+  return res.json();
+}
