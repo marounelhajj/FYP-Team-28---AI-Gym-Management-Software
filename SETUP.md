@@ -387,6 +387,28 @@ visibility at head office."*
   notifications 0006, audit 0016).
 - Tests: `python manage.py test branchfeedback`
 
+### Feedback across branches (SCRUM-23)
+
+Story: *"As a general manager, I want to view customer reviews, feedback,
+and suggestions across branches, so that I can identify recurring service
+issues..."*
+
+- **Feedback Overview** tab, for roles with `manage_member_feedback` and
+  `view_all_branches` (General Manager, System Administrator). Read only;
+  complaints are still answered from Member Feedback.
+- For the chosen month: company tiles (NPS over all branches, survey
+  responses, complaints, open escalations); every branch side by side (NPS
+  and its change, the five service areas, coach rating average, complaints
+  received / open / overdue / escalated); what keeps coming up; and one feed
+  of everything members wrote (survey comments, coach-rating comments,
+  complaint subjects), filterable by kind and branch. Anonymous surveys stay
+  anonymous.
+- "Recurring" is fixed in `branchfeedback/overview.py`: a complaint category
+  reported at 2+ branches or 3+ times in the month; a service area averaging
+  below 3.0 at a branch from at least 3 ratings.
+- `GET /api/branch-feedback/overview?period=YYYY-MM`.
+- Tests: `python manage.py test branchfeedback`
+
 ## Folder structure
 
 ```
