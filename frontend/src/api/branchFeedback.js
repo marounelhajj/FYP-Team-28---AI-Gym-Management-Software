@@ -32,3 +32,5 @@ export const replyToComplaint = (id, body, internal) =>
   send("POST", `/api/branch-feedback/complaints/${id}/messages`, { body, internal });
 export const setComplaintStatus = (id, status, message) =>
   send("PATCH", `/api/branch-feedback/complaints/${id}`, { status, message });
+// SCRUM-94: pass a complaint up to the general manager, with the reason.
+export const escalateComplaint = (id, reason) => send("POST", `/api/branch-feedback/complaints/${id}/escalate`, { reason });

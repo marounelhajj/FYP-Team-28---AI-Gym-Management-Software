@@ -17,7 +17,7 @@ from payroll.pay import available_periods, parse_period, period_key
 from . import rules
 from .models import AREAS, BranchSurvey, Complaint, ComplaintMessage
 from .rules import ALL_BRANCHES, MANAGE
-from .serializers import ComplaintSerializer, MessageSerializer, StatusSerializer, SurveySerializer
+from .serializers import ComplaintSerializer, EscalateSerializer, MessageSerializer, StatusSerializer, SurveySerializer
 
 # User story: "As a branch manager, I want to view member feedback and
 # complaints specific to my branch, so that I can address local service
@@ -194,6 +194,8 @@ def summary(request):
         "periods": available_periods(),
         "areaLabels": [{"key": k, "label": label} for k, label in AREAS],
         "responseHours": rules.RESPONSE_HOURS,
+        # SCRUM-94: branch-level managers pass complaints up; whoever sees every branch receives them.
+        "canEscalate": ALL_BRANCHES not in account.role.permissions,
         **rules.summary(branch, start, end, previous_start, previous_end, trend[::-1]),
     })
 
@@ -202,7 +204,7 @@ def _complaint_for(request, complaint_id):
     account, denied = authorize(request, MANAGE)
     if denied:
         return None, None, denied
-    complaint = Complaint.objects.select_related("member", "resolved_by").filter(id=complaint_id).first()
+    complaint = Complaint.objects.select_related("member", "resolved_by", "escalated_by").filter(id=complaint_id).first()
     if complaint is None:
         return None, None, Response({"error": "Complaint not found."}, status=404)
     _, _, error = resolve_branch(account, complaint.branch, subject="complaints")
@@ -211,41 +213,53 @@ def _complaint_for(request, complaint_id):
     return account, complaint, None
 
 
-STATUS_FILTERS = {"open": [Complaint.Status.OPEN, Complaint.Status.IN_PROGRESS], "resolved": [Complaint.Status.RESOLVED]}
+UNRESOLVED = [Complaint.Status.OPEN, Complaint.Status.IN_PROGRESS]
+STATUS_FILTERS = {"open": UNRESOLVED, "resolved": [Complaint.Status.RESOLVED], "escalated": UNRESOLVED}
 
 
-# GET /api/branch-feedback/complaints?branch=&status=open|resolved|all&category=
+# GET /api/branch-feedback/complaints?branch=&status=open|escalated|resolved|all&category=&scope=all
 # Open ones: urgent first, then oldest first (the next to answer at the top).
+# "escalated" is the open ones a branch manager passed up (SCRUM-94); with
+# scope=all, a role that sees every branch gets them from all branches at
+# once - the general manager's queue.
 @api_view(["GET"])
 def complaint_list(request):
     account, denied = authorize(request, MANAGE)
     if denied:
         return denied
-    branch, _, error = resolve_branch(account, request.query_params.get("branch"), subject="complaints")
+    branch, branches, error = resolve_branch(account, request.query_params.get("branch"), subject="complaints")
     if error:
         return error
     status = request.query_params.get("status", "open")
     if status not in (*STATUS_FILTERS, "all"):
-        return Response({"error": {"status": ["Use open, resolved or all."]}}, status=400)
-    complaints = Complaint.objects.filter(branch=branch).select_related("member", "resolved_by")
+        return Response({"error": {"status": ["Use open, escalated, resolved or all."]}}, status=400)
+    every_branch = request.query_params.get("scope") == "all" and ALL_BRANCHES in account.role.permissions
+    complaints = Complaint.objects.filter(branch__in=branches if every_branch else [branch])
+    complaints = complaints.select_related("member", "resolved_by", "escalated_by")
     if status != "all":
         complaints = complaints.filter(status__in=STATUS_FILTERS[status])
+    if status == "escalated":
+        complaints = complaints.filter(escalated_at__isnull=False)
     category = request.query_params.get("category")
     if category:
         if category not in Complaint.Category.values:
             return Response({"error": {"category": ["Unknown category."]}}, status=400)
         complaints = complaints.filter(category=category)
     complaints = complaints.prefetch_related("messages__author_staff", "messages__author_member")
-    if status == "open":
+    if status == "escalated":
+        complaints = complaints.order_by("-urgent", "escalated_at")
+    elif status == "open":
         complaints = complaints.order_by("-urgent", "created_at")
     else:
         complaints = complaints.order_by("-created_at")
     results = [rules.complaint_payload(c, for_staff=True) for c in complaints[:200]]
-    return Response({"branch": branch, "categories": _choices(Complaint.Category), "results": results})
+    return Response({
+        "branch": branch, "allBranches": every_branch, "categories": _choices(Complaint.Category), "results": results,
+    })
 
 
 def _staff_detail(complaint):
-    complaint = Complaint.objects.select_related("member", "resolved_by").prefetch_related(
+    complaint = Complaint.objects.select_related("member", "resolved_by", "escalated_by").prefetch_related(
         "messages__author_staff", "messages__author_member").get(pk=complaint.pk)
     return rules.complaint_payload(complaint, for_staff=True)
 
@@ -307,6 +321,15 @@ def complaint_detail(request, complaint_id):
                 _tell_member(complaint, f"Resolved: {complaint.subject}",
                              f"{complaint.branch} marked your complaint as resolved. Not sorted? Reply within "
                              f"{rules.REOPEN_DAYS} days to reopen it.")
+                # An escalated complaint closed by head office: the branch
+                # manager who escalated it hears how it ended.
+                escalator = complaint.escalated_by
+                if escalator is not None and escalator.pk != account.pk and escalator.is_active:
+                    StaffNotification.objects.create(
+                        recipient=escalator, kind=StaffNotification.Kind.ESCALATED_COMPLAINT, branch=complaint.branch,
+                        title=f"Escalated complaint resolved: {complaint.subject}"[:120],
+                        message=f"{account.full_name} resolved the complaint you escalated.",
+                    )
         if previous != complaint.status:
             record(
                 request, AuditLog.Action.COMPLAINT_STATUS_CHANGED, actor=account, target=complaint.member,
@@ -333,3 +356,57 @@ def staff_reply(request, complaint_id):
         return Response({"error": "The member who sent this has deleted their account - only internal notes are possible."}, status=409)
     _reply(account, complaint, data["body"], data["internal"])
     return Response(_staff_detail(complaint), status=201)
+
+
+# POST /api/branch-feedback/complaints/<id>/escalate - Body: { reason }.
+#
+# User story (SCRUM-94): "As a branch manager, I want to escalate an
+# unresolved member complaint to the general manager with one click, so that
+# serious issues get visibility at head office."
+#
+# One click from the complaint, with a short reason (what head office needs
+# to know). It stays the branch's case - the branch manager can still reply
+# and resolve it - but it now also sits in the general manager's
+# "Escalated" queue across every branch, the general managers are notified,
+# the reason goes on the thread as an internal note, and the member is told
+# their complaint has been passed up. A complaint is escalated once; a
+# resolved one can't be (reopen it first). Roles that already see every
+# branch are the ones escalations go to, so they can't escalate.
+@api_view(["POST"])
+def escalate_complaint(request, complaint_id):
+    account, complaint, denied = _complaint_for(request, complaint_id)
+    if denied:
+        return denied
+    if ALL_BRANCHES in account.role.permissions:
+        return Response({"error": "You already oversee every branch - escalations come to you."}, status=403)
+    serializer = EscalateSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response({"error": serializer.errors}, status=400)
+    reason = serializer.validated_data["reason"]
+    with transaction.atomic():
+        complaint = Complaint.objects.select_for_update().get(pk=complaint.pk)
+        if complaint.status == Complaint.Status.RESOLVED:
+            return Response({"error": "This complaint is resolved - reopen it before escalating."}, status=409)
+        if complaint.escalated_at is not None:
+            return Response({"error": "This complaint has already been escalated to the general manager."}, status=409)
+        complaint.escalated_at, complaint.escalated_by, complaint.escalation_reason = timezone.now(), account, reason
+        complaint.save()
+        ComplaintMessage.objects.create(
+            complaint=complaint, author_staff=account, internal=True, body=f"Escalated to the general manager: {reason}"[:1000],
+        )
+        record(
+            request, AuditLog.Action.COMPLAINT_ESCALATED, actor=account, target=complaint.member, branch=complaint.branch,
+            summary=f"Complaint \"{complaint.subject[:80]}\" escalated to the general manager",
+            details={"complaintId": complaint.id, "reason": reason},
+        )
+    flag = "Urgent: " if complaint.urgent else ""
+    StaffNotification.objects.bulk_create(
+        StaffNotification(recipient=gm, kind=StaffNotification.Kind.ESCALATED_COMPLAINT, branch=complaint.branch,
+                          title=f"{flag}Escalated from {complaint.branch}: {complaint.subject}"[:120],
+                          message=f"{account.full_name}: {reason}"[:300])
+        for gm in rules.escalation_recipients()
+    )
+    _tell_member(complaint, f"Passed to head office: {complaint.subject}",
+                 f"{complaint.branch} has passed your complaint to our general manager so it gets the attention it needs. "
+                 "You'll keep getting updates here.")
+    return Response(_staff_detail(complaint))

@@ -359,6 +359,34 @@ so that I can improve my coaching approach."*
   (the same as My Schedule and My Clients).
 - Tests: `python manage.py test feedback`
 
+### Escalating a complaint to the general manager (SCRUM-94)
+
+Story: *"As a branch manager, I want to escalate an unresolved member
+complaint to the general manager with one click, so that serious issues get
+visibility at head office."*
+
+- **Member Feedback** tab → open a complaint → **Escalate to general
+  manager**, with a short reason (required, up to 500 characters).
+- What happens: the general managers get a notification (if none is set up,
+  every account that oversees feedback at all branches does); the reason is
+  added to the thread as an internal note; the member is told their
+  complaint was passed to head office (never the reason); it's in the audit
+  log as `complaint.escalated`.
+- It stays the branch's case: the branch manager can still answer and
+  resolve it. Whoever resolves it, the branch manager who escalated it is
+  told. The escalation stays on record after it's resolved.
+- One escalation per complaint, and only while it's unresolved (reopen it
+  first). Roles with `view_all_branches` receive escalations, so they can't
+  send one.
+- The general manager's **Escalated** filter lists open escalations from
+  every branch, longest waiting first. A branch manager's shows their own.
+- `POST /api/branch-feedback/complaints/<id>/escalate` - `{reason}`.
+  `GET /api/branch-feedback/complaints?status=escalated&scope=all`
+  (`scope=all` is ignored for anyone held to one branch).
+- Run `python manage.py migrate` after pulling (branchfeedback 0003,
+  notifications 0006, audit 0016).
+- Tests: `python manage.py test branchfeedback`
+
 ## Folder structure
 
 ```

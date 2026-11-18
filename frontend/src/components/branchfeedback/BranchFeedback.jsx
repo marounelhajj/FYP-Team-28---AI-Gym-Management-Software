@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { fetchComplaint, fetchComplaints, fetchFeedbackSummary, replyToComplaint, setComplaintStatus } from "../../api/branchFeedback.js";
+import {
+  escalateComplaint,
+  fetchComplaint,
+  fetchComplaints,
+  fetchFeedbackSummary,
+  replyToComplaint,
+  setComplaintStatus,
+} from "../../api/branchFeedback.js";
 import { BUTTON_COLORS } from "../../styles/buttonColors.js";
 import ComplaintThread, { StatusTag } from "./ComplaintThread.jsx";
 
@@ -41,8 +48,10 @@ export default function BranchFeedback() {
       .catch((e) => setError(e.message));
   }, [branch, period]);
 
+  // A general manager's escalated queue spans every branch (SCRUM-94); the
+  // server ignores scope=all for anyone held to one branch.
   const loadComplaints = useCallback(() => {
-    return fetchComplaints({ branch, status: filter, category })
+    return fetchComplaints({ branch, status: filter, category, scope: filter === "escalated" ? "all" : "" })
       .then((body) => setComplaints(body))
       .catch((e) => setError(e.message));
   }, [branch, filter, category]);
@@ -101,7 +110,10 @@ export default function BranchFeedback() {
         <Tile
           label="Open complaints"
           value={counts.open + counts.inProgress}
-          sub={counts.overdue ? `${counts.overdue} overdue (> ${summary.responseHours} h without an answer)` : "None overdue"}
+          sub={
+            (counts.overdue ? `${counts.overdue} overdue (> ${summary.responseHours} h without an answer)` : "None overdue") +
+            (counts.escalatedOpen ? ` · ${counts.escalatedOpen} escalated` : "")
+          }
           tone={counts.overdue ? "#b3261e" : null}
         />
         <Tile
@@ -152,7 +164,7 @@ export default function BranchFeedback() {
         <div style={styles.queueHead}>
           <h2 style={styles.panelTitle}>Complaints</h2>
           <div style={styles.filters}>
-            {[["open", "Open"], ["resolved", "Resolved"], ["all", "All"]].map(([key, label]) => (
+            {[["open", "Open"], ["escalated", "Escalated"], ["resolved", "Resolved"], ["all", "All"]].map(([key, label]) => (
               <button key={key} type="button" onClick={() => setFilter(key)} aria-pressed={filter === key} style={{ ...styles.filterButton, ...(filter === key ? styles.filterActive : null) }}>
                 {label}
               </button>
@@ -165,10 +177,19 @@ export default function BranchFeedback() {
             </select>
           </div>
         </div>
+        {filter === "escalated" && complaints && (
+          <p style={styles.panelHint}>
+            {complaints.allBranches
+              ? "Open complaints branch managers passed up to you, from every branch - longest waiting first."
+              : `Open complaints ${summary.branch} has passed up to the general manager. You can still answer and resolve them.`}
+          </p>
+        )}
         {!complaints ? (
           <p style={styles.muted}>Loading...</p>
         ) : complaints.results.length === 0 ? (
-          <p style={styles.muted}>{filter === "open" ? "No open complaints - nice." : "No complaints here."}</p>
+          <p style={styles.muted}>
+            {filter === "open" ? "No open complaints - nice." : filter === "escalated" ? "Nothing escalated right now." : "No complaints here."}
+          </p>
         ) : (
           <ul style={styles.queue}>
             {complaints.results.map((c) => (
@@ -177,9 +198,11 @@ export default function BranchFeedback() {
                   <div style={styles.queueMain}>
                     <span style={styles.queueTitle}>
                       {c.urgent && <span style={styles.urgentTag}>Urgent</span>}
+                      {c.escalation && <span style={styles.escalatedTag}>Escalated</span>}
                       {c.subject}
                     </span>
                     <span style={styles.queueMeta}>
+                      {complaints.allBranches ? `${c.branch} · ` : ""}
                       {c.categoryLabel} · {c.member ? c.member.name : "Deleted member"} · {c.createdAt}
                       {c.messageCount ? ` · ${c.messageCount} message${c.messageCount === 1 ? "" : "s"}` : ""}
                     </span>
@@ -217,6 +240,7 @@ export default function BranchFeedback() {
         <ComplaintModal
           complaintId={openId}
           responseHours={summary.responseHours}
+          canEscalate={summary.canEscalate}
           onClose={() => setOpenId(null)}
           onChanged={() => {
             loadComplaints();
@@ -319,12 +343,14 @@ function NpsSplit({ nps }) {
   );
 }
 
-function ComplaintModal({ complaintId, responseHours, onClose, onChanged }) {
+function ComplaintModal({ complaintId, responseHours, canEscalate, onClose, onChanged }) {
   const [c, setC] = useState(null);
   const [error, setError] = useState(null);
   const [text, setText] = useState("");
   const [internal, setInternal] = useState(false);
   const [busy, setBusy] = useState(false);
+  // SCRUM-94: null = closed; a string = the reason being written.
+  const [escalating, setEscalating] = useState(null);
 
   useEffect(() => {
     fetchComplaint(complaintId).then(setC).catch((e) => setError(e.message));
@@ -337,9 +363,10 @@ function ComplaintModal({ complaintId, responseHours, onClose, onChanged }) {
       setC(await action());
       setText("");
       setInternal(false);
+      setEscalating(null);
       onChanged();
     } catch (err) {
-      setError(err.fieldErrors?.message?.[0] || err.fieldErrors?.body?.[0] || err.message);
+      setError(err.fieldErrors?.message?.[0] || err.fieldErrors?.body?.[0] || err.fieldErrors?.reason?.[0] || err.message);
     } finally {
       setBusy(false);
     }
@@ -373,7 +400,48 @@ function ComplaintModal({ complaintId, responseHours, onClose, onChanged }) {
               {!c.overdue && c.firstResponseHours === null && !resolved && <span style={styles.dueTag}>Answer by {c.respondBy}</span>}
               {c.firstResponseHours !== null && <span style={styles.muted}>First answered after {c.firstResponseHours} h</span>}
               {resolved && <span style={styles.muted}>Resolved {c.resolvedAt}{c.resolvedBy ? ` by ${c.resolvedBy}` : ""}</span>}
+              {canEscalate && !resolved && !c.escalation && escalating === null && (
+                <button type="button" onClick={() => setEscalating("")} style={styles.escalateButton} disabled={busy}>
+                  Escalate to general manager
+                </button>
+              )}
             </div>
+            {c.escalation && (
+              <div style={styles.escalationBox}>
+                <strong>Escalated to the general manager</strong> by {c.escalation.by} · {c.escalation.at}
+                <div style={styles.escalationReason}>{c.escalation.reason}</div>
+              </div>
+            )}
+            {escalating !== null && (
+              <div style={styles.escalationBox}>
+                <label style={styles.escalateLabel} htmlFor="escalate-reason">
+                  Why does this need head office? The general manager is notified; the member is told it was passed up, but not this reason.
+                </label>
+                <textarea
+                  id="escalate-reason"
+                  value={escalating}
+                  onChange={(e) => setEscalating(e.target.value)}
+                  maxLength={500}
+                  rows={2}
+                  autoFocus
+                  placeholder="e.g. Third report this month - the fix is over the branch budget."
+                  style={styles.textarea}
+                />
+                <div style={styles.replyActions}>
+                  <span style={styles.muted}>{escalating.length}/500</span>
+                  <span style={{ flex: 1 }} />
+                  <button type="button" onClick={() => setEscalating(null)} style={styles.secondaryButton} disabled={busy}>Cancel</button>
+                  <button
+                    type="button"
+                    onClick={() => run(() => escalateComplaint(c.id, escalating))}
+                    style={styles.escalateConfirm}
+                    disabled={busy || !escalating.trim()}
+                  >
+                    Escalate
+                  </button>
+                </div>
+              </div>
+            )}
             <ComplaintThread complaint={c} viewer="staff" />
             <div style={styles.replyBox}>
               <textarea
@@ -464,7 +532,7 @@ const styles = {
   queueHead: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 8 },
   filters: { display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" },
   filterButton: { padding: "6px 12px", fontSize: 13, fontWeight: 600, border: "1px solid #d0d0d5", borderRadius: 999, background: "#fff", cursor: "pointer" },
-  filterActive: { background: "#124096", borderColor: "#124096", color: "#fff" },
+  filterActive: { background: "#124096", border: "1px solid #124096", color: "#fff" },
   queue: { listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 6 },
   queueRow: { width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", border: "1px solid #e4e4e8", borderRadius: 10, background: "#fff", cursor: "pointer", textAlign: "left", fontFamily: "inherit" },
   overdueRow: { borderColor: "#f1b0ad", background: "#fff8f7" },
@@ -492,4 +560,10 @@ const styles = {
   primaryButton: { padding: "8px 14px", fontSize: 13, fontWeight: 700, border: "none", borderRadius: 8, ...BUTTON_COLORS.blue, cursor: "pointer" },
   greenButton: { padding: "8px 14px", fontSize: 13, fontWeight: 700, border: "none", borderRadius: 8, ...BUTTON_COLORS.green, cursor: "pointer" },
   secondaryButton: { padding: "8px 14px", fontSize: 13, fontWeight: 600, border: "1px solid #d0d0d5", borderRadius: 8, background: "#fff", cursor: "pointer" },
+  escalatedTag: { fontSize: 10, fontWeight: 800, padding: "2px 6px", borderRadius: 4, background: "#6a2fa0", color: "#fff", marginRight: 6 },
+  escalateButton: { marginLeft: "auto", padding: "6px 12px", fontSize: 12, fontWeight: 700, border: "1px solid #6a2fa0", borderRadius: 8, background: "#fff", color: "#6a2fa0", cursor: "pointer" },
+  escalateConfirm: { padding: "8px 14px", fontSize: 13, fontWeight: 700, border: "none", borderRadius: 8, background: "#6a2fa0", color: "#fff", cursor: "pointer" },
+  escalationBox: { display: "flex", flexDirection: "column", gap: 6, padding: "10px 12px", borderRadius: 10, background: "#f6f0fc", border: "1px solid #d8c5ee", fontSize: 13 },
+  escalationReason: { whiteSpace: "pre-wrap", overflowWrap: "anywhere", color: "#333" },
+  escalateLabel: { fontSize: 12, color: "#555" },
 };

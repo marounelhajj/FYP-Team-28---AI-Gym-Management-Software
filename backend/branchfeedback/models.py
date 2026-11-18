@@ -85,6 +85,12 @@ class Complaint(models.Model):
     first_response_at = models.DateTimeField(null=True, blank=True)
     resolved_at = models.DateTimeField(null=True, blank=True)
     resolved_by = models.ForeignKey(StaffAccount, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    # SCRUM-94: a branch manager passing a complaint they can't settle
+    # locally up to the general manager. Kept once it's resolved, as a
+    # record of which issues needed head office.
+    escalated_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    escalated_by = models.ForeignKey(StaffAccount, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    escalation_reason = models.CharField(max_length=500, blank=True)
 
     class Meta:
         ordering = ["-created_at", "-id"]
