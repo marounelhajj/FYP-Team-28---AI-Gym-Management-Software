@@ -55,6 +55,11 @@ class MessageSerializer(serializers.Serializer):
     internal = serializers.BooleanField(required=False, default=False)
 
 
+# POST /api/branch-feedback/complaints/<id>/escalate - why head office is needed.
+class EscalateSerializer(serializers.Serializer):
+    reason = serializers.CharField(max_length=500, trim_whitespace=True)
+
+
 # PATCH /api/branch-feedback/complaints/<id> - a status change, optionally with a reply.
 class StatusSerializer(serializers.Serializer):
     status = serializers.ChoiceField(choices=Complaint.Status.choices)

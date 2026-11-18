@@ -126,6 +126,7 @@ def complaint_counts(branch, start, end, now=None):
         "inProgress": sum(1 for c in unresolved if c.status == Complaint.Status.IN_PROGRESS),
         "overdue": sum(1 for c in unresolved if overdue(c, now)),
         "urgentOpen": sum(1 for c in unresolved if c.urgent),
+        "escalatedOpen": sum(1 for c in unresolved if c.escalated_at),
         "received": in_period.count(),
         "resolved": Complaint.objects.filter(
             branch=branch, resolved_at__gte=_local(start), resolved_at__lt=_local(end + timedelta(days=1)),
@@ -244,8 +245,27 @@ def complaint_payload(c, for_staff, now=None, with_messages=True):
             "respondBy": timezone.localtime(c.created_at + timedelta(hours=RESPONSE_HOURS)).strftime("%Y-%m-%d %H:%M"),
             "messageCount": len(messages),
             "resolvedBy": c.resolved_by.full_name if c.resolved_by else None,
+            "escalation": None if c.escalated_at is None else {
+                "at": timezone.localtime(c.escalated_at).strftime("%Y-%m-%d %H:%M"),
+                "by": c.escalated_by.full_name if c.escalated_by else "Staff",
+                "reason": c.escalation_reason,
+            },
         })
     return data
+
+
+# SCRUM-94: who an escalated complaint goes to. The general managers; if
+# the company has none set up, every other account that oversees member
+# feedback at all branches (so an escalation never goes nowhere).
+def escalation_recipients():
+    from administration.models import StaffAccount
+
+    overseers = [
+        a for a in StaffAccount.objects.filter(is_active=True).select_related("role")
+        if MANAGE in a.role.permissions and ALL_BRANCHES in a.role.permissions
+    ]
+    managers = [a for a in overseers if a.job_title == StaffAccount.JobTitle.GENERAL_MANAGER]
+    return managers or overseers
 
 
 def staff_to_notify(branch, urgent):

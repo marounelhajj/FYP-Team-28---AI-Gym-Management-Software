@@ -9,4 +9,5 @@ urlpatterns = [
     path("/complaints", views.complaint_list),
     path("/complaints/<int:complaint_id>", views.complaint_detail),
     path("/complaints/<int:complaint_id>/messages", views.staff_reply),
+    path("/complaints/<int:complaint_id>/escalate", views.escalate_complaint),
 ]

@@ -18,6 +18,7 @@ class StaffNotification(models.Model):
         CAPACITY_ALERT = "capacity_alert", "Branch near capacity"
         PAY_RATE_CHANGED = "pay_rate_changed", "Your pay rate changed"
         NEW_COMPLAINT = "new_complaint", "A member complaint at your branch"
+        ESCALATED_COMPLAINT = "escalated_complaint", "A complaint a branch escalated to you"
 
     recipient = models.ForeignKey(StaffAccount, on_delete=models.CASCADE, related_name="notifications")
     kind = models.CharField(max_length=30, choices=Kind.choices)

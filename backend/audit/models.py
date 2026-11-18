@@ -95,6 +95,7 @@ class AuditLog(models.Model):
         PAY_RATE_REMOVED = "payroll.rate_removed", "Planned coach pay change removed"
         # Member complaints
         COMPLAINT_STATUS_CHANGED = "complaint.status_changed", "Member complaint status changed"
+        COMPLAINT_ESCALATED = "complaint.escalated", "Member complaint escalated to the general manager"
         # The log itself (SCRUM-126) - who took a copy of which entries.
         AUDIT_LOG_EXPORTED = "audit_log.exported", "Audit log exported"
 
