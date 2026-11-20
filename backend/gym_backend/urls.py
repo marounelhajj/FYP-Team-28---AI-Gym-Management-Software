@@ -27,6 +27,7 @@ urlpatterns = [
     path("api/branch-feedback", include("branchfeedback.urls")),
     path("api/retail", include("retail.urls")),
     path("api/marketing", include("marketing.urls")),
+    path("api/purchasing", include("purchasing.urls")),
     path("api/classes", include("classes.urls")),
     path("api", include("administration.urls")),
 ]

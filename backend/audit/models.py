@@ -98,6 +98,14 @@ class AuditLog(models.Model):
         # Member complaints
         COMPLAINT_STATUS_CHANGED = "complaint.status_changed", "Member complaint status changed"
         COMPLAINT_ESCALATED = "complaint.escalated", "Member complaint escalated to the general manager"
+        # Supply orders
+        SUPPLIER_SAVED = "purchasing.supplier_saved", "Supplier added or edited"
+        PURCHASE_ORDER_CREATED = "purchasing.order_created", "Supply order placed"
+        PURCHASE_ORDER_APPROVED = "purchasing.order_approved", "Supply order approved"
+        PURCHASE_ORDER_REJECTED = "purchasing.order_rejected", "Supply order rejected"
+        PURCHASE_ORDER_CANCELLED = "purchasing.order_cancelled", "Supply order cancelled"
+        PURCHASE_ORDER_RECEIVED = "purchasing.order_received", "Supply delivery received"
+        PURCHASE_ORDER_CLOSED = "purchasing.order_closed", "Supply order closed with items missing"
         # The log itself (SCRUM-126) - who took a copy of which entries.
         AUDIT_LOG_EXPORTED = "audit_log.exported", "Audit log exported"
 

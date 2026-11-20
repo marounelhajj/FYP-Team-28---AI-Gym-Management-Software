@@ -20,6 +20,7 @@ import ExpenseLedger from "./components/finance/ExpenseLedger.jsx";
 import HeadcountDashboard from "./components/headcount/HeadcountDashboard.jsx";
 import PointOfSale from "./components/retail/PointOfSale.jsx";
 import ProductManager from "./components/retail/ProductManager.jsx";
+import SupplyOrders from "./components/purchasing/SupplyOrders.jsx";
 import LoginPage from "./components/LoginPage.jsx";
 import WelcomeScreen from "./components/WelcomeScreen.jsx";
 import MemberLoginPage from "./components/member/MemberLoginPage.jsx";
@@ -110,6 +111,13 @@ function availableScreens(account) {
   }
   if (has("manage_retail_products")) {
     screens.push({ key: "retail", label: "Retail Products", render: () => <ProductManager /> });
+  }
+  // User story: "As a branch manager, I want to submit supply reorder requests
+  // through the system, so that restocking doesn't depend on manual phone calls
+  // to vendors." Branch managers order; approvers (General Manager) approve
+  // the big ones and keep the supplier list.
+  if (has("manage_retail_products") || has("approve_purchase_orders")) {
+    screens.push({ key: "supply", label: "Supply Orders", render: () => <SupplyOrders /> });
   }
   // SCRUM-127: Branch Managers see their own branch, General Managers any.
   if (has("view_branch_headcount")) {

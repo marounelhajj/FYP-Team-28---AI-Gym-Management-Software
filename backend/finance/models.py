@@ -26,6 +26,8 @@ class Expense(models.Model):
         UTILITIES = "Utilities", "Utilities"
         EQUIPMENT = "Equipment & Maintenance", "Equipment & Maintenance"
         MARKETING = "Marketing", "Marketing"
+        # Supply orders received (purchasing app): retail stock and gym supplies.
+        SUPPLIES = "Supplies & stock", "Supplies & stock"
         OTHER = "Other", "Other"
 
     branch = models.CharField(max_length=30, choices=Member.Branch.choices)

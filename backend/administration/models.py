@@ -27,6 +27,7 @@ PERMISSION_CHOICES = [
     ("manage_member_feedback", "View & answer member feedback and complaints"),
     ("view_coach_ratings", "View personal trainer ratings & feedback by branch"),
     ("view_marketing_campaigns", "View marketing campaigns & spending by branch"),
+    ("approve_purchase_orders", "Approve supply orders & manage suppliers"),
 ]
 PERMISSION_KEYS = {key for key, _ in PERMISSION_CHOICES}
 
