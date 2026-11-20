@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { fetchMySchedule } from "../../api/classes.js";
+import { fetchMySchedule, requestCover, withdrawCover } from "../../api/classes.js";
 import { addDays, dayOfMonth, formatLongDay, weekdayShort, weekLabel } from "./dates.js";
 import useServerClock, { offsetLabel } from "./useServerClock.js";
 import AttendanceSheet from "./AttendanceSheet.jsx";
@@ -75,6 +75,8 @@ function itemsFor(data) {
     branch: c.branch,
     state: c.state,
     cancelReason: c.cancelReason,
+    needsCover: c.needsCover,
+    coverFor: c.coverFor,
     health: c.state === "cancelled" ? null : classHealthBadge(health.classes[c.id]),
     briefing: { kind: "class", id: c.id },
   }));
@@ -127,6 +129,8 @@ export default function MySchedule() {
   const [attendanceFor, setAttendanceFor] = useState(null);
   const [briefing, setBriefing] = useState(null);
   const [logFor, setLogFor] = useState(null);
+  const [reporting, setReporting] = useState(null);
+  const [notice, setNotice] = useState(null);
   const clock = useServerClock(data?.nowIso, data?.timeZone);
 
   const load = useCallback(() => {
@@ -145,6 +149,12 @@ export default function MySchedule() {
     return () => clearInterval(timer);
   }, [load]);
 
+  useEffect(() => {
+    if (!notice) return undefined;
+    const timer = setTimeout(() => setNotice(null), 6000);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
   if (error && !data) return <div style={styles.errorBox}>Couldn't load your schedule: {error}</div>;
   if (!data) return <p style={styles.muted}>Loading your schedule...</p>;
 
@@ -157,6 +167,7 @@ export default function MySchedule() {
   return (
     <div>
       {error && <div style={styles.errorBox}>{error}</div>}
+      {notice && <div style={styles.noticeBox} role="status">{notice}</div>}
       {branches.length > 1 && (
         <p style={styles.multiBranchNote}>
           You're teaching across more than one branch this week: {branches.join(", ")}.
@@ -222,11 +233,34 @@ export default function MySchedule() {
           onAttendance={() => setAttendanceFor(item.classId)}
           onHealth={() => setBriefing(item.briefing)}
           onLog={() => setLogFor(item.ptId)}
+          onCantMakeIt={() => setReporting(item)}
+          onCanMakeIt={async () => {
+            try {
+              await withdrawCover(item.classId);
+              setNotice(`Thanks - your branch manager knows you can teach ${item.title} after all.`);
+            } catch (err) {
+              setNotice(err.message);
+            }
+            load();
+          }}
         />
       ))}
 
       {attendanceFor && (
         <AttendanceSheet classId={attendanceFor} onClose={() => setAttendanceFor(null)} onChanged={load} />
+      )}
+      {reporting && (
+        <CantMakeItDialog
+          item={reporting}
+          onClose={() => setReporting(null)}
+          onSent={(result) => {
+            setReporting(null);
+            setNotice(
+              `Your branch manager${result.managersNotified === 1 ? " has" : "s have"} been told. You stay on ${reporting.title} until a substitute is found.`,
+            );
+            load();
+          }}
+        />
       )}
       {logFor && (
         <SessionLogForm
@@ -242,7 +276,62 @@ export default function MySchedule() {
   );
 }
 
-function ScheduleRow({ item, onAttendance, onHealth, onLog }) {
+// "I can't make it": the coach says why, and their branch manager is
+// alerted to find a substitute (classes/cover.py).
+function CantMakeItDialog({ item, onClose, onSent }) {
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  async function send(e) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      onSent(await requestCover(item.classId, reason));
+    } catch (err) {
+      setError(err.fieldErrors?.reason?.[0] || err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div style={styles.overlay} onClick={onClose}>
+      <form style={styles.dialog} onClick={(e) => e.stopPropagation()} onSubmit={send} role="dialog" aria-label="Can't make it">
+        <h2 style={styles.dialogTitle}>Can&apos;t teach {item.title}?</h2>
+        <p style={styles.dialogText}>
+          {formatLongDay(item.date)}, {item.startTime}–{item.endTime}. Your branch manager is alerted straight away to find a
+          substitute. You stay on the class until someone takes over.
+        </p>
+        <label style={styles.dialogLabel}>
+          Why
+          <input
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            maxLength={200}
+            placeholder='e.g. "Sick" or "Car broke down"'
+            style={styles.dialogInput}
+            autoFocus
+          />
+        </label>
+        {error && <div style={styles.errorBox}>{error}</div>}
+        <div style={styles.dialogActions}>
+          <button type="button" onClick={onClose} style={styles.dialogCancel} disabled={busy}>
+            Back
+          </button>
+          <button type="submit" style={styles.dialogSend} disabled={busy || !reason.trim()}>
+            {busy ? "Sending..." : "Ask for a substitute"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function ScheduleRow({ item, onAttendance, onHealth, onLog, onCantMakeIt, onCanMakeIt }) {
+  // A class still to come (or under way) can be handed over to a substitute.
+  const canAskCover = item.kind === "Class" && (item.state === "upcoming" || item.state === "in_progress");
   // Coaching notes can be written once a private session starts.
   const canLog = item.kind === "Private training" && (item.state === "in_progress" || item.state === "finished");
   // SCRUM-36: attendance opens when a class starts.
@@ -273,6 +362,8 @@ function ScheduleRow({ item, onAttendance, onHealth, onLog }) {
           {item.branch && ` · ${item.branch}`}
         </span>
         {item.state !== "cancelled" && <span style={styles.cardDetail}>{item.detail}</span>}
+        {item.coverFor && item.state !== "cancelled" && <span style={styles.coverNote}>Covering for {item.coverFor}</span>}
+        {item.needsCover && <span style={styles.coverAsked}>You asked for a substitute - waiting for your manager</span>}
         {item.health && (
           <span style={{ ...styles.healthBadge, ...BADGE_TONES[item.health.tone] }}>{item.health.text}</span>
         )}
@@ -289,6 +380,16 @@ function ScheduleRow({ item, onAttendance, onHealth, onLog }) {
             {item.logged ? "✓ Logged" : "Log session"}
           </button>
         )}
+        {canAskCover &&
+          (item.needsCover ? (
+            <button type="button" onClick={onCanMakeIt} style={styles.coverWithdraw} aria-label={`I can teach ${item.title} after all`}>
+              I can make it
+            </button>
+          ) : (
+            <button type="button" onClick={onCantMakeIt} style={styles.coverAsk} aria-label={`Can't make ${item.title}`}>
+              Can&apos;t make it
+            </button>
+          ))}
         {canTakeAttendance && (
           <button type="button" onClick={onAttendance} style={styles.attendanceButton}>
             Attendance
@@ -380,6 +481,20 @@ const styles = {
     cursor: "pointer",
     whiteSpace: "nowrap",
   },
+  coverNote: { fontSize: 12, fontWeight: 600, color: "#124096" },
+  coverAsked: { fontSize: 12, fontWeight: 600, color: "#b3261e" },
+  coverAsk: { height: 30, padding: "0 12px", border: "1px solid #de0b12", borderRadius: 8, background: "#fff", color: "#b3261e", fontSize: 12, fontWeight: 700, cursor: "pointer" },
+  coverWithdraw: { height: 30, padding: "0 12px", border: "1px solid #129638", borderRadius: 8, background: "#e3f5e8", color: "#0f6e2b", fontSize: 12, fontWeight: 700, cursor: "pointer" },
+  noticeBox: { background: "#e3f5e8", color: "#0f6e2b", padding: "10px 14px", borderRadius: 8, fontSize: 13, marginBottom: 10 },
+  overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 50 },
+  dialog: { background: "#fff", borderRadius: 14, padding: 22, width: "100%", maxWidth: 440, display: "flex", flexDirection: "column", gap: 10, fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif" },
+  dialogTitle: { fontSize: 18, fontWeight: 800, margin: 0 },
+  dialogText: { fontSize: 13, color: "#555", margin: 0, lineHeight: 1.45 },
+  dialogLabel: { display: "flex", flexDirection: "column", gap: 4, fontSize: 12, fontWeight: 700, color: "#444" },
+  dialogInput: { padding: "8px 10px", fontSize: 14, border: "1px solid #d0d0d5", borderRadius: 8, fontFamily: "inherit", fontWeight: 400 },
+  dialogActions: { display: "flex", justifyContent: "flex-end", gap: 8 },
+  dialogCancel: { padding: "8px 14px", fontSize: 13, fontWeight: 600, border: "1px solid #d0d0d5", borderRadius: 8, background: "#fff", cursor: "pointer" },
+  dialogSend: { padding: "8px 14px", fontSize: 13, fontWeight: 700, border: "none", borderRadius: 8, background: "#de0b12", color: "#fff", cursor: "pointer" },
   loggedButton: {
     height: 30,
     padding: "0 12px",

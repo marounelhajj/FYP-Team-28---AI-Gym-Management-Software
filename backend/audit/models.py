@@ -88,6 +88,8 @@ class AuditLog(models.Model):
         TIME_OFF_REMOVED = "class.time_off_removed", "Coach time off removed"
         CLASS_DESK_BOOKED = "class.desk_booked", "Member booked into a class at the front desk"
         CLASS_DESK_BOOKING_REMOVED = "class.desk_booking_removed", "Class booking removed at the front desk"
+        CLASS_COVER_REQUESTED = "class.cover_requested", "Coach asked for cover for a class"
+        CLASS_COVER_ASSIGNED = "class.cover_assigned", "Substitute coach assigned to a class"
         # A coach opening a member's health notes (never the notes themselves)
         HEALTH_VIEWED = "health.viewed", "Member health notes viewed by a coach"
         # Coach pay

@@ -293,3 +293,41 @@ class TimeOff(models.Model):
     @property
     def has_started(self):
         return self.starts_at <= timezone.now()
+
+
+# User story: "As a branch manager, I want to reassign a class to a substitute
+# coach when the original coach cancels last minute, so that the session
+# isn't lost."
+#
+# One row per time a class needed someone else to teach it: opened by the
+# coach ("I can't make it") or straight away by a manager who already knows,
+# and closed when a substitute takes it (Covered), the coach can make it after
+# all (Withdrawn), or the class was cancelled or ended without one (Closed).
+# The class keeps its original coach until a substitute is assigned, so it
+# never has nobody on it. See classes/cover.py.
+class CoverRequest(models.Model):
+    class Status(models.TextChoices):
+        OPEN = "Open", "Needs a substitute"
+        COVERED = "Covered", "Covered by a substitute"
+        WITHDRAWN = "Withdrawn", "Coach can make it after all"
+        CLOSED = "Closed", "Closed without a substitute"
+
+    gym_class = models.ForeignKey(GymClass, on_delete=models.CASCADE, related_name="cover_requests")
+    original_coach = models.ForeignKey(StaffAccount, on_delete=models.PROTECT, related_name="+")
+    reason = models.CharField(max_length=200)
+    reported_by = models.ForeignKey(StaffAccount, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.OPEN)
+    substitute = models.ForeignKey(StaffAccount, on_delete=models.SET_NULL, null=True, blank=True, related_name="covers")
+    resolved_by = models.ForeignKey(StaffAccount, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    created_at = models.DateTimeField(default=timezone.now)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            # A class needs a substitute at most once at a time.
+            models.UniqueConstraint(fields=["gym_class"], condition=Q(status="Open"), name="one_open_cover_request_per_class"),
+        ]
+
+    def __str__(self):
+        return f"Cover for {self.gym_class} ({self.status})"

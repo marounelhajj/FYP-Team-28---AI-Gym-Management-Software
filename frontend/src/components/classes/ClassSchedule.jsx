@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import {
-  cancelClass, createClass, fetchAvailability, fetchClass, fetchClassTypes, fetchCoaches, fetchSchedule, removeDeskBooking,
+  cancelClass, createClass, fetchAvailability, fetchClass, fetchClassTypes, fetchCoaches, fetchCoverRequests, fetchSchedule,
+  removeDeskBooking,
   updateClass,
 } from "../../api/classes.js";
 import { BUTTON_COLORS } from "../../styles/buttonColors.js";
@@ -12,6 +13,7 @@ import PTHoursManager, { CancelSessionDialog } from "./PTHoursManager.jsx";
 import { addDays, formatDay, formatLongDay, weekLabel } from "./dates.js";
 import useServerClock, { offsetLabel } from "./useServerClock.js";
 import AttendanceSheet from "./AttendanceSheet.jsx";
+import SubstituteFinder from "./SubstituteFinder.jsx";
 
 // User story: "As a branch manager, I want to create and edit class schedules
 // and assign coaches to time slots, so that I can build the weekly class
@@ -64,6 +66,9 @@ export default function ClassSchedule() {
   const [classTypes, setClassTypes] = useState([]);
   const [ptDetail, setPtDetail] = useState(null);
   const [ptCancel, setPtCancel] = useState(null);
+  // Substitute coaches: classes waiting for one, and the class being covered.
+  const [coverQueue, setCoverQueue] = useState([]);
+  const [subFor, setSubFor] = useState(null);
   const clock = useServerClock(data?.nowIso, data?.timeZone);
 
   const load = useCallback(() => {
@@ -72,6 +77,12 @@ export default function ClassSchedule() {
       .then((body) => {
         setData(body);
         if (!branch) setBranch(body.branch);
+        // Only managers can assign a substitute, so only they see the queue.
+        if (body.canEdit) {
+          fetchCoverRequests(body.branch)
+            .then((covers) => setCoverQueue(covers.results))
+            .catch(() => setCoverQueue([]));
+        }
       })
       .catch((err) => setError(err.message));
   }, [week, branch]);
@@ -165,6 +176,26 @@ export default function ClassSchedule() {
 
       {notice && <div style={styles.successBox}>{notice}</div>}
       {error && <div style={styles.errorBox}>{error}</div>}
+
+      {coverQueue.length > 0 && (
+        <section style={styles.coverBox} aria-label="Classes needing a substitute">
+          <div style={styles.coverTitle}>
+            {coverQueue.length} class{coverQueue.length === 1 ? " needs" : "es need"} a substitute coach
+          </div>
+          {coverQueue.map((r) => (
+            <div key={r.id} style={styles.coverRow}>
+              <span style={styles.coverText}>
+                {r.urgent && <span style={styles.urgentTag}>{r.started ? "Started" : "Soon"}</span>}
+                <strong>{r.className}</strong> · {formatDay(r.date)} {r.startTime}–{r.endTime} · {r.originalCoach}: &ldquo;{r.reason}&rdquo;
+                {r.booked ? ` · ${r.booked} booked` : ""}
+              </span>
+              <button type="button" onClick={() => setSubFor(r.classId)} style={styles.coverButton}>
+                Find a substitute
+              </button>
+            </div>
+          ))}
+        </section>
+      )}
 
       <div style={styles.viewBar}>
         <div style={styles.viewSwitch}>
@@ -317,6 +348,21 @@ export default function ClassSchedule() {
             setDetailId(null);
             setCancelTarget({ gymClass, seriesFollowing });
           }}
+          onSubstitute={(classId) => {
+            setDetailId(null);
+            setSubFor(classId);
+          }}
+        />
+      )}
+      {subFor && (
+        <SubstituteFinder
+          classId={subFor}
+          onClose={() => setSubFor(null)}
+          onAssigned={(message) => {
+            setSubFor(null);
+            setNotice(message);
+            refreshViews();
+          }}
         />
       )}
       {editor && (
@@ -427,6 +473,8 @@ function ClassCard({ gymClass: c, dayIsPast, onOpen }) {
         {full && <span style={{ ...styles.stateTag, ...styles.tagFull }}>Full</span>}
       </span>
       {!c.coachActive && c.editable && <span style={styles.coachWarning}>Coach deactivated - reassign</span>}
+      {c.needsCover && <span style={styles.needsCover}>Needs a substitute</span>}
+      {c.coverFor && !cancelled && <span style={styles.coverNote}>Covering for {c.coverFor}</span>}
     </button>
   );
 }
@@ -454,7 +502,7 @@ function PtCard({ session: s, dayIsPast, onOpen }) {
   );
 }
 
-function ClassDetails({ classId, onChanged, onClose, onEdit, onCancel }) {
+function ClassDetails({ classId, onChanged, onClose, onEdit, onCancel, onSubstitute }) {
   const [detail, setDetail] = useState(null);
   const [error, setError] = useState(null);
   const [removing, setRemoving] = useState(null); // the booking waiting for "Yes, remove"
@@ -504,7 +552,13 @@ function ClassDetails({ classId, onChanged, onClose, onEdit, onCancel }) {
         <>
           <div style={styles.detailGrid}>
             <Info label="When" value={`${formatLongDay(detail.date)} · ${detail.startTime}–${detail.endTime} (${detail.durationMinutes} min)`} />
-            <Info label="Coach" value={detail.coachActive ? detail.coachName : `${detail.coachName} (deactivated)`} />
+            <Info
+              label="Coach"
+              value={
+                (detail.coachActive ? detail.coachName : `${detail.coachName} (deactivated)`) +
+                (detail.coverFor ? ` - covering for ${detail.coverFor}` : "")
+              }
+            />
             <Info label="Studio" value={detail.room || "—"} />
             <Info
               label="Booked"
@@ -521,6 +575,19 @@ function ClassDetails({ classId, onChanged, onClose, onEdit, onCancel }) {
           {detail.state === "in_progress" && <div style={styles.lockBox}>This class is in progress - it's view-only.</div>}
           {detail.state === "cancelled" && (
             <div style={styles.errorBox}>Cancelled{detail.cancelReason ? `: ${detail.cancelReason}` : "."}</div>
+          )}
+
+          {detail.needsCover && (
+            <div style={styles.errorBox}>{detail.coachName} can&apos;t teach this class - it needs a substitute.</div>
+          )}
+          {detail.canEdit && (detail.state === "upcoming" || detail.state === "in_progress") && (
+            <button
+              type="button"
+              onClick={() => onSubstitute(detail.id)}
+              style={detail.needsCover || !detail.coachActive ? styles.dangerButton : styles.secondaryButton}
+            >
+              Find a substitute coach
+            </button>
           )}
 
           {detail.canBookMembers && <DeskBooking gymClass={detail} onBooked={changed} />}
@@ -1210,6 +1277,14 @@ const styles = {
   tagCancelled: { background: "#fdeceb", color: "#b3261e" },
   tagFull: { background: "#fff1d6", color: "#8a5300" },
   coachWarning: { fontSize: 11, fontWeight: 700, color: "#a15c00", marginTop: 2 },
+  needsCover: { fontSize: 11, fontWeight: 700, color: "#fff", background: "#de0b12", padding: "1px 6px", borderRadius: 4, marginTop: 4, alignSelf: "flex-start" },
+  coverNote: { fontSize: 11, fontWeight: 600, color: "#124096", marginTop: 2 },
+  coverBox: { border: "1px solid #f1b0ad", background: "#fff8f7", borderRadius: 12, padding: "12px 14px", marginBottom: 14, display: "flex", flexDirection: "column", gap: 8 },
+  coverTitle: { fontSize: 14, fontWeight: 800, color: "#b3261e" },
+  coverRow: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" },
+  coverText: { fontSize: 13, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" },
+  urgentTag: { fontSize: 10, fontWeight: 800, padding: "2px 6px", borderRadius: 4, background: "#de0b12", color: "#fff" },
+  coverButton: { padding: "7px 12px", fontSize: 13, fontWeight: 700, border: "none", borderRadius: 8, background: "#de0b12", color: "#fff", cursor: "pointer", whiteSpace: "nowrap" },
   addButton: {
     marginTop: "auto",
     padding: "8px 10px",

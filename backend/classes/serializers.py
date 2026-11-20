@@ -31,14 +31,29 @@ class GymClassSerializer(serializers.ModelSerializer):
     seriesId = serializers.SerializerMethodField()
     state = serializers.SerializerMethodField()
     editable = serializers.BooleanField(source="is_editable")
+    needsCover = serializers.SerializerMethodField()
+    coverFor = serializers.SerializerMethodField()
 
     class Meta:
         model = GymClass
         fields = [
             "id", "branch", "classTypeId", "name", "description", "coachId", "coachName", "coachActive", "room",
             "date", "startTime", "endTime", "durationMinutes", "capacity", "maxCapacity", "booked", "spotsLeft",
-            "waitlistCount", "status", "cancelReason", "seriesId", "state", "editable",
+            "waitlistCount", "status", "cancelReason", "seriesId", "state", "editable", "needsCover", "coverFor",
         ]
+
+    # Substitute coaches (classes/cover.py). Views annotate both; looked up otherwise.
+    def get_needsCover(self, obj):
+        value = getattr(obj, "needs_cover", None)
+        if value is None:
+            value = obj.cover_requests.filter(status="Open").exists()
+        return value and obj.status == GymClass.Status.SCHEDULED and obj.ends_at > timezone.now()
+
+    def get_coverFor(self, obj):
+        if hasattr(obj, "covering_for"):
+            return obj.covering_for
+        found = obj.cover_requests.filter(status="Covered", substitute_id=obj.coach_id).order_by("-resolved_at").first()
+        return found.original_coach.full_name if found else None
 
     def get_date(self, obj):
         return timezone.localtime(obj.starts_at).date().isoformat()

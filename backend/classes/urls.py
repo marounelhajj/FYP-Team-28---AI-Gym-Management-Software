@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import attendance, reservations, views
+from . import attendance, cover, reservations, views
 
 # The member's own booking endpoints live under /api/members/me/classes
 # (members/urls.py), next to the rest of their self-service endpoints.
@@ -11,6 +11,8 @@ urlpatterns = [
     path("/me/pt-hours/<int:hours_id>", views.my_pt_hours_detail),
     path("/me/time-off", views.my_time_off),
     path("/me/time-off/<int:time_off_id>", views.my_time_off_detail),
+    path("/me/classes/<int:class_id>/cover", cover.my_cover_request),
+    path("/cover-requests", cover.open_requests),
     path("/day", views.class_day),
     path("/reservations", reservations.class_reservations),
     path("/coaches", views.coach_list),
@@ -22,6 +24,8 @@ urlpatterns = [
     path("/types/<int:type_id>", views.class_type_detail),
     path("/<int:class_id>", views.class_detail),
     path("/<int:class_id>/cancel", views.cancel_class),
+    path("/<int:class_id>/substitutes", cover.substitutes),
+    path("/<int:class_id>/substitute", cover.assign_substitute),
     path("/<int:class_id>/attendance", attendance.class_attendance),
     path("/<int:class_id>/attendance/walk-ins", attendance.class_walk_in),
     path("/<int:class_id>/member-search", views.class_member_search),

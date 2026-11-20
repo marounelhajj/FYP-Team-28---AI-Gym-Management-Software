@@ -159,6 +159,8 @@ function ClassRow({ gymClass: c, canBook, isOpen, onOpen }) {
           {c.room && ` · ${c.room}`}
         </span>
         {cancelled && c.cancelReason && <span style={styles.cancelNote}>{c.cancelReason}</span>}
+        {c.needsCover && <span style={styles.cancelNote}>Coach can&apos;t make it - a substitute is being found</span>}
+        {c.coverFor && !cancelled && <span style={styles.coverNote}>Covering for {c.coverFor}</span>}
       </div>
       <div style={styles.spots}>
         <Spots gymClass={c} />
@@ -263,6 +265,7 @@ const styles = {
   name: { fontSize: 15, fontWeight: 700 },
   meta: { fontSize: 13, opacity: 0.85 },
   cancelNote: { fontSize: 12, color: "#b3261e" },
+  coverNote: { fontSize: 12, color: "#124096", fontWeight: 600 },
   spots: { flexShrink: 0, minWidth: 130, textAlign: "right" },
   spotsOpen: { fontSize: 14, fontWeight: 700, color: "#0f6e2b" },
   spotsLow: { fontSize: 14, fontWeight: 700, color: "#a15c00" },

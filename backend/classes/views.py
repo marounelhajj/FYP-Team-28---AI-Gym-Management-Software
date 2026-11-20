@@ -3,7 +3,7 @@ from collections import defaultdict
 from datetime import date, datetime, time, timedelta
 
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Q
+from django.db.models import Count, Exists, OuterRef, Q, Subquery
 from django.utils import timezone
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
@@ -21,8 +21,8 @@ from members.access import door_access
 from members.models import Member
 from notifications import reminders
 
-from . import rules, waitlist
-from .models import ClassBooking, ClassType, GymClass, PTAvailability, PTSession, TimeOff, WaitlistEntry
+from . import cover, rules, waitlist
+from .models import ClassBooking, ClassType, CoverRequest, GymClass, PTAvailability, PTSession, TimeOff, WaitlistEntry
 from .serializers import (
     WEEKDAYS, CancelClassSerializer, ClassTypeSerializer, ClassTypeWriteSerializer, DeskBookingSerializer,
     GymClassCreateSerializer, GymClassSerializer, GymClassUpdateSerializer, MyBookingSerializer,
@@ -52,6 +52,14 @@ def _with_counts(queryset):
     return queryset.select_related("coach", "class_type").annotate(
         booked_count=Count("bookings", filter=Q(bookings__status=ClassBooking.Status.BOOKED), distinct=True),
         waiting_count=Count("waitlist", filter=Q(waitlist__status=WaitlistEntry.Status.WAITING), distinct=True),
+        # A coach asked for cover and nobody has taken over yet (classes/cover.py).
+        needs_cover=Exists(CoverRequest.objects.filter(gym_class=OuterRef("pk"), status=CoverRequest.Status.OPEN)),
+        # Whose class the current coach is covering, if they're a substitute.
+        covering_for=Subquery(
+            CoverRequest.objects.filter(
+                gym_class=OuterRef("pk"), status=CoverRequest.Status.COVERED, substitute=OuterRef("coach"),
+            ).order_by("-resolved_at").values("original_coach__full_name")[:1],
+        ),
     ).order_by("starts_at", "id")
 
 
@@ -428,6 +436,8 @@ def cancel_class(request, class_id):
         )
         # Everyone booked or waiting is told, in the app and by email.
         waitlist.class_cancelled(GymClass.objects.filter(id__in=ids), released_bookings, reason)
+        # Nobody needs to find a substitute for a class that isn't happening.
+        cover.close_for_cancelled(ids)
 
     record(
         request, AuditLog.Action.CLASS_CANCELLED, actor=account, target=gym_class, branch=gym_class.branch,

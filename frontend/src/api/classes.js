@@ -34,6 +34,31 @@ export function fetchSchedule(filters) {
   return staffRequest(query(filters));
 }
 
+// Substitute coaches: "As a branch manager, I want to reassign a class to a
+// substitute coach when the original coach cancels last minute, so that the
+// session isn't lost." The coach asks for cover; the manager finds and assigns one.
+export function requestCover(classId, reason) {
+  return staffSend("POST", `/me/classes/${classId}/cover`, { reason });
+}
+
+export function withdrawCover(classId) {
+  return staffRequest(`/me/classes/${classId}/cover`, { method: "DELETE" });
+}
+
+// { currentCoach, coverRequest, started, problem, candidates: [{ id, name, available, busyReason, taughtThisType, ... }] }
+export function fetchSubstitutes(classId) {
+  return staffRequest(`/${classId}/substitutes`);
+}
+
+export function assignSubstitute(classId, coachId, reason) {
+  return staffSend("POST", `/${classId}/substitute`, { coachId, reason });
+}
+
+// The branch's classes still waiting for a substitute, soonest first.
+export function fetchCoverRequests(branch) {
+  return staffRequest(`/cover-requests${query({ branch })}`);
+}
+
 // The class plus { roster, seriesFollowing, canEdit, canBookMembers }.
 export function fetchClass(classId) {
   return staffRequest(`/${classId}`);
