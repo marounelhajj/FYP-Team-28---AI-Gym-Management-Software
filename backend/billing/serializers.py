@@ -3,6 +3,8 @@ import re
 from django.utils import timezone
 from rest_framework import serializers
 
+from members.models import Member
+
 from .models import Payment, PaymentMethod
 
 LAST4 = re.compile(r"^\d{4}$")
@@ -117,6 +119,15 @@ class RenewalQuoteSerializer(serializers.Serializer):
         from members.serializers import validate_active_plan_name
 
         return validate_active_plan_name(value)
+
+
+# GET /api/members/registration-quote - the price before an account even
+# exists, for the walk-in and online signup forms (neither has a member id
+# to call member_renewal_quote with). Same fields as RenewalQuoteSerializer
+# plus branch, since renewal_quote() needs it for the branch's promotion
+# and a sign-up has no member row yet to read it from.
+class RegistrationQuoteSerializer(RenewalQuoteSerializer):
+    branch = serializers.ChoiceField(choices=Member.Branch.choices)
 
 
 # POST /api/members/<id>/payments - renews (or reactivates) an existing

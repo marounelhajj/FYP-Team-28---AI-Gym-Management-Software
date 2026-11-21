@@ -195,9 +195,10 @@ export default function CampaignManager() {
                         <>
                           <div>
                             <strong>{r.redeemed}</strong> used{r.sent ? ` of ${r.sent} sent` : ""}
+                            {r.signups ? ` · ${r.signups} sign-up${r.signups === 1 ? "" : "s"}` : ""}
                           </div>
                           <div style={styles.small}>
-                            ${r.discountGiven} off · ${r.revenue} taken
+                            ${r.discountGiven} off · ${r.totalRevenue} taken
                           </div>
                         </>
                       ) : (

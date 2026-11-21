@@ -191,6 +191,8 @@ def _used_count(campaign):
 def _describe_use(redemption):
     if redemption.use == CampaignRedemption.Use.SHOP:
         return f"shop sale #{redemption.sale_id}" if redemption.sale_id else "a shop purchase"
+    if redemption.use == CampaignRedemption.Use.SIGNUP:
+        return "a new member sign-up"
     return "a membership renewal"
 
 
@@ -202,7 +204,10 @@ def check_offer(code, member, use, *, branch=None, today=None):
     campaign = find_offer(code, today)
     code = campaign.offer_code
     if not campaign.covers(use):
-        other = "shop purchases" if use == CampaignRedemption.Use.SHOP else "membership renewals"
+        other = {
+            CampaignRedemption.Use.SHOP: "shop purchases",
+            CampaignRedemption.Use.SIGNUP: "new member sign-ups",
+        }.get(use, "membership renewals")
         raise OfferError(f"{code} is for {USE_WORDS[campaign.applies_to]}, not {other}.")
     if branch and branch != campaign.branch:
         raise OfferError(f"{code} is a {campaign.branch} offer - it can't be used at {branch}.")
@@ -210,15 +215,24 @@ def check_offer(code, member, use, *, branch=None, today=None):
         raise OfferError("Add the member to the sale first - an offer code is for particular members.")
     if member.branch != campaign.branch:
         raise OfferError(f"{code} is for {campaign.branch} members, and {member.name} is a {member.branch} member.")
-    used = campaign.redemptions.filter(member=member, voided_at__isnull=True).first()
-    if used:
-        when = timezone.localtime(used.redeemed_at).date()
-        raise OfferError(f"{member.name} already used {code} on {_day(when)} ({_describe_use(used)}). It's one use per member.")
-    if not in_audience(campaign, member, today):
-        raise OfferError(f"{code} isn't for {member.name}. It's for: {describe_segment(campaign).lower()}.")
+    if use != CampaignRedemption.Use.SIGNUP:
+        used = campaign.redemptions.filter(member=member, voided_at__isnull=True).first()
+        if used:
+            when = timezone.localtime(used.redeemed_at).date()
+            raise OfferError(f"{member.name} already used {code} on {_day(when)} ({_describe_use(used)}). It's one use per member.")
+        if not in_audience(campaign, member, today):
+            raise OfferError(f"{code} isn't for {member.name}. It's for: {describe_segment(campaign).lower()}.")
     if campaign.max_redemptions is not None and _used_count(campaign) >= campaign.max_redemptions:
         raise OfferError(f"{code} has been fully claimed (all {campaign.max_redemptions} uses are gone).")
     return campaign
+
+
+# check_offer for a sign-up: there's no member yet (the registration form
+# is still open), just the branch they're joining at - built into a throwaway
+# Member so check_offer's member-shaped checks (branch, audience - skipped
+# for a signup) still have something to read.
+def check_signup_offer(code, branch, today=None):
+    return check_offer(code, Member(branch=branch), CampaignRedemption.Use.SIGNUP, branch=branch, today=today)
 
 
 # Records one use of the offer. Call it inside the payment's or sale's own
@@ -348,19 +362,36 @@ def results(campaign_ids):
         CampaignRecipient.objects.filter(campaign_id__in=campaign_ids)
         .values("campaign_id").annotate(n=Count("id")).values_list("campaign_id", "n")
     )
-    used = {
-        row["campaign_id"]: row
-        for row in CampaignRedemption.objects.filter(campaign_id__in=campaign_ids, voided_at__isnull=True)
-        .values("campaign_id").annotate(n=Count("id"), off=Sum("discount"), paid=Sum("amount_paid"))
-    }
+    # Grouped by use too: a new member's first payment (Signup) is tracked
+    # apart from an existing member's redemption (Membership/Shop) - "how
+    # many sign-ups vs. how many redemptions did this campaign generate"
+    # is the whole point of this story.
+    rows = (
+        CampaignRedemption.objects.filter(campaign_id__in=campaign_ids, voided_at__isnull=True)
+        .values("campaign_id", "use").annotate(n=Count("id"), off=Sum("discount"), paid=Sum("amount_paid"))
+    )
+    by_campaign = {}
+    for row in rows:
+        by_campaign.setdefault(row["campaign_id"], {})[row["use"]] = row
+
     out = {}
     for cid in campaign_ids:
-        row = used.get(cid, {})
+        uses = by_campaign.get(cid, {})
+        signup = uses.get(CampaignRedemption.Use.SIGNUP, {})
+        others = [v for k, v in uses.items() if k != CampaignRedemption.Use.SIGNUP]
+        redeemed_n = sum(v["n"] for v in others)
+        redeemed_off = sum((v["off"] or 0) for v in others)
+        redeemed_paid = sum((v["paid"] or 0) for v in others)
+        signup_paid = signup.get("paid") or 0
         out[cid] = {
             "sent": sent.get(cid, 0),
-            "redeemed": row.get("n", 0),
-            "discountGiven": f"{row.get('off') or 0:.2f}",
-            "revenue": f"{row.get('paid') or 0:.2f}",
+            "redeemed": redeemed_n,
+            "discountGiven": f"{redeemed_off:.2f}",
+            "revenue": f"{redeemed_paid:.2f}",
+            "signups": signup.get("n", 0),
+            "signupDiscountGiven": f"{(signup.get('off') or 0):.2f}",
+            "signupRevenue": f"{signup_paid:.2f}",
+            "totalRevenue": f"{redeemed_paid + signup_paid:.2f}",
         }
     return out
 

@@ -114,7 +114,11 @@ class MarketingCampaign(models.Model):
     def offer_locked(self):
         return self.launched_at is not None or self.start_date <= timezone.localdate() or not self.is_active
 
+    # A sign-up's first payment is still a membership transaction - a
+    # Membership (or Both) offer covers it the same as a renewal does.
     def covers(self, use):
+        if use == CampaignRedemption.Use.SIGNUP:
+            use = CampaignRedemption.Use.MEMBERSHIP
         return self.applies_to in (use, self.AppliesTo.BOTH)
 
     # What the code takes off `amount` - never more than the amount itself.
@@ -176,6 +180,11 @@ class CampaignRedemption(models.Model):
     class Use(models.TextChoices):
         MEMBERSHIP = "Membership", "Membership renewal"
         SHOP = "Shop", "Shop purchase"
+        # A brand new member's first payment, not an existing member's
+        # renewal - counted separately everywhere (marketing.offers.results,
+        # the campaign screens) so a campaign's new-customer sign-ups and its
+        # existing-member engagement don't get blended into one number.
+        SIGNUP = "Signup", "New member sign-up"
 
     campaign = models.ForeignKey(MarketingCampaign, on_delete=models.PROTECT, related_name="redemptions")
     member = models.ForeignKey(Member, on_delete=models.CASCADE, related_name="offer_redemptions")
