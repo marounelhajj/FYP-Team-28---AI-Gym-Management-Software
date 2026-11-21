@@ -1,6 +1,17 @@
+import secrets
+
 from django.contrib.auth.hashers import make_password
-from django.db import models
+from django.db import IntegrityError, models, transaction
 from django.utils import timezone
+
+# Easy to read out loud/type in: no 0/O or 1/I, which look alike on a
+# handwritten receipt or a phone screen.
+REFERRAL_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+REFERRAL_CODE_LENGTH = 6
+
+
+def generate_referral_code():
+    return "".join(secrets.choice(REFERRAL_CODE_ALPHABET) for _ in range(REFERRAL_CODE_LENGTH))
 
 
 class Member(models.Model):
@@ -50,8 +61,35 @@ class Member(models.Model):
     # makes every earlier code stop working.
     access_card_number = models.PositiveIntegerField(default=1)
 
+    # User story: "As a member, I want to earn loyalty points for attending
+    # sessions and referring friends, so that my consistency is rewarded."
+    #
+    # A short code every member gets, whichever way they joined (walk-in or
+    # online) - theirs to hand to a friend, who enters it as "referralCode"
+    # on their own registration (see MemberCreateSerializer/
+    # MemberSignupSerializer). Generated once, on creation, by save() below;
+    # never blank for a member created since this feature (see the
+    # 0008 data migration for members from before it).
+    referral_code = models.CharField(max_length=8, unique=True)
+
     class Meta:
         ordering = ["id"]
+
+    def save(self, *args, **kwargs):
+        if self.referral_code:
+            return super().save(*args, **kwargs)
+        # Generate-and-retry rather than check-then-create: two requests
+        # creating a member at the same instant could otherwise both see
+        # the same "unused" code free and collide on the unique constraint
+        # - this just tries again with a fresh one when that happens.
+        for _ in range(20):
+            self.referral_code = generate_referral_code()
+            try:
+                with transaction.atomic():
+                    return super().save(*args, **kwargs)
+            except IntegrityError:
+                continue
+        raise RuntimeError("Could not generate a unique referral code.")
 
     def set_password(self, raw_password):
         self.password_hash = make_password(raw_password)

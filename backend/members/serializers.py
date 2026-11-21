@@ -162,11 +162,15 @@ class MemberCreateSerializer(WaiverSignatureFields, serializers.ModelSerializer)
     # marketing.offers.check_signup_offer. Not a model field, so it's
     # popped out of validated_data in create() below.
     offerCode = serializers.CharField(max_length=40, required=False, allow_blank=True, write_only=True)
+    # A referring member's loyalty.points referral code (optional, also
+    # not a model field) - see validate()/create() below.
+    referralCode = serializers.CharField(max_length=12, required=False, allow_blank=True, write_only=True)
 
     class Meta:
         model = Member
         fields = [
-            "name", "email", "phone", "branch", "membershipPlan", "paymentMethod", "paymentDuration", "offerCode",
+            "name", "email", "phone", "branch", "membershipPlan", "paymentMethod", "paymentDuration",
+            "offerCode", "referralCode",
             "liabilityWaiverAccepted", "healthDisclaimerAccepted", "signatureName",
         ]
 
@@ -188,6 +192,21 @@ class MemberCreateSerializer(WaiverSignatureFields, serializers.ModelSerializer)
                 self._offer_campaign = check_signup_offer(code, attrs["branch"])
             except OfferError as error:
                 raise serializers.ValidationError({"offerCode": [error.message]})
+
+        # User story: "As a member, I want to earn loyalty points for
+        # attending sessions and referring friends, so that my consistency
+        # is rewarded." - looked up now so a typo'd code is reported as a
+        # normal field error before anything is created, same reasoning as
+        # offerCode above. Global, not branch-scoped: a member can refer a
+        # friend to any branch.
+        referral_code = (attrs.get("referralCode") or "").strip().upper()
+        self._referrer = None
+        if referral_code:
+            self._referrer = Member.objects.filter(referral_code=referral_code).first()
+            if self._referrer is None:
+                raise serializers.ValidationError(
+                    {"referralCode": [f'No member found with referral code "{referral_code}".']}
+                )
         return attrs
 
     def create(self, validated_data):
@@ -197,6 +216,7 @@ class MemberCreateSerializer(WaiverSignatureFields, serializers.ModelSerializer)
         payment_method = validated_data.pop("paymentMethod")
         payment_duration = validated_data.pop("paymentDuration")
         validated_data.pop("offerCode", None)
+        validated_data.pop("referralCode", None)
         signature = self.pop_signature(validated_data)
 
         validated_data["join_date"] = timezone.now().date()
@@ -219,10 +239,15 @@ class MemberCreateSerializer(WaiverSignatureFields, serializers.ModelSerializer)
                 note="First payment at registration", recorded_by=self.context.get("staff_account"),
                 offer=self._offer_campaign,
             )
-        # Stashed (not a DB field) so the view can include it in the
-        # creation response without an extra query for the payment it just
-        # made in this same request.
+            if self._referrer:
+                from loyalty.points import award_referral
+
+                award_referral(self._referrer, member)
+        # Stashed (not DB fields) so the view can include them in the
+        # creation response/audit log without an extra query for what was
+        # just done in this same request.
         member.first_payment = payment
+        member.referred_by = self._referrer
         return member
 
 
@@ -247,15 +272,16 @@ class MemberSignupSerializer(WaiverSignatureFields, serializers.ModelSerializer)
     # because username is unique=True on the model) so our own
     # validate_username message below is the one that actually fires.
     username = serializers.CharField(validators=[])
-    # Same as MemberCreateSerializer.offerCode above - optional, not a
-    # model field, popped out of validated_data in create() below.
+    # Same as MemberCreateSerializer.offerCode/referralCode above - optional,
+    # not model fields, popped out of validated_data in create() below.
     offerCode = serializers.CharField(max_length=40, required=False, allow_blank=True, write_only=True)
+    referralCode = serializers.CharField(max_length=12, required=False, allow_blank=True, write_only=True)
 
     class Meta:
         model = Member
         fields = [
             "name", "email", "phone", "branch", "membershipPlan", "username", "password",
-            "paymentMethod", "paymentDuration", "offerCode",
+            "paymentMethod", "paymentDuration", "offerCode", "referralCode",
             "liabilityWaiverAccepted", "healthDisclaimerAccepted", "signatureName",
         ]
 
@@ -284,6 +310,21 @@ class MemberSignupSerializer(WaiverSignatureFields, serializers.ModelSerializer)
                 self._offer_campaign = check_signup_offer(code, attrs["branch"])
             except OfferError as error:
                 raise serializers.ValidationError({"offerCode": [error.message]})
+
+        # User story: "As a member, I want to earn loyalty points for
+        # attending sessions and referring friends, so that my consistency
+        # is rewarded." - looked up now so a typo'd code is reported as a
+        # normal field error before anything is created, same reasoning as
+        # offerCode above. Global, not branch-scoped: a member can refer a
+        # friend to any branch.
+        referral_code = (attrs.get("referralCode") or "").strip().upper()
+        self._referrer = None
+        if referral_code:
+            self._referrer = Member.objects.filter(referral_code=referral_code).first()
+            if self._referrer is None:
+                raise serializers.ValidationError(
+                    {"referralCode": [f'No member found with referral code "{referral_code}".']}
+                )
         return attrs
 
     def create(self, validated_data):
@@ -294,6 +335,7 @@ class MemberSignupSerializer(WaiverSignatureFields, serializers.ModelSerializer)
         payment_method = validated_data.pop("paymentMethod")
         payment_duration = validated_data.pop("paymentDuration")
         validated_data.pop("offerCode", None)
+        validated_data.pop("referralCode", None)
         signature = self.pop_signature(validated_data)
 
         validated_data["join_date"] = timezone.now().date()
@@ -309,7 +351,12 @@ class MemberSignupSerializer(WaiverSignatureFields, serializers.ModelSerializer)
                 member, member.membership_plan, payment_method, payment_duration,
                 note="First payment at signup", offer=self._offer_campaign,
             )
+            if self._referrer:
+                from loyalty.points import award_referral
+
+                award_referral(self._referrer, member)
         member.first_payment = payment
+        member.referred_by = self._referrer
         return member
 
 

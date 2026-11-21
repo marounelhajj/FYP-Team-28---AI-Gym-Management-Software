@@ -343,7 +343,8 @@ def pt_slots(coach, branch, days, member=None, now=None):
 # member's check-ins: someone who was inside the branch at some point during
 # the class attended it. Runs lazily whenever a schedule is opened (same
 # no-cron approach as close_stale_sessions). A no-show is logged as AI
-# training data (SCRUM-73), once.
+# training data (SCRUM-73), once; an attended booking earns the member
+# loyalty points (loyalty.points.award_class_attendance), once.
 def settle_attendance(now=None, limit=500):
     from .waitlist import close_started
 
@@ -354,17 +355,27 @@ def settle_attendance(now=None, limit=500):
         status=ClassBooking.Status.BOOKED, attendance="",
         gym_class__status=GymClass.Status.SCHEDULED, gym_class__ends_at__lte=now,
     ).select_related("gym_class__coach", "member")[:limit]
+    from loyalty.points import award_class_attendance, award_pt_attendance
+
     for booking in pending:
         c = booking.gym_class
         was_inside = _was_inside(booking.member_id, c.branch, c.starts_at, c.ends_at)
         outcome = ClassBooking.Attendance.ATTENDED if was_inside else ClassBooking.Attendance.NO_SHOW
-        # Conditional update, so two requests settling at once log a no-show only once.
-        if ClassBooking.objects.filter(pk=booking.pk, attendance="").update(attendance=outcome) and not was_inside:
-            log_training_event(
-                TrainingEvent.EventType.NO_SHOW, member=booking.member, branch=c.branch, trainer=c.coach,
-                session_id=str(booking.pk), occurred_at=c.ends_at,
-                payload={"classId": c.pk, "className": c.name},
-            )
+        # Conditional update, so two requests settling at once only ever
+        # win this once - whatever follows (a no-show log, a loyalty
+        # point) only happens for the request that actually set it.
+        if ClassBooking.objects.filter(pk=booking.pk, attendance="").update(attendance=outcome):
+            if was_inside:
+                # User story: "As a member, I want to earn loyalty points
+                # for attending sessions and referring friends, so that my
+                # consistency is rewarded."
+                award_class_attendance(booking)
+            else:
+                log_training_event(
+                    TrainingEvent.EventType.NO_SHOW, member=booking.member, branch=c.branch, trainer=c.coach,
+                    session_id=str(booking.pk), occurred_at=c.ends_at,
+                    payload={"classId": c.pk, "className": c.name},
+                )
 
     # Private sessions the same way. session_id is "pt:<id>", so it can't be
     # mistaken for a class booking id.
@@ -372,8 +383,11 @@ def settle_attendance(now=None, limit=500):
     for session in finished:
         was_inside = _was_inside(session.member_id, session.branch, session.starts_at, session.ends_at)
         outcome = ClassBooking.Attendance.ATTENDED if was_inside else ClassBooking.Attendance.NO_SHOW
-        if PTSession.objects.filter(pk=session.pk, attendance="").update(attendance=outcome) and not was_inside:
-            log_training_event(
-                TrainingEvent.EventType.NO_SHOW, member=session.member, branch=session.branch, trainer=session.coach,
-                session_id=f"pt:{session.pk}", occurred_at=session.ends_at, payload={"ptSessionId": session.pk},
-            )
+        if PTSession.objects.filter(pk=session.pk, attendance="").update(attendance=outcome):
+            if was_inside:
+                award_pt_attendance(session)
+            else:
+                log_training_event(
+                    TrainingEvent.EventType.NO_SHOW, member=session.member, branch=session.branch, trainer=session.coach,
+                    session_id=f"pt:{session.pk}", occurred_at=session.ends_at, payload={"ptSessionId": session.pk},
+                )

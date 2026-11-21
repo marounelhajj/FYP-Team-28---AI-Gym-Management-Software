@@ -7,6 +7,7 @@ from classes import views as class_views
 from feedback import views as feedback_views
 from headcount import busy as headcount_busy
 from healthnotes import views as health_views
+from loyalty import views as loyalty_views
 from marketing import views as marketing_views
 from notifications import views as notification_views
 from progress import views as progress_views
@@ -54,6 +55,7 @@ urlpatterns = [
     path("/me/notifications/<int:notification_id>/read", notification_views.member_read_one),
     path("/me/reminders", notification_views.my_reminders),
     path("/me/offers", marketing_views.my_offers),
+    path("/me/loyalty", loyalty_views.my_loyalty),
     path("/me/coaches", class_views.my_coaches),
     path("/me/pt-slots", class_views.my_pt_slots),
     path("/me/pt-sessions", class_views.book_pt),

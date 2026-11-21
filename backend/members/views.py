@@ -99,14 +99,18 @@ def member_list(request):
         data["firstPayment"] = PaymentSerializer(member.first_payment).data
         payment = member.first_payment
         used = getattr(payment, "offer_redemption", None)
+        referrer = getattr(member, "referred_by", None)
         details = {"plan": member.membership_plan, "amount": f"{payment.amount:.2f}", "method": payment.method}
         if used:
             details.update(offerCode=used.campaign.offer_code, discount=f"{used.discount:.2f}")
+        if referrer:
+            details.update(referredBy=referrer.name, referralCode=referrer.referral_code)
         record(
             request, AuditLog.Action.MEMBER_REGISTERED, actor=account, target=member,
             summary=f"Registered walk-in member {member.name} on {member.membership_plan} "
                     f"(paid ${payment.amount:.2f} by {payment.method})"
-                    + (f" with offer {used.campaign.offer_code}" if used else ""),
+                    + (f" with offer {used.campaign.offer_code}" if used else "")
+                    + (f", referred by {referrer.name}" if referrer else ""),
             details=details,
         )
         return Response(data, status=201)

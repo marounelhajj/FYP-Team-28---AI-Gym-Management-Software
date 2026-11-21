@@ -62,6 +62,7 @@ INSTALLED_APPS = [
     'branchfeedback',
     'marketing',
     'purchasing',
+    'loyalty',
 ]
 
 MIDDLEWARE = [

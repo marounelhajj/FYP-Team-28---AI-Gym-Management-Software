@@ -99,6 +99,14 @@ export async function fetchMyOffers() {
   return res.json();
 }
 
+// { balance, referralCode, entries: [{points, reason, description, earnedAt}, ...] } -
+// this member's own loyalty points (see components/member/MyLoyalty.jsx).
+export async function fetchMyLoyalty() {
+  const res = await fetch("/api/members/me/loyalty");
+  if (!res.ok) throw await parseError(res);
+  return res.json();
+}
+
 export async function fetchMyBilling() {
   const res = await fetch("/api/members/me/billing");
   if (!res.ok) throw await parseError(res);
