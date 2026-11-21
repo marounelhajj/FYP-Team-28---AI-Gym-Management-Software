@@ -158,16 +158,37 @@ class MemberCreateSerializer(WaiverSignatureFields, serializers.ModelSerializer)
     membershipPlan = serializers.CharField(source="membership_plan")
     paymentMethod = serializers.ChoiceField(choices=Payment.Method.choices)
     paymentDuration = serializers.ChoiceField(choices=Payment.Duration.choices)
+    # A marketing offer code the new member gave (optional) - see
+    # marketing.offers.check_signup_offer. Not a model field, so it's
+    # popped out of validated_data in create() below.
+    offerCode = serializers.CharField(max_length=40, required=False, allow_blank=True, write_only=True)
 
     class Meta:
         model = Member
         fields = [
-            "name", "email", "phone", "branch", "membershipPlan", "paymentMethod", "paymentDuration",
+            "name", "email", "phone", "branch", "membershipPlan", "paymentMethod", "paymentDuration", "offerCode",
             "liabilityWaiverAccepted", "healthDisclaimerAccepted", "signatureName",
         ]
 
     def validate_membershipPlan(self, value):
         return validate_active_plan_name(value)
+
+    # Checked here (not just inside Payment.record()) so a bad code is
+    # reported as a normal field error before anything is created - the
+    # same code is re-checked, under a lock, when it's actually redeemed,
+    # in case it was just claimed by someone else at another desk.
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        from marketing.offers import OfferError, check_signup_offer
+
+        code = (attrs.get("offerCode") or "").strip()
+        self._offer_campaign = None
+        if code and "branch" in attrs:
+            try:
+                self._offer_campaign = check_signup_offer(code, attrs["branch"])
+            except OfferError as error:
+                raise serializers.ValidationError({"offerCode": [error.message]})
+        return attrs
 
     def create(self, validated_data):
         from django.db import transaction
@@ -175,6 +196,7 @@ class MemberCreateSerializer(WaiverSignatureFields, serializers.ModelSerializer)
 
         payment_method = validated_data.pop("paymentMethod")
         payment_duration = validated_data.pop("paymentDuration")
+        validated_data.pop("offerCode", None)
         signature = self.pop_signature(validated_data)
 
         validated_data["join_date"] = timezone.now().date()
@@ -195,6 +217,7 @@ class MemberCreateSerializer(WaiverSignatureFields, serializers.ModelSerializer)
             payment = Payment.record(
                 member, member.membership_plan, payment_method, payment_duration,
                 note="First payment at registration", recorded_by=self.context.get("staff_account"),
+                offer=self._offer_campaign,
             )
         # Stashed (not a DB field) so the view can include it in the
         # creation response without an extra query for the payment it just
@@ -224,12 +247,15 @@ class MemberSignupSerializer(WaiverSignatureFields, serializers.ModelSerializer)
     # because username is unique=True on the model) so our own
     # validate_username message below is the one that actually fires.
     username = serializers.CharField(validators=[])
+    # Same as MemberCreateSerializer.offerCode above - optional, not a
+    # model field, popped out of validated_data in create() below.
+    offerCode = serializers.CharField(max_length=40, required=False, allow_blank=True, write_only=True)
 
     class Meta:
         model = Member
         fields = [
             "name", "email", "phone", "branch", "membershipPlan", "username", "password",
-            "paymentMethod", "paymentDuration",
+            "paymentMethod", "paymentDuration", "offerCode",
             "liabilityWaiverAccepted", "healthDisclaimerAccepted", "signatureName",
         ]
 
@@ -246,6 +272,20 @@ class MemberSignupSerializer(WaiverSignatureFields, serializers.ModelSerializer)
             raise serializers.ValidationError("An account with this email already exists.")
         return value
 
+    # Same reasoning as MemberCreateSerializer.validate() above.
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        from marketing.offers import OfferError, check_signup_offer
+
+        code = (attrs.get("offerCode") or "").strip()
+        self._offer_campaign = None
+        if code and "branch" in attrs:
+            try:
+                self._offer_campaign = check_signup_offer(code, attrs["branch"])
+            except OfferError as error:
+                raise serializers.ValidationError({"offerCode": [error.message]})
+        return attrs
+
     def create(self, validated_data):
         from django.db import transaction
         from django.utils import timezone
@@ -253,6 +293,7 @@ class MemberSignupSerializer(WaiverSignatureFields, serializers.ModelSerializer)
         password = validated_data.pop("password")
         payment_method = validated_data.pop("paymentMethod")
         payment_duration = validated_data.pop("paymentDuration")
+        validated_data.pop("offerCode", None)
         signature = self.pop_signature(validated_data)
 
         validated_data["join_date"] = timezone.now().date()
@@ -266,7 +307,7 @@ class MemberSignupSerializer(WaiverSignatureFields, serializers.ModelSerializer)
             Waiver.objects.create(member=member, signed_via=Waiver.SignedVia.ONLINE, **signature)
             payment = Payment.record(
                 member, member.membership_plan, payment_method, payment_duration,
-                note="First payment at signup",
+                note="First payment at signup", offer=self._offer_campaign,
             )
         member.first_payment = payment
         return member

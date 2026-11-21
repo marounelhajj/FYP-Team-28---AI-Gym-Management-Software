@@ -42,14 +42,14 @@ export async function fetchMemberFilterOptions() {
 // liabilityWaiverAccepted, healthDisclaimerAccepted and signatureName.
 export async function createMember({
   name, email, phone, branch, membershipPlan, paymentMethod, paymentDuration,
-  liabilityWaiverAccepted, healthDisclaimerAccepted, signatureName,
+  liabilityWaiverAccepted, healthDisclaimerAccepted, signatureName, offerCode,
 }) {
   const res = await fetch("/api/members", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       name, email, phone, branch, membershipPlan, paymentMethod, paymentDuration,
-      liabilityWaiverAccepted, healthDisclaimerAccepted, signatureName,
+      liabilityWaiverAccepted, healthDisclaimerAccepted, signatureName, offerCode,
     }),
   });
 
@@ -84,6 +84,20 @@ export async function fetchRenewalQuote(memberId, { membershipPlan, duration, of
   const params = new URLSearchParams({ membershipPlan, duration });
   if (offerCode) params.set("offerCode", offerCode);
   const res = await fetch(`/api/members/${memberId}/renewal-quote?${params.toString()}`);
+  if (!res.ok) throw await parseError(res);
+  return res.json();
+}
+
+// { amount, originalAmount, promotion, startsOn, expiresAt } - the price a
+// walk-in registration or online signup would charge, before the account
+// even exists (no member id to call fetchRenewalQuote with yet). Same
+// offerCode behaviour as fetchRenewalQuote: a code that applies comes back
+// as offerCode/offerDiscount, one that doesn't as offerNote, and one that
+// can't be used at all as a 400 on offerCode.
+export async function fetchRegistrationQuote({ branch, membershipPlan, duration, offerCode }) {
+  const params = new URLSearchParams({ branch, membershipPlan, duration });
+  if (offerCode) params.set("offerCode", offerCode);
+  const res = await fetch(`/api/members/registration-quote?${params.toString()}`);
   if (!res.ok) throw await parseError(res);
   return res.json();
 }

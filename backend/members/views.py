@@ -86,15 +86,28 @@ def member_list(request):
         serializer = MemberCreateSerializer(data=request.data, context={"staff_account": account})
         if not serializer.is_valid():
             return Response({"error": serializer.errors}, status=400)
-        member = serializer.save()
+        from marketing.offers import OfferError
+
+        try:
+            member = serializer.save()
+        except OfferError as error:
+            # e.g. the last use of a capped offer went to someone else a
+            # moment ago - checked again here, re-registering is all it
+            # takes.
+            return Response({"error": {"offerCode": [error.message]}}, status=400)
         data = MemberSerializer(member).data
         data["firstPayment"] = PaymentSerializer(member.first_payment).data
         payment = member.first_payment
+        used = getattr(payment, "offer_redemption", None)
+        details = {"plan": member.membership_plan, "amount": f"{payment.amount:.2f}", "method": payment.method}
+        if used:
+            details.update(offerCode=used.campaign.offer_code, discount=f"{used.discount:.2f}")
         record(
             request, AuditLog.Action.MEMBER_REGISTERED, actor=account, target=member,
             summary=f"Registered walk-in member {member.name} on {member.membership_plan} "
-                    f"(paid ${payment.amount:.2f} by {payment.method})",
-            details={"plan": member.membership_plan, "amount": f"{payment.amount:.2f}", "method": payment.method},
+                    f"(paid ${payment.amount:.2f} by {payment.method})"
+                    + (f" with offer {used.campaign.offer_code}" if used else ""),
+            details=details,
         )
         return Response(data, status=201)
 

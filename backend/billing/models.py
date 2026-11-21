@@ -198,6 +198,11 @@ class Payment(models.Model):
         from members.models import Member
 
         with transaction.atomic():
+            # A brand new member's first payment vs. an existing member's
+            # renewal/reactivation - same note convention finance.views
+            # already reads (note.startswith("First payment")) to split
+            # revenue, reused here to tag the redemption the same way.
+            is_signup = note.startswith("First payment")
             # Locked so two simultaneous renewals can't both stack onto the same old expiry.
             locked = Member.objects.select_for_update().get(pk=member.pk)
             quote = renewal_quote(locked, plan, duration, offer=offer)
@@ -213,8 +218,9 @@ class Payment(models.Model):
                 from marketing.models import CampaignRedemption
                 from marketing.offers import redeem
 
+                use = CampaignRedemption.Use.SIGNUP if is_signup else CampaignRedemption.Use.MEMBERSHIP
                 redeem(
-                    quote.offer_campaign, locked, CampaignRedemption.Use.MEMBERSHIP,
+                    quote.offer_campaign, locked, use,
                     amount_before=quote.amount + quote.offer_discount, discount=quote.offer_discount,
                     amount_paid=quote.amount, by=recorded_by, payment=payment,
                 )

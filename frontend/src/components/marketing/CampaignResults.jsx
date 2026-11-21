@@ -45,8 +45,13 @@ export default function CampaignResults({ campaignId, onClose }) {
             <div style={styles.stats}>
               <Stat label="Sent to" value={campaign.notifyAudience ? r.sent : "—"} note={campaign.notifyAudience ? null : "shared by hand"} />
               <Stat label="Used" value={r.redeemed} note={campaign.maxRedemptions ? `of ${campaign.maxRedemptions} allowed` : rate !== null ? `${rate}% of those sent` : null} />
-              <Stat label="Discount given" value={`$${r.discountGiven}`} />
-              <Stat label="Paid by those members" value={`$${r.revenue}`} />
+              {/* Sign-ups (SCRUM: track sign-ups and redemptions per campaign) - new
+                  members who joined with this code, tracked separately from
+                  existing members redeeming it, so ROI reads as "customers won"
+                  vs. "existing members engaged". */}
+              <Stat label="Sign-ups" value={r.signups} note="new members who joined with this code" />
+              <Stat label="Discount given" value={`$${r.discountGiven}`} note={r.signups ? `+ $${r.signupDiscountGiven} on sign-ups` : null} />
+              <Stat label="Revenue" value={`$${r.totalRevenue}`} note={r.signups ? `incl. $${r.signupRevenue} from sign-ups` : null} />
             </div>
 
             <div style={styles.box}>

@@ -16,6 +16,7 @@ from . import auth_views, privacy, views
 urlpatterns = [
     path("/meta", views.member_meta),
     path("/waiver", views.waiver_text),
+    path("/registration-quote", billing_views.registration_quote),
     path("/signup", auth_views.signup),
     path("/login", auth_views.login),
     path("/logout", auth_views.logout),

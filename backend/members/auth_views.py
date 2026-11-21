@@ -35,12 +35,22 @@ def signup(request):
     serializer = MemberSignupSerializer(data=request.data)
     if not serializer.is_valid():
         return Response({"error": serializer.errors}, status=400)
-    member = serializer.save()
+    from marketing.offers import OfferError
+
+    try:
+        member = serializer.save()
+    except OfferError as error:
+        return Response({"error": {"offerCode": [error.message]}}, status=400)
     payment = member.first_payment
+    used = getattr(payment, "offer_redemption", None)
+    details = {"plan": member.membership_plan, "amount": f"{payment.amount:.2f}", "method": payment.method}
+    if used:
+        details.update(offerCode=used.campaign.offer_code, discount=f"{used.discount:.2f}")
     record(
         request, AuditLog.Action.MEMBER_SIGNED_UP, actor=member, target=member,
-        summary=f"{member.name} signed up online on {member.membership_plan} (paid ${payment.amount:.2f})",
-        details={"plan": member.membership_plan, "amount": f"{payment.amount:.2f}", "method": payment.method},
+        summary=f"{member.name} signed up online on {member.membership_plan} (paid ${payment.amount:.2f})"
+                + (f" with offer {used.campaign.offer_code}" if used else ""),
+        details=details,
     )
 
     request.session.pop("staff_account_id", None)
