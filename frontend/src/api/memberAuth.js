@@ -92,6 +92,13 @@ export async function updateMyPaymentMethod(data) {
 // and total count: { payments, paymentCount }. Membership details (plan,
 // status, renewal date) come from fetchCurrentMember()/MemberSerializer
 // instead - this is just payment history.
+// The marketing offers this member was sent and can still use today.
+export async function fetchMyOffers() {
+  const res = await fetch("/api/members/me/offers");
+  if (!res.ok) throw await parseError(res);
+  return res.json();
+}
+
 export async function fetchMyBilling() {
   const res = await fetch("/api/members/me/billing");
   if (!res.ok) throw await parseError(res);

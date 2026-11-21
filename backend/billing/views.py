@@ -61,13 +61,37 @@ def _set_payment_method(request, member, actor, validated_data, updated_by):
 
 
 def _quote_data(quote):
-    return {
+    data = {
         "amount": f"{quote.amount:.2f}",
         "originalAmount": f"{quote.original_amount:.2f}" if quote.original_amount is not None else None,
         "promotion": quote.promotion,
         "startsOn": quote.starts_on,
         "expiresAt": quote.expires_at,
     }
+    # Only when an offer code was given: what it took off, or why it isn't used.
+    if quote.offer_code or quote.offer_note:
+        data.update({
+            "offerCode": quote.offer_code,
+            "offerDiscount": f"{quote.offer_discount:.2f}" if quote.offer_discount is not None else None,
+            "offerNote": quote.offer_note,
+            "offerName": quote.offer_campaign.name if quote.offer_campaign else None,
+        })
+    return data
+
+
+# The campaign behind an offer code given at the desk, if it can be used by
+# this member on a membership renewal - else (None, a 400 naming why).
+def _membership_offer(data, member):
+    from marketing.models import CampaignRedemption
+    from marketing.offers import OfferError, check_offer
+
+    code = (data.get("offerCode") or "").strip()
+    if not code:
+        return None, None
+    try:
+        return check_offer(code, member, CampaignRedemption.Use.MEMBERSHIP), None
+    except OfferError as error:
+        return None, Response({"error": {"offerCode": [error.message]}}, status=400)
 
 
 # GET /api/members/<id>/billing - the member, their payment method on file, and recent payments.
@@ -126,7 +150,10 @@ def member_renewal_quote(request, member_id):
         return Response({"error": serializer.errors}, status=400)
 
     data = serializer.validated_data
-    return Response(_quote_data(renewal_quote(member, data["membershipPlan"], data["duration"])))
+    offer, refused = _membership_offer(data, member)
+    if refused:
+        return refused
+    return Response(_quote_data(renewal_quote(member, data["membershipPlan"], data["duration"], offer=offer)))
 
 
 # POST /api/members/<id>/payments
@@ -146,10 +173,13 @@ def member_payment(request, member_id):
     if not serializer.is_valid():
         return Response({"error": serializer.errors}, status=400)
     data = serializer.validated_data
+    offer, refused = _membership_offer(data, member)
+    if refused:
+        return refused
 
     expected = data.get("expectedAmount")
     if expected is not None:
-        quote = renewal_quote(member, data["membershipPlan"], data["duration"])
+        quote = renewal_quote(member, data["membershipPlan"], data["duration"], offer=offer)
         if quote.amount != expected:
             return Response({
                 "error": f"The price is now ${quote.amount:.2f} - it changed since this form was opened. "
@@ -159,15 +189,26 @@ def member_payment(request, member_id):
 
     member.refresh_expiry_status()
     note = "Renewal" if member.status == Member.Status.ACTIVE else "Reactivation"
-    payment = Payment.record(
-        member, data["membershipPlan"], data["method"], data["duration"], note=note, recorded_by=account,
-    )
+    from marketing.offers import OfferError
+
+    try:
+        payment = Payment.record(
+            member, data["membershipPlan"], data["method"], data["duration"], note=note, recorded_by=account,
+            offer=offer,
+        )
+    except OfferError as error:
+        return Response({"error": {"offerCode": [error.message]}}, status=400)
+    used = getattr(payment, "offer_redemption", None) if offer else None
+    details = {"type": note, "plan": member.membership_plan, "amount": f"{payment.amount:.2f}",
+               "method": payment.method, "duration": payment.duration, "expiresAt": str(payment.expires_at)}
+    if used:
+        details.update(offerCode=used.campaign.offer_code, discount=f"{used.discount:.2f}")
     record(
         request, AuditLog.Action.PAYMENT_RECORDED, actor=account, target=member,
         summary=f"{note}: {member.name} paid ${payment.amount:.2f} by {payment.method} "
-                f"for {member.membership_plan} (valid until {payment.expires_at})",
-        details={"type": note, "plan": member.membership_plan, "amount": f"{payment.amount:.2f}",
-                 "method": payment.method, "duration": payment.duration, "expiresAt": str(payment.expires_at)},
+                f"for {member.membership_plan} (valid until {payment.expires_at})"
+                + (f" with offer {used.campaign.offer_code}" if used else ""),
+        details=details,
     )
     response_data = MemberSerializer(member).data
     response_data["payment"] = PaymentSerializer(payment).data

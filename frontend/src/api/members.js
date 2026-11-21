@@ -77,8 +77,12 @@ export async function fetchMemberBilling(memberId) {
 
 // { amount, originalAmount, promotion, startsOn, expiresAt } - exactly what
 // recordPayment() would charge and the period it would cover, right now.
-export async function fetchRenewalQuote(memberId, { membershipPlan, duration }) {
+// offerCode (optional) is a marketing offer code the member gave; the quote
+// then says what it takes off (offerCode/offerDiscount) or why it isn't used
+// (offerNote), and a code that can't be used comes back as a 400 on offerCode.
+export async function fetchRenewalQuote(memberId, { membershipPlan, duration, offerCode }) {
   const params = new URLSearchParams({ membershipPlan, duration });
+  if (offerCode) params.set("offerCode", offerCode);
   const res = await fetch(`/api/members/${memberId}/renewal-quote?${params.toString()}`);
   if (!res.ok) throw await parseError(res);
   return res.json();
@@ -100,11 +104,11 @@ export async function updatePaymentMethod(memberId, details) {
 // current expiry) or reactivates a Frozen/Cancelled one (from today).
 // expectedAmount is the quoted price the receptionist charged; if the price
 // changed since, the server refuses with 409 instead of recording another amount.
-export async function recordPayment(memberId, { membershipPlan, method, duration, expectedAmount }) {
+export async function recordPayment(memberId, { membershipPlan, method, duration, expectedAmount, offerCode }) {
   const res = await fetch(`/api/members/${memberId}/payments`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ membershipPlan, method, duration, expectedAmount }),
+    body: JSON.stringify({ membershipPlan, method, duration, expectedAmount, offerCode: offerCode || undefined }),
   });
   if (!res.ok) throw await parseError(res);
   return res.json(); // the updated member + "payment" block

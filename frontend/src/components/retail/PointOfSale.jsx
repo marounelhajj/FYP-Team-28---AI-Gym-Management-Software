@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { createSale, fetchProducts, fetchRetailMeta, fetchSales, lookupMember, voidSale } from "../../api/retail.js";
+import { checkOffer, createSale, fetchProducts, fetchRetailMeta, fetchSales, lookupMember, voidSale } from "../../api/retail.js";
 import { BUTTON_COLORS } from "../../styles/buttonColors.js";
 import QrScanner from "../QrScanner.jsx";
 import SegmentedControl from "../SegmentedControl.jsx";
@@ -64,6 +64,13 @@ export default function PointOfSale() {
   const [sales, setSales] = useState(null);
   const [salesError, setSalesError] = useState(null);
   const [voidTarget, setVoidTarget] = useState(null);
+  // A marketing offer code for this sale: what was typed, and once the server
+  // accepts it { code, name, discountLabel, subtotal, discount, total }.
+  const [offerInput, setOfferInput] = useState("");
+  const [offerCode, setOfferCode] = useState("");
+  const [offer, setOffer] = useState(null);
+  const [offerError, setOfferError] = useState(null);
+  const [offerChecking, setOfferChecking] = useState(false);
 
   useEffect(() => {
     fetchRetailMeta()
@@ -125,7 +132,11 @@ export default function PointOfSale() {
   const lines = Object.entries(basket)
     .map(([id, quantity]) => ({ product: byId[id], quantity }))
     .filter((line) => line.product);
-  const totalCents = lines.reduce((sum, l) => sum + toCents(l.product.price) * l.quantity, 0);
+  const subtotalCents = lines.reduce((sum, l) => sum + toCents(l.product.price) * l.quantity, 0);
+  // The discount is only trusted for the basket it was worked out on.
+  const offerFits = offer && toCents(offer.subtotal) === subtotalCents;
+  const discountCents = offerFits ? toCents(offer.discount) : 0;
+  const totalCents = subtotalCents - discountCents;
   const itemCount = lines.reduce((sum, l) => sum + l.quantity, 0);
   const tenderedCents = tendered === "" ? null : toCents(tendered);
   const changeCents = tenderedCents === null ? null : tenderedCents - totalCents;
@@ -153,9 +164,69 @@ export default function PointOfSale() {
     setQuantity(product.id, current + 1);
   }
 
+  // Re-work the discount whenever the basket, member or branch changes.
+  useEffect(() => {
+    if (!offerCode) {
+      setOffer(null);
+      return undefined;
+    }
+    if (subtotalCents === 0) return undefined;
+    let cancelled = false;
+    setOfferChecking(true);
+    checkOffer({ code: offerCode, memberId: member?.id, branch: meta?.fixedBranch ? undefined : branch, subtotal: (subtotalCents / 100).toFixed(2) })
+      .then((data) => {
+        if (!cancelled) {
+          setOffer(data);
+          setOfferError(null);
+        }
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setOffer(null);
+        setOfferCode("");
+        setOfferError(err.fieldErrors?.offerCode?.[0] || err.message);
+      })
+      .finally(() => {
+        if (!cancelled) setOfferChecking(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [offerCode, subtotalCents, member?.id, branch]);
+
+  function applyOffer() {
+    const code = offerInput.trim().toUpperCase();
+    setOfferError(null);
+    if (!code) return;
+    if (!member) {
+      setOfferError("Add the member first - an offer code is for particular members.");
+      return;
+    }
+    setOfferCode(code);
+  }
+
+  function removeOffer() {
+    setOfferCode("");
+    setOffer(null);
+    setOfferInput("");
+    setOfferError(null);
+  }
+
+  function removeMember() {
+    setMember(null);
+    if (offerCode) {
+      removeOffer();
+      setOfferError("The offer code was removed with the member.");
+    }
+  }
+
   function clearSale() {
     setBasket({});
     setMember(null);
+    setOfferInput("");
+    setOfferCode("");
+    setOffer(null);
+    setOfferError(null);
     setMemberCode("");
     setMemberError(null);
     setTendered("");
@@ -192,6 +263,7 @@ export default function PointOfSale() {
         amountTendered: method === "Cash" ? (tenderedCents / 100).toFixed(2) : undefined,
         memberId: member?.id,
         expectedTotal: (totalCents / 100).toFixed(2),
+        offerCode: offerFits ? offer.code : undefined,
       });
       setReceipt(sale);
       clearSale();
@@ -207,6 +279,12 @@ export default function PointOfSale() {
           setBasket((b) => Object.fromEntries(Object.entries(b).filter(([id]) => stillSold.has(id))));
         }
         setSaleError(err.message);
+      } else if (err.fieldErrors?.offerCode) {
+        // e.g. the last use of a capped offer went at another till a moment ago.
+        setOffer(null);
+        setOfferCode("");
+        setOfferError(err.fieldErrors.offerCode[0]);
+        setSaleError("The offer code couldn't be used - nothing was charged. Check the total and charge again.");
       } else if (err.fieldErrors) {
         setSaleError(Object.values(err.fieldErrors).flat().join(" "));
         loadProducts();
@@ -227,7 +305,7 @@ export default function PointOfSale() {
   }
   if (!meta) return <div style={styles.page}>Loading...</div>;
 
-  const canCharge = branch && lines.length > 0 && !cashShort && !charging;
+  const canCharge = branch && lines.length > 0 && !cashShort && !charging && !offerChecking && (!offerCode || offerFits);
   const isToday = day === today();
 
   return (
@@ -369,6 +447,20 @@ export default function PointOfSale() {
             </ul>
           )}
 
+          {discountCents > 0 && (
+            <>
+              <div style={styles.subRow}>
+                <span>Subtotal</span>
+                <span>{money(subtotalCents)}</span>
+              </div>
+              <div style={{ ...styles.subRow, color: "#129638" }}>
+                <span>
+                  Offer {offer.code} · {offer.discountLabel}
+                </span>
+                <span>-{money(discountCents)}</span>
+              </div>
+            </>
+          )}
           <div style={styles.totalRow}>
             <span>
               Total{itemCount > 0 && <span style={styles.muted}> · {itemCount} item{itemCount === 1 ? "" : "s"}</span>}
@@ -388,7 +480,7 @@ export default function PointOfSale() {
                     {member.status !== "Active" && ` · ${member.status}`}
                   </span>
                 </span>
-                <button type="button" onClick={() => setMember(null)} style={styles.chipRemove} aria-label="Remove member">
+                <button type="button" onClick={removeMember} style={styles.chipRemove} aria-label="Remove member">
                   &times;
                 </button>
               </div>
@@ -420,6 +512,50 @@ export default function PointOfSale() {
               </>
             )}
             {scanning && <QrScanner onScan={handleScan} onClose={() => setScanning(false)} />}
+          </div>
+
+          <div style={styles.section}>
+            <div style={styles.sectionLabel}>Offer code (optional)</div>
+            {offerCode && offer ? (
+              <div style={{ ...styles.memberChip, background: "#e3f5e8" }}>
+                <span>
+                  <strong style={styles.codeText}>{offer.code}</strong>
+                  <span style={styles.muted}>
+                    {" "}
+                    · {offer.discountLabel} · {offer.name}
+                  </span>
+                </span>
+                <button type="button" onClick={removeOffer} style={styles.chipRemove} aria-label="Remove offer code">
+                  &times;
+                </button>
+              </div>
+            ) : (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  applyOffer();
+                }}
+                style={styles.memberRow}
+              >
+                <input
+                  value={offerInput}
+                  onChange={(e) => {
+                    setOfferInput(e.target.value.toUpperCase());
+                    setOfferError(null);
+                  }}
+                  placeholder={member ? "e.g. SUMMER20" : "Add the member first"}
+                  style={{ ...styles.input, ...styles.codeText, flex: 1, minWidth: 0 }}
+                  aria-label="Offer code"
+                  maxLength={20}
+                  disabled={!member}
+                />
+                <button type="submit" disabled={!member || !offerInput.trim() || offerChecking || lines.length === 0} style={styles.smallButton}>
+                  {offerChecking ? "Checking..." : "Apply"}
+                </button>
+              </form>
+            )}
+            {offerError && <div style={styles.fieldError}>{offerError}</div>}
+            {!offerError && !member && <div style={styles.muted}>Codes from marketing campaigns are for particular members.</div>}
           </div>
 
           <div style={styles.section}>
@@ -627,6 +763,18 @@ function Receipt({ sale, onClose }) {
             ))}
           </tbody>
         </table>
+        {Number(sale.discount) > 0 && (
+          <>
+            <div style={{ ...styles.receiptLine, paddingTop: 8 }}>
+              <span>Subtotal</span>
+              <span>${sale.subtotal}</span>
+            </div>
+            <div style={styles.receiptLine}>
+              <span>Offer {sale.offerCode}</span>
+              <span>-${sale.discount}</span>
+            </div>
+          </>
+        )}
         <div style={styles.receiptTotal}>
           <span>Total</span>
           <span>${sale.total}</span>
@@ -824,6 +972,8 @@ const styles = {
     fontWeight: 600,
   },
   total: { fontSize: 24, fontWeight: 800 },
+  subRow: { display: "flex", justifyContent: "space-between", fontSize: 14, color: "#555", padding: "2px 0" },
+  codeText: { fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", letterSpacing: 0.5 },
   muted: { fontSize: 12, color: "#888", fontWeight: 400 },
   section: { borderTop: "1px solid #f0f0f3", paddingTop: 12, marginBottom: 12 },
   sectionLabel: { fontSize: 13, fontWeight: 700, color: "#444", marginBottom: 8 },

@@ -32,6 +32,13 @@ function CampaignRow({ campaign }) {
         <span style={{ ...styles.badge, ...STATUS_COLORS[campaign.status] }}>{campaign.status}</span>
       </div>
       {campaign.strategy && <p style={styles.strategy}>{campaign.strategy}</p>}
+      {campaign.offerCode && (
+        <p style={styles.offer}>
+          Offer <strong>{campaign.offerCode}</strong> ({campaign.discountLabel}) for {campaign.segment.description.toLowerCase()}
+          {campaign.results &&
+            ` - used ${campaign.results.redeemed} time${campaign.results.redeemed === 1 ? "" : "s"}, $${campaign.results.discountGiven} off, $${campaign.results.revenue} taken`}
+        </p>
+      )}
       <div style={styles.campaignMeta}>
         <span>
           ${campaign.amountSpent} spent of ${campaign.budget}
@@ -192,6 +199,7 @@ const styles = {
   campaignHead: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 },
   campaignName: { fontWeight: 600, fontSize: 14 },
   strategy: { fontSize: 13, color: "#555", margin: "6px 0 0", lineHeight: 1.4 },
+  offer: { fontSize: 12, color: "#124096", margin: "6px 0 0", lineHeight: 1.4 },
   campaignMeta: {
     display: "flex",
     justifyContent: "space-between",

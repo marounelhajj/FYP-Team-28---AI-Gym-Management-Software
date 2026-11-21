@@ -166,6 +166,10 @@ export default function ReminderSettings() {
           <input type="checkbox" checked={settings.email} onChange={(e) => change("email", e.target.checked)} />
           Also email me{data.emailAddress ? ` at ${data.emailAddress}` : ""}
         </label>
+        <label style={styles.check}>
+          <input type="checkbox" checked={settings.offers} onChange={(e) => change("offers", e.target.checked)} />
+          Send me offers and promotions from the gym
+        </label>
         <div style={styles.desktopRow}>
           {permission === "granted" && <span style={styles.ok}>Desktop pop-ups are on in this browser.</span>}
           {permission === "default" && (

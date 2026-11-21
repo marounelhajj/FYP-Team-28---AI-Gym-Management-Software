@@ -134,9 +134,12 @@ export default function MemberDirectory() {
   function handlePaymentRecorded(member) {
     setPaymentTarget(null);
     const payment = member.payment;
+    // The note is "Renewal" or "Reactivation", plus " · offer CODE (-$x)" when an offer code was used.
+    const offer = payment.note.match(/offer (\S+) \(-\$([\d.]+)\)/);
     setSuccessMessage(
-      `${payment.note === "Renewal" ? "Renewal" : "Subscription"} processed for ${member.name}: `
-        + `$${payment.amount} charged (${payment.methodDetail || payment.method}). `
+      `${payment.note.startsWith("Renewal") ? "Renewal" : "Subscription"} processed for ${member.name}: `
+        + `$${payment.amount} charged (${payment.methodDetail || payment.method})`
+        + `${offer ? `, $${offer[2]} off with ${offer[1]}` : ""}. `
         + `Active until ${payment.expiresAt}.`
     );
     runSearch();

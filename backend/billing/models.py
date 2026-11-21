@@ -59,11 +59,19 @@ def _add_months(start_date, months):
 class RenewalQuote:
     amount: Decimal
     # The undiscounted 12x monthly price of a "1 Year" renewal (shown struck
-    # through next to amount); None for "1 Month".
+    # through next to amount); None for "1 Month". With an offer code it's the
+    # undiscounted price for either duration.
     original_amount: Decimal | None
     promotion: str | None
     starts_on: date
     expires_at: date
+    # A marketing offer code (marketing.offers), when it's what priced this:
+    # the code, what it took off, and the campaign. offer_note says why a
+    # code that was entered isn't used (or was capped).
+    offer_code: str | None = None
+    offer_discount: Decimal | None = None
+    offer_note: str | None = None
+    offer_campaign: object = None
 
 
 # What a payment for this plan/duration would charge right now and the
@@ -74,13 +82,43 @@ class RenewalQuote:
 # flat $20 annual-prepay promo - e.g. Basic ($25/mo) is $300 - $20 = $280/yr.
 # Renewing before the current expiry stacks the new period on top of the
 # time that's left; renewing after it lapsed starts fresh from today.
-def renewal_quote(member, plan, duration):
+#
+# `offer` is a marketing campaign whose code the member gave (already checked
+# by marketing.offers.check_offer). It doesn't stack with a branch promotion:
+# the code is taken off the plan's full price for the period, and whichever
+# of the two is cheaper for the member is used. Either way the discount is
+# capped by the plan's max_promo_discount_percent - the General Manager's
+# limit applies to marketing's codes as much as to branch promotions.
+def renewal_quote(member, plan, duration, offer=None):
     monthly, promo = _monthly_price(plan, member.branch)
-    if duration == Payment.Duration.ONE_YEAR:
+    year = duration == Payment.Duration.ONE_YEAR
+    if year:
         original_amount = monthly * YEARLY_MULTIPLIER
         amount = original_amount - YEARLY_PROMO_DISCOUNT
     else:
         original_amount, amount = None, monthly
+
+    offer_code = offer_discount = offer_note = offer_campaign = None
+    if offer is not None:
+        full, cap, membership_plan = _full_price(plan, DURATION_MONTHS[duration])
+        wanted = offer.discount_on(full)
+        off = min(wanted, cap)
+        with_code = max(full - off - (YEARLY_PROMO_DISCOUNT if year else Decimal("0")), Decimal("0.00"))
+        if off <= 0:
+            offer_note = f"The {membership_plan.name} plan can't be discounted, so {offer.offer_code} isn't used."
+        elif with_code >= amount:
+            offer_note = (
+                f'The branch offer "{promo.name}" already gives a better price, so {offer.offer_code} isn\'t used.'
+                if promo else f"{offer.offer_code} doesn't lower this price, so it isn't used."
+            )
+        else:
+            amount, original_amount, promo = with_code, full, None
+            offer_code, offer_discount, offer_campaign = offer.offer_code, off, offer
+            if off < wanted:
+                offer_note = (
+                    f"Capped at {membership_plan.max_promo_discount_percent.normalize():f}% - the most a "
+                    f"{membership_plan.name} membership can be discounted."
+                )
 
     today = timezone.localdate()
     starts_on = max(today, member.subscription_expires_at) if member.subscription_expires_at else today
@@ -90,7 +128,23 @@ def renewal_quote(member, plan, duration):
         promotion=promo.name if promo else None,
         starts_on=starts_on,
         expires_at=_add_months(starts_on, DURATION_MONTHS[duration]),
+        offer_code=offer_code,
+        offer_discount=offer_discount,
+        offer_note=offer_note,
+        offer_campaign=offer_campaign,
     )
+
+
+# The plan's undiscounted price for `months` (no branch promotion), and the
+# most a promotion may take off it.
+def _full_price(plan, months):
+    from plans.models import MembershipPlan
+
+    membership_plan = MembershipPlan.objects.get(name__iexact=plan, is_active=True)
+    cycle_months = MembershipPlan.CYCLE_MONTHS.get(membership_plan.billing_cycle, 1)
+    full = (Decimal(membership_plan.price) / cycle_months).quantize(CENT) * months
+    cap = (full * Decimal(membership_plan.max_promo_discount_percent) / 100).quantize(CENT)
+    return full, cap, membership_plan
 
 
 class Payment(models.Model):
@@ -134,20 +188,36 @@ class Payment(models.Model):
     # at renewal), and amount is NEVER accepted from the client - it's always
     # renewal_quote()'s price. This is the only thing that ever sets a
     # member's status back to Active; nothing renews automatically.
+    #
+    # `offer`: a marketing campaign whose code the member gave - its use is
+    # recorded in the same transaction, so if it can't be (just fully claimed,
+    # or used at another desk a moment ago) marketing.offers.OfferError is
+    # raised and no payment is recorded either.
     @staticmethod
-    def record(member, plan, method, duration, note="", recorded_by=None):
+    def record(member, plan, method, duration, note="", recorded_by=None, offer=None):
         from members.models import Member
 
         with transaction.atomic():
             # Locked so two simultaneous renewals can't both stack onto the same old expiry.
             locked = Member.objects.select_for_update().get(pk=member.pk)
-            quote = renewal_quote(locked, plan, duration)
+            quote = renewal_quote(locked, plan, duration, offer=offer)
             on_file = payment_method_on_file(locked)
+            if quote.offer_code:
+                note = f"{note} · offer {quote.offer_code} (-${quote.offer_discount:.2f})".strip(" ·")
             payment = Payment.objects.create(
                 member=member, amount=quote.amount, method=method, duration=duration,
                 expires_at=quote.expires_at, note=note, recorded_by=recorded_by,
                 method_detail=on_file.reference() if on_file and on_file.method == method else "",
             )
+            if quote.offer_code:
+                from marketing.models import CampaignRedemption
+                from marketing.offers import redeem
+
+                redeem(
+                    quote.offer_campaign, locked, CampaignRedemption.Use.MEMBERSHIP,
+                    amount_before=quote.amount + quote.offer_discount, discount=quote.offer_discount,
+                    amount_paid=quote.amount, by=recorded_by, payment=payment,
+                )
             member.membership_plan = plan
             member.status = Member.Status.ACTIVE
             member.subscription_expires_at = quote.expires_at

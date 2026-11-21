@@ -18,6 +18,7 @@ import MyBranchFeedback from "../branchfeedback/MyBranchFeedback.jsx";
 import MemberPaymentMethodForm from "./MemberPaymentMethodForm.jsx";
 import MemberPrivacyPanel from "./MemberPrivacyPanel.jsx";
 import MemberProfileForm from "./MemberProfileForm.jsx";
+import MyOffers from "./MyOffers.jsx";
 import ReminderSettings from "./ReminderSettings.jsx";
 
 const STATUS_STYLES = {
@@ -191,6 +192,8 @@ export default function MemberDashboard({ member: initialMember, onDeleted }) {
           </div>
         </div>
       )}
+
+      <MyOffers />
 
       <BranchBusyLevel homeBranch={member.branch} />
 

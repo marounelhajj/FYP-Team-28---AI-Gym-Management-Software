@@ -37,6 +37,10 @@ export default function RenewMembershipForm({ member, plans, onClose, onRenewed 
   const [notice, setNotice] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [showMethodForm, setShowMethodForm] = useState(false);
+  // A marketing offer code the member gave: typed, then applied to the quote.
+  const [offerInput, setOfferInput] = useState("");
+  const [offerCode, setOfferCode] = useState("");
+  const [offerError, setOfferError] = useState(null);
 
   const current = billing?.member ?? member;
   const isActive = current.status === "Active";
@@ -60,12 +64,19 @@ export default function RenewMembershipForm({ member, plans, onClose, onRenewed 
     if (!form.membershipPlan || !form.duration) return undefined;
     let cancelled = false;
     setQuoteLoading(true);
-    fetchRenewalQuote(member.id, { membershipPlan: form.membershipPlan, duration: form.duration })
+    fetchRenewalQuote(member.id, { membershipPlan: form.membershipPlan, duration: form.duration, offerCode })
       .then((data) => {
         if (!cancelled) setQuote(data);
       })
       .catch((err) => {
-        if (!cancelled) setQuoteError(err.fieldErrors ? Object.values(err.fieldErrors).flat()[0] : err.message);
+        if (cancelled) return;
+        if (err.fieldErrors?.offerCode) {
+          // The code can't be used - say why, and price it without the code.
+          setOfferError(err.fieldErrors.offerCode[0]);
+          setOfferCode("");
+        } else {
+          setQuoteError(err.fieldErrors ? Object.values(err.fieldErrors).flat()[0] : err.message);
+        }
       })
       .finally(() => {
         if (!cancelled) setQuoteLoading(false);
@@ -73,7 +84,22 @@ export default function RenewMembershipForm({ member, plans, onClose, onRenewed 
     return () => {
       cancelled = true;
     };
-  }, [member.id, form.membershipPlan, form.duration, quoteVersion]);
+  }, [member.id, form.membershipPlan, form.duration, offerCode, quoteVersion]);
+
+  function applyOffer() {
+    const code = offerInput.trim().toUpperCase();
+    setOfferError(null);
+    setNotice(null);
+    if (!code) return;
+    setOfferCode(code);
+    if (code === offerCode) setQuoteVersion((v) => v + 1);
+  }
+
+  function removeOffer() {
+    setOfferCode("");
+    setOfferInput("");
+    setOfferError(null);
+  }
 
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }));
@@ -95,12 +121,20 @@ export default function RenewMembershipForm({ member, plans, onClose, onRenewed 
     setFieldErrors({});
     setNotice(null);
     try {
-      const updated = await recordPayment(member.id, { ...form, expectedAmount: quote.amount });
+      const updated = await recordPayment(member.id, {
+        ...form,
+        expectedAmount: quote.amount,
+        offerCode: quote.offerCode || undefined,
+      });
       onRenewed(updated);
     } catch (err) {
       if (err.status === 409) {
         setNotice(err.message);
         setQuoteVersion((v) => v + 1);
+      } else if (err.fieldErrors?.offerCode) {
+        // e.g. the last use of a capped offer went at another desk a moment ago.
+        setOfferError(err.fieldErrors.offerCode[0]);
+        setOfferCode("");
       } else if (err.fieldErrors) {
         setFieldErrors(err.fieldErrors);
       } else {
@@ -193,6 +227,40 @@ export default function RenewMembershipForm({ member, plans, onClose, onRenewed 
               <MethodOnFileNote onFile={onFile} method={form.method} billingLoaded={Boolean(billing)} />
             </Field>
 
+            <Field label="Offer code (optional)">
+              <div style={styles.offerRow}>
+                <input
+                  type="text"
+                  value={offerInput}
+                  onChange={(e) => {
+                    setOfferInput(e.target.value.toUpperCase());
+                    setOfferError(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      applyOffer();
+                    }
+                  }}
+                  placeholder="e.g. SUMMER20"
+                  style={{ ...styles.input, ...styles.offerInput }}
+                  aria-label="Offer code"
+                  maxLength={20}
+                />
+                {offerCode && quote?.offerCode === offerCode ? (
+                  <button type="button" onClick={removeOffer} style={styles.offerButton}>
+                    Remove
+                  </button>
+                ) : (
+                  <button type="button" onClick={applyOffer} style={styles.offerButton} disabled={!offerInput.trim()}>
+                    Apply
+                  </button>
+                )}
+              </div>
+              {offerError && <div style={styles.offerError}>{offerError}</div>}
+              {!offerError && offerCode && quote && !quote.offerCode && quote.offerNote && <div style={styles.hint}>{quote.offerNote}</div>}
+            </Field>
+
             {quoteLoading && <div style={styles.quoteLoading}>Calculating price...</div>}
             {quoteError && <div style={styles.errorBox}>{quoteError}</div>}
 
@@ -207,6 +275,13 @@ export default function RenewMembershipForm({ member, plans, onClose, onRenewed 
                 )}
                 <div style={styles.priceDisplay}>${quote.amount}</div>
                 {quote.promotion && <div style={styles.promo}>Includes the "{quote.promotion}" branch offer</div>}
+                {quote.offerCode && (
+                  <div style={styles.promo}>
+                    Offer {quote.offerCode}
+                    {quote.offerName ? ` (${quote.offerName})` : ""}: -${quote.offerDiscount}
+                  </div>
+                )}
+                {quote.offerCode && quote.offerNote && <div style={styles.hint}>{quote.offerNote}</div>}
 
                 <div style={styles.periodRow}>
                   <span style={styles.periodLabel}>Covers</span>
@@ -470,4 +545,17 @@ const styles = {
     cursor: "pointer",
   },
   submitDisabled: { opacity: 0.5, cursor: "not-allowed" },
+  offerRow: { display: "flex", gap: 8 },
+  offerInput: { fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", letterSpacing: 1 },
+  offerButton: {
+    flexShrink: 0,
+    padding: "8px 14px",
+    fontSize: 13,
+    fontWeight: 600,
+    border: "1px solid #d0d0d5",
+    borderRadius: 8,
+    background: "#f5f5f7",
+    cursor: "pointer",
+  },
+  offerError: { color: "#b3261e", fontSize: 12, marginTop: 4 },
 };

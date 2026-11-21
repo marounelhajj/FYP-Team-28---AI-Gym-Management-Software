@@ -45,6 +45,26 @@ export async function updateCampaign(id, data) {
   return res.json();
 }
 
+// One campaign, its audience right now (while scheduled or running) and the
+// latest uses of its offer code.
+export async function fetchCampaign(id) {
+  const res = await fetch(`/api/marketing/campaigns/${id}`);
+  if (!res.ok) throw await parseError(res);
+  return res.json();
+}
+
+// { count, reachable, byEmail, optedOut, description } for a segment that
+// isn't saved yet - the campaign form's live audience size.
+export async function previewAudience(branch, segment) {
+  const res = await fetch("/api/marketing/audience", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ branch, segment }),
+  });
+  if (!res.ok) throw await parseError(res);
+  return res.json();
+}
+
 // --- General Manager's screen: compare branches ---
 
 export async function fetchCampaignReport(branch) {

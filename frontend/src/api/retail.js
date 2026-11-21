@@ -53,9 +53,19 @@ export function lookupMember(code) {
   return request(`/member?code=${encodeURIComponent(code)}`);
 }
 
-// Body: { branch?, items: [{ productId, quantity }], paymentMethod, amountTendered?, memberId?, expectedTotal }
+// Body: { branch?, items: [{ productId, quantity }], paymentMethod, amountTendered?, memberId?, expectedTotal, offerCode? }
 export function createSale(data) {
   return send("POST", "/sales", data);
+}
+
+// Whether a marketing offer code works on this sale - { code, name,
+// discountLabel, subtotal, discount, total, endsOn }, or a 400 on offerCode
+// saying why not (wrong member, branch, already used...).
+export function checkOffer({ code, memberId, branch, subtotal }) {
+  const params = new URLSearchParams({ code, subtotal });
+  if (memberId) params.set("memberId", memberId);
+  if (branch) params.set("branch", branch);
+  return request(`/offer?${params.toString()}`);
 }
 
 // { date, branch, results: [sale...], summary: { sales, total, cash, card, voided } }

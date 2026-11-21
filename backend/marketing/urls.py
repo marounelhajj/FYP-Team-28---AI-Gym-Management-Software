@@ -6,4 +6,5 @@ urlpatterns = [
     path("/report", views.campaign_report),
     path("/campaigns/<int:campaign_id>", views.campaign_detail),
     path("/campaigns", views.campaign_list),
+    path("/audience", views.audience_preview),
 ]

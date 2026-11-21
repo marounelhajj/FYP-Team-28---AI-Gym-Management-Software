@@ -38,16 +38,21 @@ def start():
     logger.info("Reminders: checking every %s seconds", settings.REMINDER_INTERVAL_SECONDS)
 
 
+# Each run also sends marketing campaigns' offers that are due (on a
+# campaign's start date, and to anyone who joins its segment while it runs).
 def _run_forever():
+    from marketing.offers import send_due as send_offers
+
     from .reminders import send_due
 
     while True:
-        try:
-            send_due()
-        except Exception:
-            logger.exception("Reminders: a run failed; trying again next time")
-        finally:
-            close_old_connections()
+        for job, name in ((send_due, "Reminders"), (send_offers, "Offers")):
+            try:
+                job()
+            except Exception:
+                logger.exception("%s: a run failed; trying again next time", name)
+            finally:
+                close_old_connections()
         time.sleep(settings.REMINDER_INTERVAL_SECONDS)
 
 

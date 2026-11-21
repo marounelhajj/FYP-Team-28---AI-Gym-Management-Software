@@ -18,3 +18,5 @@ class NotificationSettingsSerializer(serializers.Serializer):
         NotificationSettings.RENEWAL_DAYS_CHOICES, "renewal_days_before", "Pick off (0), 1, 3, 7 or 14 days.",
     )
     email = serializers.BooleanField()
+    # Offers and promotions from marketing campaigns.
+    offers = serializers.BooleanField()

@@ -71,6 +71,8 @@ class SaleCreateSerializer(serializers.Serializer):
     memberId = serializers.IntegerField(min_value=1, required=False, allow_null=True)
     # The total the receptionist showed the customer; a mismatch means a price changed.
     expectedTotal = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
+    # A marketing offer code the member gave (optional) - see marketing.offers.
+    offerCode = serializers.CharField(max_length=40, required=False, allow_blank=True)
 
     def validate_items(self, value):
         quantities = Counter()
@@ -110,13 +112,18 @@ class SaleSerializer(serializers.ModelSerializer):
     voidedBy = serializers.CharField(source="voided_by.full_name", default=None)
     voidReason = serializers.CharField(source="void_reason")
     items = SaleItemSerializer(many=True)
+    offerCode = serializers.CharField(source="offer_code")
+    subtotal = serializers.SerializerMethodField()
 
     class Meta:
         model = Sale
         fields = [
-            "id", "branch", "memberId", "memberName", "paymentMethod", "total", "amountTendered", "changeDue",
-            "soldBy", "soldAt", "voided", "voidedAt", "voidedBy", "voidReason", "items",
+            "id", "branch", "memberId", "memberName", "paymentMethod", "subtotal", "discount", "offerCode", "total",
+            "amountTendered", "changeDue", "soldBy", "soldAt", "voided", "voidedAt", "voidedBy", "voidReason", "items",
         ]
+
+    def get_subtotal(self, obj):
+        return f"{obj.total + obj.discount:.2f}"
 
     def get_voided(self, obj):
         return obj.voided_at is not None

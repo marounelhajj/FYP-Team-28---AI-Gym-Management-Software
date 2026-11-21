@@ -110,6 +110,8 @@ class PaymentMethodWriteSerializer(serializers.Serializer):
 class RenewalQuoteSerializer(serializers.Serializer):
     membershipPlan = serializers.CharField()
     duration = serializers.ChoiceField(choices=Payment.Duration.choices)
+    # A marketing offer code the member gave (optional) - see marketing.offers.
+    offerCode = serializers.CharField(max_length=40, required=False, allow_blank=True)
 
     def validate_membershipPlan(self, value):
         from members.serializers import validate_active_plan_name

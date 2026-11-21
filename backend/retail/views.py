@@ -1,5 +1,5 @@
 from datetime import date, datetime, time, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from django.db import transaction
 from django.db.models import Prefetch
@@ -12,6 +12,9 @@ from audit.log import changes, record
 from audit.models import AuditLog
 from members import qr
 from members.models import Member
+
+from marketing.models import CampaignRedemption
+from marketing.offers import OfferError, check_offer, redeem, release_for_sale
 
 from .models import BranchStock, Product, Sale, SaleItem
 from .serializers import (
@@ -221,6 +224,16 @@ def sale_list(request):
     if error:
         return error
 
+    # A code is checked before anything is locked; its use is recorded with
+    # the sale below, which re-checks the cap under a lock.
+    offer = buyer = None
+    if (data.get("offerCode") or "").strip():
+        buyer = Member.objects.filter(id=data.get("memberId")).first() if data.get("memberId") else None
+        try:
+            offer = check_offer(data["offerCode"], buyer, CampaignRedemption.Use.SHOP, branch=branch)
+        except OfferError as error:
+            return Response({"error": {"offerCode": [error.message]}}, status=400)
+
     quantities = data["items"]
     with transaction.atomic():
         # Locks this branch's shelf rows, so two tills can't sell the last unit twice.
@@ -243,7 +256,9 @@ def sale_list(request):
         if problems:
             return Response({"error": {"items": problems}}, status=400)
 
-        total = sum((products[pid].price * qty for pid, qty in quantities.items()), Decimal("0"))
+        subtotal = sum((products[pid].price * qty for pid, qty in quantities.items()), Decimal("0"))
+        discount = (offer.discount_on(subtotal) if offer else Decimal("0")).quantize(Decimal("0.01"))
+        total = subtotal - discount
         expected = data.get("expectedTotal")
         if expected is not None and expected != total:
             return Response({
@@ -263,6 +278,7 @@ def sale_list(request):
 
         sale = Sale.objects.create(
             branch=branch, member_id=data.get("memberId"), payment_method=data["paymentMethod"], total=total,
+            discount=discount, offer_code=offer.offer_code if offer else "",
             amount_tendered=tendered, change_due=change_due, sold_by=account,
         )
         SaleItem.objects.bulk_create(
@@ -275,15 +291,69 @@ def sale_list(request):
         for pid, qty in quantities.items():
             rows[pid].quantity -= qty
             rows[pid].save(update_fields=["quantity"])
+        if offer:
+            try:
+                redeem(
+                    offer, buyer, CampaignRedemption.Use.SHOP, amount_before=subtotal, discount=discount,
+                    amount_paid=total, by=account, sale=sale,
+                )
+            except OfferError as error:
+                transaction.set_rollback(True)
+                return Response({"error": {"offerCode": [error.message]}}, status=400)
 
     item_count = sum(quantities.values())
+    details = {"saleId": sale.id, "total": f"{total:.2f}", "method": sale.payment_method}
+    if offer:
+        details.update(offerCode=offer.offer_code, discount=f"{discount:.2f}", subtotal=f"{subtotal:.2f}")
     record(
         request, AuditLog.Action.RETAIL_SALE, actor=account, target=sale.member or sale, branch=branch,
         summary=f"Sold {item_count} item{'s' if item_count != 1 else ''} for ${total:.2f} "
-                f"({sale.payment_method.lower()}, sale #{sale.id})",
-        details={"saleId": sale.id, "total": f"{total:.2f}", "method": sale.payment_method},
+                f"({sale.payment_method.lower()}, sale #{sale.id})"
+                + (f" with offer {offer.offer_code} (-${discount:.2f})" if offer else ""),
+        details=details,
     )
     return Response(SaleSerializer(_sales().get(pk=sale.pk)).data, status=201)
+
+
+# GET /api/retail/offer?code=&memberId=&branch=&subtotal= - whether a
+# marketing offer code works on this sale (this member, at this branch), and
+# what it takes off the basket. The till shows it before charging; the sale
+# itself checks it again.
+@api_view(["GET"])
+def offer_check(request):
+    account, denied = authorize(request, SELL)
+    if denied:
+        return denied
+    params = request.query_params
+    branch, error = _sale_branch(account, params.get("branch"))
+    if error:
+        return error
+    try:
+        subtotal = Decimal(params.get("subtotal") or "0").quantize(Decimal("0.01"))
+    except InvalidOperation:
+        return Response({"error": "subtotal must be an amount."}, status=400)
+    if subtotal < 0:
+        return Response({"error": "subtotal must be an amount."}, status=400)
+    member = None
+    raw_member = params.get("memberId")
+    if raw_member:
+        member = Member.objects.filter(id=raw_member).first() if raw_member.isdigit() else None
+        if member is None:
+            return Response({"error": {"memberId": [f"No member found with ID {raw_member}."]}}, status=400)
+    try:
+        offer = check_offer(params.get("code"), member, CampaignRedemption.Use.SHOP, branch=branch)
+    except OfferError as error:
+        return Response({"error": {"offerCode": [error.message]}}, status=400)
+    discount = offer.discount_on(subtotal)
+    return Response({
+        "code": offer.offer_code,
+        "name": offer.name,
+        "discountLabel": offer.discount_label,
+        "subtotal": f"{subtotal:.2f}",
+        "discount": f"{discount:.2f}",
+        "total": f"{subtotal - discount:.2f}",
+        "endsOn": offer.end_date,
+    })
 
 
 def _day_of_sales(account, params):
@@ -352,6 +422,7 @@ def void_sale(request, sale_id):
             row, _ = BranchStock.objects.select_for_update().get_or_create(product_id=item.product_id, branch=sale.branch)
             row.quantity += item.quantity
             row.save(update_fields=["quantity"])
+        release_for_sale(sale)  # the member can use the offer code again
         sale.voided_at = timezone.now()
         sale.voided_by = account
         sale.void_reason = serializer.validated_data["reason"]

@@ -56,6 +56,7 @@ class MemberNotification(models.Model):
         PT_REMINDER = "pt_reminder", "Upcoming private session reminder"
         RENEWAL_REMINDER = "renewal_reminder", "Membership renewal reminder"
         COMPLAINT_UPDATE = "complaint_update", "An answer or update on your complaint"
+        OFFER = "offer", "An offer from the gym, or an offer withdrawn"
 
     recipient = models.ForeignKey(Member, on_delete=models.CASCADE, related_name="notifications")
     kind = models.CharField(max_length=30, choices=Kind.choices)
@@ -94,6 +95,10 @@ class NotificationSettings(models.Model):
     renewal_days_before = models.PositiveSmallIntegerField(default=7)
     # Email a copy of every notification, not just show it in the app.
     email = models.BooleanField(default=True)
+    # Offers and promotions from marketing campaigns (marketing.offers). Off =
+    # none are sent, in the app or by email; a code they hear about some other
+    # way still works for them.
+    offers = models.BooleanField(default=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):

@@ -125,6 +125,7 @@ def _reminders_data(member):
             "classMinutesBefore": prefs.class_minutes_before,
             "renewalDaysBefore": prefs.renewal_days_before,
             "email": prefs.email,
+            "offers": prefs.offers,
         },
         "choices": {
             "classMinutesBefore": list(NotificationSettings.CLASS_MINUTES_CHOICES),

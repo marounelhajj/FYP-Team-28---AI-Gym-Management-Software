@@ -293,7 +293,7 @@ class ReminderSettingsApiTests(TestCase):
         _book(self.lea, self.spin)
         body = self.client.get("/api/members/me/reminders").json()
         self.assertEqual(body["settings"], {"classDayBefore": True, "classMinutesBefore": 60, "renewalDaysBefore": 7,
-                                            "email": True})
+                                            "email": True, "offers": True})
         self.assertEqual(body["choices"]["classMinutesBefore"], [0, 30, 60, 120, 180])
         self.assertEqual(body["emailAddress"], "lea@example.com")
         upcoming = [(u["kind"], u["sendAt"]) for u in body["upcoming"]]

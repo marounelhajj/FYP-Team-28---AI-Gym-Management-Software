@@ -59,7 +59,11 @@ class Sale(models.Model):
         "members.Member", on_delete=models.SET_NULL, null=True, blank=True, related_name="retail_purchases",
     )
     payment_method = models.CharField(max_length=10, choices=PaymentMethod.choices)
+    # What was charged - after any offer code below.
     total = models.DecimalField(max_digits=10, decimal_places=2)
+    # Taken off by a marketing offer code (see marketing.offers); 0 without one.
+    discount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    offer_code = models.CharField(max_length=20, blank=True)
     # Cash only: what the customer handed over and the change given back.
     amount_tendered = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     change_due = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
