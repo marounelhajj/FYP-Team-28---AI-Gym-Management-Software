@@ -35,8 +35,13 @@ function CampaignRow({ campaign }) {
       {campaign.offerCode && (
         <p style={styles.offer}>
           Offer <strong>{campaign.offerCode}</strong> ({campaign.discountLabel}) for {campaign.segment.description.toLowerCase()}
-          {campaign.results &&
-            ` - used ${campaign.results.redeemed} time${campaign.results.redeemed === 1 ? "" : "s"}, $${campaign.results.discountGiven} off, $${campaign.results.revenue} taken`}
+          {campaign.results && (
+            // totalRevenue (not results.revenue) - includes sign-ups won by this
+            // code, not just existing members redeeming it (see offers.results()).
+            ` - used ${campaign.results.redeemed} time${campaign.results.redeemed === 1 ? "" : "s"}` +
+            `${campaign.results.signups ? ` + ${campaign.results.signups} sign-up${campaign.results.signups === 1 ? "" : "s"}` : ""}` +
+            `, $${campaign.results.discountGiven} off, $${campaign.results.totalRevenue} taken`
+          )}
         </p>
       )}
       <div style={styles.campaignMeta}>
