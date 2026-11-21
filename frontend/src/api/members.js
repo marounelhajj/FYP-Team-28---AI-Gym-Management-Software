@@ -42,14 +42,14 @@ export async function fetchMemberFilterOptions() {
 // liabilityWaiverAccepted, healthDisclaimerAccepted and signatureName.
 export async function createMember({
   name, email, phone, branch, membershipPlan, paymentMethod, paymentDuration,
-  liabilityWaiverAccepted, healthDisclaimerAccepted, signatureName, offerCode,
+  liabilityWaiverAccepted, healthDisclaimerAccepted, signatureName, offerCode, referralCode,
 }) {
   const res = await fetch("/api/members", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       name, email, phone, branch, membershipPlan, paymentMethod, paymentDuration,
-      liabilityWaiverAccepted, healthDisclaimerAccepted, signatureName, offerCode,
+      liabilityWaiverAccepted, healthDisclaimerAccepted, signatureName, offerCode, referralCode,
     }),
   });
 

@@ -7,7 +7,7 @@ import WaiverSection, { EMPTY_WAIVER, isWaiverComplete } from "../WaiverSection.
 
 const EMPTY_FORM = {
   name: "", email: "", phone: "", branch: "", membershipPlan: "", username: "", password: "",
-  paymentMethod: "", paymentDuration: "", offerCode: "",
+  paymentMethod: "", paymentDuration: "", offerCode: "", referralCode: "",
   ...EMPTY_WAIVER,
 };
 const PAYMENT_METHODS = ["Cash", "Card", "Bank Transfer"];
@@ -285,6 +285,18 @@ export default function MemberSignupPage({ initialSelection, onSignedUp, onSwitc
             {!offerError && offerCode && quote && !quote.offerCode && quote.offerNote && (
               <div style={styles.hint}>{quote.offerNote}</div>
             )}
+          </Field>
+
+          <Field label="Referral code (optional)" error={fieldErrors.referralCode}>
+            <input
+              type="text"
+              value={form.referralCode}
+              onChange={(e) => update("referralCode", e.target.value.toUpperCase())}
+              placeholder="e.g. 7F3KQ9"
+              style={{ ...styles.input, ...styles.offerInput }}
+              maxLength={12}
+            />
+            <div style={styles.hint}>Know someone who's already a member? Enter their code here.</div>
           </Field>
 
           {quoteLoading && <div style={styles.quoteLoading}>Calculating price...</div>}

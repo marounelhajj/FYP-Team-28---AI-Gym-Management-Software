@@ -31,7 +31,7 @@ import WaiverSection, { EMPTY_WAIVER, isWaiverComplete } from "./WaiverSection.j
 // backend records the receptionist as the witness.
 const EMPTY_FORM = {
   name: "", email: "", phone: "", branch: "", membershipPlan: "",
-  paymentMethod: "", paymentDuration: "",
+  paymentMethod: "", paymentDuration: "", referralCode: "",
   ...EMPTY_WAIVER,
 };
 const PAYMENT_METHODS = ["Cash", "Card", "Bank Transfer"];
@@ -261,6 +261,18 @@ export default function RegisterMemberForm({ filterOptions, onClose, onRegistere
             {!offerError && offerCode && quote && !quote.offerCode && quote.offerNote && (
               <div style={styles.hint}>{quote.offerNote}</div>
             )}
+          </Field>
+
+          <Field label="Referral code (optional)" error={fieldErrors.referralCode}>
+            <input
+              type="text"
+              value={form.referralCode}
+              onChange={(e) => update("referralCode", e.target.value.toUpperCase())}
+              placeholder="e.g. 7F3KQ9"
+              style={{ ...styles.input, ...styles.offerInput }}
+              maxLength={12}
+            />
+            <div style={styles.hint}>If an existing member referred them, enter their code here.</div>
           </Field>
 
           {quoteLoading && <div style={styles.quoteLoading}>Calculating price...</div>}

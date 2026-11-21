@@ -18,6 +18,7 @@ import MyBranchFeedback from "../branchfeedback/MyBranchFeedback.jsx";
 import MemberPaymentMethodForm from "./MemberPaymentMethodForm.jsx";
 import MemberPrivacyPanel from "./MemberPrivacyPanel.jsx";
 import MemberProfileForm from "./MemberProfileForm.jsx";
+import MyLoyalty from "./MyLoyalty.jsx";
 import MyOffers from "./MyOffers.jsx";
 import ReminderSettings from "./ReminderSettings.jsx";
 
@@ -194,6 +195,7 @@ export default function MemberDashboard({ member: initialMember, onDeleted }) {
       )}
 
       <MyOffers />
+      <MyLoyalty />
 
       <BranchBusyLevel homeBranch={member.branch} />
 
