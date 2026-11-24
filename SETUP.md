@@ -596,6 +596,13 @@ account takes effect immediately, even for sessions already open.
 | `GET /api/headcount/live`, `/api/headcount/hourly` | `view_branch_headcount` (+ `view_all_branches` to pick any branch) |
 | `GET /api/classes/reservations` | `view_class_reservations` or `manage_class_schedule` (+ `view_all_branches` to pick any branch) |
 
+Blocked attempts are logged: every `403` from `authorize()` writes an
+`access.denied` audit entry (who, role, method, path, the permissions it
+needed), once a minute at most per account and path, so a screen retrying in
+a loop can't flood the log. Filter the audit log by "Blocked access" to see
+them. A `401` (nobody signed in) has no one to attribute it to and isn't
+logged. Run `python manage.py migrate` after pulling (audit 0021).
+
 Not logged in -> `401`; logged in without the permission -> `403`. Public:
 `/api/plans` reads, `/api/members/meta`, member sign-up/login.
 

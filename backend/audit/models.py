@@ -109,6 +109,8 @@ class AuditLog(models.Model):
         # At-risk members (SCRUM-68)
         RETENTION_CALL_LOGGED = "retention.call_logged", "Retention call logged"
         CALL_CAPACITY_UPDATED = "retention.capacity_updated", "Weekly call capacity changed"
+        # Role permissions (SCRUM-117): a signed-in staff member was refused.
+        ACCESS_DENIED = "access.denied", "Blocked: action outside the role's permissions"
         # The log itself (SCRUM-126) - who took a copy of which entries.
         AUDIT_LOG_EXPORTED = "audit_log.exported", "Audit log exported"
 

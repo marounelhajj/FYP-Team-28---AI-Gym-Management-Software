@@ -14,6 +14,33 @@ from .models import StaffAccount
 #       reset by an administrator, or a member session, which never
 #       carries staff permissions).
 # 403 = logged in, but the role doesn't grant any of the required keys.
+#       Every 403 is written to the audit log as access.denied (SCRUM-117:
+#       "blocked attempts are logged"), at most once a minute per account
+#       and address so a screen retrying in a loop can't flood the log.
+
+DENIAL_REPEAT_WINDOW_SECONDS = 60
+
+
+def log_denied(request, account, permissions):
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from audit.log import record
+    from audit.models import AuditLog
+
+    path = request.path[:200]
+    since = timezone.now() - timedelta(seconds=DENIAL_REPEAT_WINDOW_SECONDS)
+    if AuditLog.objects.filter(
+        action=AuditLog.Action.ACCESS_DENIED, actor_staff=account, created_at__gte=since,
+        details__path=path, details__method=request.method,
+    ).exists():
+        return
+    record(
+        request, AuditLog.Action.ACCESS_DENIED, actor=account,
+        summary=f"{account.full_name} was blocked from {request.method} {path}",
+        details={"method": request.method, "path": path, "needs": sorted(permissions), "role": account.role.name},
+    )
 
 
 def get_staff_account(request):
@@ -33,5 +60,6 @@ def authorize(request, *permissions):
 
     granted = set(account.role.permissions)
     if not granted.intersection(permissions):
+        log_denied(request, account, permissions)
         return None, Response({"error": "You don't have permission to do that."}, status=403)
     return account, None

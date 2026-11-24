@@ -62,6 +62,40 @@ class RolePermissionEnforcementTests(TestCase):
         res = self.client.patch("/api/staff/1", {"isActive": False}, content_type="application/json")
         self.assertEqual(res.status_code, 403)
 
+    # --- SCRUM-117: blocked attempts are logged ---
+    def test_blocked_attempts_are_logged(self):
+        from audit.models import AuditLog
+
+        self.login("recep")
+        self.client.get("/api/roles")
+        entry = AuditLog.objects.get(action=AuditLog.Action.ACCESS_DENIED)
+        self.assertEqual(entry.actor_username, "recep")
+        self.assertEqual(entry.actor_role, "Receptionist")
+        self.assertEqual(entry.details["path"], "/api/roles")
+        self.assertEqual(entry.details["method"], "GET")
+        self.assertEqual(entry.details["needs"], ["manage_roles", "manage_staff_accounts"])
+        self.assertIn("was blocked from GET /api/roles", entry.summary)
+
+    def test_repeated_blocked_attempts_are_logged_once_a_minute(self):
+        from audit.models import AuditLog
+
+        self.login("recep")
+        for _ in range(3):
+            self.client.get("/api/roles")
+        self.client.post("/api/roles", {"name": "X", "permissions": []}, content_type="application/json")
+        self.client.get("/api/permissions")
+        denied = AuditLog.objects.filter(action=AuditLog.Action.ACCESS_DENIED)
+        self.assertEqual(sorted((e.details["method"], e.details["path"]) for e in denied),
+                         [("GET", "/api/permissions"), ("GET", "/api/roles"), ("POST", "/api/roles")])
+
+    def test_allowed_and_anonymous_requests_are_not_logged_as_blocked(self):
+        from audit.models import AuditLog
+
+        self.client.get("/api/roles")  # 401: nobody to attribute it to
+        self.login("admin")
+        self.client.get("/api/roles")
+        self.assertFalse(AuditLog.objects.filter(action=AuditLog.Action.ACCESS_DENIED).exists())
+
     def test_receptionist_can_use_member_directory(self):
         self.login("recep")
         self.assertEqual(self.client.get("/api/members").status_code, 200)

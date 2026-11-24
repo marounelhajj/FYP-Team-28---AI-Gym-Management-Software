@@ -39,6 +39,7 @@ CATEGORY_LABELS = {
     "retail": "Retail (point of sale)",
     "class": "Class schedule",
     "audit_log": "Audit log",
+    "access": "Blocked access (role permissions)",
 }
 
 FILTER_PARAMS = ("user", "action", "branch", "dateFrom", "dateTo")
