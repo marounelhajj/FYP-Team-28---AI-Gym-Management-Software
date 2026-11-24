@@ -5,6 +5,7 @@ from administration.permissions import authorize
 from headcount.views import resolve_branch
 
 from .models import ChurnRun, ChurnScore
+from .reasons import explain
 from .scoring import ensure_current, refresh_branch
 
 # The At-Risk Members page (SCRUM-118).
@@ -57,7 +58,8 @@ def member_row(score):
         "score": score.score,
         "level": score.level,
         "method": score.method,
-        "reasons": score.reasons,
+        # Plain language only: never the points or feature names (SCRUM-119).
+        "reasons": explain(score.reasons, score.features, score.run.as_of),
         "lastVisit": score.features.get("last_visit"),
         "membershipEndsAt": member.subscription_expires_at,
     }
@@ -65,7 +67,7 @@ def member_row(score):
 
 def list_payload(account, branch, branches, run):
     scores = (
-        ChurnScore.objects.filter(run=run).select_related("member").order_by("rank")
+        ChurnScore.objects.filter(run=run).select_related("member", "run").order_by("rank")
     )
     return {
         "branch": branch,
