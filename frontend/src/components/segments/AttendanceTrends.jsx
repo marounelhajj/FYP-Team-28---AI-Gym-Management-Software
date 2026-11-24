@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchSegments, fetchSegmentsMeta, fetchTrends } from "../../api/segments.js";
 import SegmentedControl from "../SegmentedControl.jsx";
+import ExportButton from "./ExportButton.jsx";
 import TrendChart, { SERIES_COLORS } from "./TrendChart.jsx";
 
 // SCRUM-112: Attendance trends over time by branch and member segment.
@@ -156,6 +157,17 @@ export default function AttendanceTrends() {
               </label>
             )}
 
+            {/* Export CSV Button */}
+            <ExportButton
+              params={{
+                type: "aggregate",
+                segments: selectedSegments,
+                branch,
+                period,
+              }}
+              label="Export CSV"
+              onError={setExportError}
+            />
           </div>
         </div>
 

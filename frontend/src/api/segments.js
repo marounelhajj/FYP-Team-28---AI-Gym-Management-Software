@@ -85,3 +85,34 @@ export function fetchUptake({ segments, branch, from, to } = {}) {
   const qs = q.toString();
   return request(`/uptake${qs ? `?${qs}` : ""}`);
 }
+
+// GET /api/segments/export?type=aggregate&segments=..&branch=..&period=..&from=..&to=..
+// or GET /api/segments/export?type=members&segment=<id>&branch=..&from=..&to=..
+// Downloads CSV attachment.
+export async function downloadExport(params = {}) {
+  const q = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== "") {
+      q.set(key, Array.isArray(value) ? value.join(",") : value);
+    }
+  }
+  const res = await fetch(`/api/segments/export?${q.toString()}`);
+  if (!res.ok) throw await parseError(res);
+
+  const blob = await res.blob();
+  const match = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "");
+  const defaultFilename = params.type === "members" ? "segment-members.csv" : "segment-engagement.csv";
+  const filename = match ? match[1] : defaultFilename;
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  return filename;
+}
+
+export { downloadExport as exportSegments };

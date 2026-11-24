@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { deleteSegment, fetchClusters, fetchSegments, fetchSegmentsMeta } from "../../api/segments.js";
 import SegmentFilterBuilder from "./SegmentFilterBuilder.jsx";
 import SuggestedSegments from "./SuggestedSegments.jsx";
+import ExportButton from "./ExportButton.jsx";
 import { BUTTON_COLORS } from "../../styles/buttonColors.js";
 
 // SCRUM-43: Member Segments list and management.
@@ -226,6 +227,13 @@ export default function MemberSegments() {
                           </div>
                         ) : (
                           <div style={styles.actionButtons}>
+                            {canExport && (
+                              <ExportButton
+                                params={{ type: "members", segment: s.id }}
+                                label="Export members"
+                                style={styles.actionExportBtn}
+                              />
+                            )}
                             {canManage && (
                               <>
                                 <button
