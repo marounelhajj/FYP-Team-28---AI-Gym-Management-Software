@@ -26,3 +26,14 @@ export function fetchAtRisk(branch) {
 export function refreshAtRisk(branch) {
   return send("POST", "/refresh", { branch });
 }
+
+// SCRUM-68: log a retention call. outcome: reached | no_answer | saved |
+// cancelled_anyway. note and followUpOn (YYYY-MM-DD) are optional.
+export function logRetentionCall({ memberId, outcome, note, followUpOn }) {
+  return send("POST", "/calls", { memberId, outcome, note, followUpOn: followUpOn || null });
+}
+
+// SCRUM-68: a member's retention calls, newest first. Returns { memberId, calls }.
+export function fetchMemberCalls(memberId) {
+  return request(`/members/${memberId}/calls`);
+}

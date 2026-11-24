@@ -14,6 +14,7 @@ from billing.models import PaymentMethod
 from branchfeedback.models import BranchSurvey, Complaint, ComplaintMessage
 from coaching.models import ClientGoal, SessionLog
 from checkins.models import CheckInFlag
+from churn.models import ChurnScore, RetentionCall
 from classes.rules import release_future_bookings
 from notifications.models import MemberNotification, NotificationSettings, SentReminder
 from feedback.models import CoachFeedback
@@ -35,7 +36,8 @@ from .models import AccessCardReissue, Member
 #     the payment method on file, access-card reissue notes, check-in flag
 #     notes, the self-logged workouts and body metrics (SCRUM-60), their
 #     health notes (injuries and restrictions), their coaches' session logs
-#     and goals, and every
+#     and goals, retention calls and weekly churn scores
+#     (SCRUM-68/118), and every
 #     AI training event (training.events.delete_training_events_for_member).
 #   * Records the gym has to keep are KEPT but ANONYMIZED, not hard-deleted:
 #       - the Member row itself, so the records below keep their anchor
@@ -252,6 +254,15 @@ def build_export(member):
             }
             for n in member.health_notes.all()
         ],
+        # SCRUM-68: retention calls staff logged to them, and what was noted.
+        "retentionCalls": [
+            {
+                "calledAt": _stamp(c.called_at), "branch": c.branch, "outcome": c.get_outcome_display(),
+                "note": c.note, "followUpOn": _stamp(c.follow_up_on), "calledBy": c.called_by_name,
+                "reasonsAtTheTime": [r.get("text") for r in c.reasons if isinstance(r, dict)],
+            }
+            for c in RetentionCall.objects.filter(member=member)
+        ],
         "trainingEvents": [
             {
                 "eventType": e.event_type, "occurredAt": _stamp(e.occurred_at), "branch": e.branch,
@@ -326,6 +337,11 @@ def anonymize_member(member):
         # anonymized member); the comment is their own words, so it goes.
         CoachFeedback.objects.filter(member=member).update(comment="")
         delete_training_events_for_member(member.pk)
+        # SCRUM-68/118: retention calls (with staff notes about them) and
+        # their weekly churn scores are personal data, not records the gym
+        # must keep.
+        RetentionCall.objects.filter(member=member).delete()
+        ChurnScore.objects.filter(member=member).delete()
         _scrub_audit_entries(member)
 
 
