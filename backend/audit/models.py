@@ -113,6 +113,7 @@ class AuditLog(models.Model):
         ACCESS_DENIED = "access.denied", "Blocked: action outside the role's permissions"
         # The log itself (SCRUM-126) - who took a copy of which entries.
         AUDIT_LOG_EXPORTED = "audit_log.exported", "Audit log exported"
+        AUDIT_LOG_VIEWED = "audit_log.viewed", "Audit log viewed"
 
     class ActorType(models.TextChoices):
         STAFF = "Staff", "Staff"

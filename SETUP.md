@@ -167,7 +167,8 @@ did what."*
   registrations and online signups; renewals and reactivations; payment
   method changes (masked summary only); access card reissues; member
   profile edits, freezes, resumes and cancellations (staff or the member
-  themselves). Reads aren't logged.
+  themselves). Most reads aren't logged; searching the audit log itself is
+  (SCRUM-125).
 - After pulling: `python manage.py migrate` (new `audit` app).
 - Tests: `python manage.py test audit`
 
@@ -192,6 +193,10 @@ specific incident."*
   users who appear in the log, for the filter dropdowns.
 - Click a row to see its details: old and new values, what was affected,
   and the IP address.
+- Viewing the log is itself logged: each search writes an
+  `audit_log.viewed` entry with its filters and the number of matches
+  (paging through or reloading the same search within a minute writes only
+  one). Run `python manage.py migrate` after pulling (audit 0022).
 
 ### Exporting the audit log (SCRUM-126)
 

@@ -72,12 +72,17 @@ def _day_start(day):
 #
 # Newest first. 200 + {"total", "limit", "offset", "results"}.
 #
+# Viewing the log is itself logged (SCRUM-125, third criterion): each search
+# writes an audit_log.viewed entry with its filters and the number of
+# matches. Paging through or reloading the same search within a minute
+# doesn't write another one.
+#
 # User story (SCRUM-125): "As a general manager, I want to search and
 # filter the audit log by user, action type, branch and date range, so
 # that I can investigate a specific incident."
 @api_view(["GET"])
 def audit_log_list(request):
-    _, denied = authorize(request, VIEW_PERMISSION)
+    account, denied = authorize(request, VIEW_PERMISSION)
     if denied:
         return denied
 
@@ -96,11 +101,31 @@ def audit_log_list(request):
         offset = 0
 
     total = queryset.count()
-    page = queryset[offset : offset + limit]
+    # Read the page before logging the view, so the new entry isn't in it.
+    page = list(queryset[offset : offset + limit])
+    _log_view(request, account, total)
     return Response({
         "total": total, "limit": limit, "offset": offset,
         "results": AuditLogSerializer(page, many=True).data,
     })
+
+
+VIEW_REPEAT_WINDOW_SECONDS = 60
+
+
+def _log_view(request, account, total):
+    filters = {k: request.query_params.get(k, "").strip() for k in FILTER_PARAMS if request.query_params.get(k, "").strip()}
+    since = timezone.now() - timedelta(seconds=VIEW_REPEAT_WINDOW_SECONDS)
+    if AuditLog.objects.filter(
+        action=AuditLog.Action.AUDIT_LOG_VIEWED, actor_staff=account, created_at__gte=since, details__filters=filters,
+    ).exists():
+        return
+    described = ", ".join(f"{k}={v}" for k, v in filters.items()) or "no filters"
+    record(
+        request, AuditLog.Action.AUDIT_LOG_VIEWED, actor=account,
+        summary=f"Viewed the audit log ({described}; {total} entries)",
+        details={"filters": filters, "matches": total},
+    )
 
 
 # Applies the filters above; returns (queryset, None) or (None, 400 response).
