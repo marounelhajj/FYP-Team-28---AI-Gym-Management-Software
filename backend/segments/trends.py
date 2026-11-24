@@ -68,7 +68,8 @@ def trend_series(name, profiles, spans, key=None):
         points.append({
             "activeMembers": len(active),
             "visits": visits,
-            "visitsPerMember": round(visits / len(active), 2) if active else 0.0,
+            # None, not 0, before any of the series' members had joined.
+            "visitsPerMember": round(visits / len(active), 2) if active else None,
         })
     change = {"visitsPerMember": None, "visits": None}
     if len(points) >= 2:
