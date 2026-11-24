@@ -582,3 +582,33 @@ class RetentionRateTests(TestCase):
         since = timezone.localdate() - timedelta(days=1)
         filtered, _ = self.report(f"?dateFrom={since}")
         self.assertEqual(unfiltered["Hamra"], filtered["Hamra"])
+
+# SCRUM-125, third criterion: "viewing the audit log is itself logged".
+class AuditLogViewLoggingTests(TestCase):
+    def setUp(self):
+        _staff("gm", "Rami GM", ["view_audit_log"], role_name="General Manager")
+        staff_login(self.client, "gm", PASSWORD)
+
+    def viewed(self):
+        return AuditLog.objects.filter(action=AuditLog.Action.AUDIT_LOG_VIEWED)
+
+    def test_a_search_is_logged_with_its_filters(self):
+        res = self.client.get("/api/audit-log?user=dana&branch=Hamra")
+        self.assertEqual(res.status_code, 200)
+        entry = self.viewed().get()
+        self.assertEqual(entry.actor_username, "gm")
+        self.assertEqual(entry.details["filters"], {"user": "dana", "branch": "Hamra"})
+        self.assertEqual(entry.details["matches"], res.json()["total"])
+        self.assertIn("user=dana", entry.summary)
+        # The view's own entry isn't in the page it returned.
+        self.assertNotIn(entry.pk, [r["id"] for r in res.json()["results"]])
+
+    def test_paging_the_same_search_is_logged_once(self):
+        self.client.get("/api/audit-log?branch=Hamra")
+        self.client.get("/api/audit-log?branch=Hamra&offset=50")
+        self.client.get("/api/audit-log?branch=Jnah")
+        self.assertEqual(sorted(e.details["filters"]["branch"] for e in self.viewed()), ["Hamra", "Jnah"])
+
+    def test_refused_requests_are_not_logged_as_views(self):
+        self.client.get("/api/audit-log?dateFrom=nope")
+        self.assertFalse(self.viewed().exists())
