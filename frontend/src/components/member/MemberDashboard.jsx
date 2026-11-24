@@ -165,6 +165,7 @@ export default function MemberDashboard({ member: initialMember, onDeleted }) {
         <Row label="Name" value={member.name} />
         <Row label="Email" value={member.email} />
         <Row label="Phone" value={member.phone} />
+        <Row label="Date of birth" value={member.dateOfBirth || "—"} />
         <Row label="Branch" value={member.branch} />
         <Row label="Plan" value={member.membershipPlan} />
         <Row

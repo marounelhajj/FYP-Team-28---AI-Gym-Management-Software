@@ -23,7 +23,7 @@ from .profiles import RECENT_DAYS, build_profiles
 #   spend90         membership payments + shop purchases in the last 90 days
 #
 # The skewed ones (tenure, recency, spend) are log-scaled, then every
-# feature is standardised (mean 0, sd 1) so none dominates. k-means with
+# feature is standardised (mean 0, sd 1, clipped at +/-3) so none dominates. k-means with
 # k-means++ seeding runs for k = 3..6 with a fixed seed (same data, same
 # result), and the k with the best silhouette score wins. Each cluster gets
 # a name and a description from its centre, in plain units.
@@ -38,6 +38,12 @@ K_RANGE = range(3, 7)
 N_INIT = 6
 MAX_ITER = 100
 MIN_MEMBERS = 12
+Z_CLIP = 3.0
+# A "segment" of one or two outliers isn't useful to market to: a k whose
+# smallest cluster is under 3% of members (or under 3 people) is only chosen
+# if no k avoids it.
+MIN_CLUSTER_SHARE = 0.03
+MIN_CLUSTER_SIZE = 3
 SILHOUETTE_SAMPLE = 900
 RECENCY_CAP = 120
 NO_VISIT_HOUR = None
@@ -76,7 +82,9 @@ def _scale(rows):
         sd = math.sqrt(sum((x - mean) ** 2 for x in col) / n) or 1.0
         scaler[name] = [mean, sd]
         for row in transformed:
-            row[j] = (row[j] - mean) / sd
+            # Clipped at +/-3 sd: one unusual member (the only PT client, say)
+            # shouldn't pull a cluster of their own.
+            row[j] = max(-Z_CLIP, min(Z_CLIP, (row[j] - mean) / sd))
     return transformed, scaler
 
 
@@ -244,17 +252,21 @@ def cluster_profiles(profiles, today, seed=SEED):
                 "n": len(profiles), "note": f"Needs at least {MIN_MEMBERS} active members to suggest segments."}
     ids, rows = _raw_features(profiles, today)
     points, scaler = _scale(rows)
-    candidates, best = [], None
+    candidates, best, best_any = [], None, None
+    min_size = max(MIN_CLUSTER_SIZE, math.ceil(MIN_CLUSTER_SHARE * len(points)))
     for k in K_RANGE:
         if k >= len(points):
             break
         rng = random.Random(seed * 100 + k)
         labels, _, _ = kmeans(points, k, rng)
         score = silhouette(points, labels, random.Random(seed))
-        candidates.append({"k": k, "silhouette": round(score, 4)})
-        if best is None or score > best[1] + 1e-9:
+        smallest = min(labels.count(c) for c in set(labels))
+        candidates.append({"k": k, "silhouette": round(score, 4), "smallestCluster": smallest})
+        if best_any is None or score > best_any[1] + 1e-9:
+            best_any = (k, score, labels)
+        if smallest >= min_size and (best is None or score > best[1] + 1e-9):
             best = (k, score, labels)
-    k, score, labels = best
+    k, score, labels = best or best_any
     clusters = {}
     for i, label in enumerate(labels):
         clusters.setdefault(label, []).append(i)

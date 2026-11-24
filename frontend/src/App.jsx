@@ -33,6 +33,7 @@ import MyRatings from "./components/feedback/MyRatings.jsx";
 import PTRatingsReport from "./components/feedback/PTRatingsReport.jsx";
 import CampaignManager from "./components/marketing/CampaignManager.jsx";
 import CampaignsByBranch from "./components/marketing/CampaignsByBranch.jsx";
+import MemberSegments from "./components/segments/MemberSegments.jsx";
 import MyPay from "./components/payroll/MyPay.jsx";
 import CoachPayManager from "./components/payroll/CoachPayManager.jsx";
 import BranchFeedback from "./components/branchfeedback/BranchFeedback.jsx";
@@ -174,6 +175,13 @@ function availableScreens(account) {
   }
   if (has("view_marketing_campaigns")) {
     screens.push({ key: "campaignsbybranch", label: "Campaigns by Branch", render: () => <CampaignsByBranch /> });
+  }
+  // User story (SCRUM-43): "As a marketing staff member, I want to segment
+  // members by behavior or demographics, so that I can send targeted
+  // communications." Org-wide for marketing and the general manager; a branch
+  // manager sees their own branch's members (the server holds them to it).
+  if (has("view_member_segments") || has("manage_member_segments")) {
+    screens.push({ key: "segments", label: "Member Segments", render: () => <MemberSegments /> });
   }
   // Coaches' hourly rates and pay statements - a Branch Manager for their own
   // branch's coaches (the server holds them to it).
