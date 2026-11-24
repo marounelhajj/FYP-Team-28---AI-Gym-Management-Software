@@ -3,7 +3,10 @@
 Fitness Zone, FYP Group 28 (AUB EECE 501). Sprint 3 (Jira sprint 69) runs until 11 November 2026: classes, coaching and
 branch capacity.
 
-The video is recorded by `demo/record-sprint3-demo.js` from this script. Keep the two in step: the order, the role and
+**v2 (11 Nov):** re-recorded with every story that is Done in Jira (17), grouped by role. The first video
+(`demo/sprint3-demo.mp4`, 11 stories) is kept as it was.
+
+The video is recorded by `demo/record-sprint3-demo.js` from this script (output `demo/sprint3-demo-v2.mp4`). Keep the two in step: the order, the role and
 the click path below are what the recorder does.
 
 ## How to produce the video
@@ -11,9 +14,9 @@ the click path below are what the recorder does.
 ```bash
 npm install            # once, at the repo root (Playwright)
 npm run demo:seed      # fresh demo database + random logins (demo/.data/, git-ignored)
-npm run demo:record    # -> demo/sprint3-demo.mp4 (H.264, silent) and demo/sprint3-demo.webm
+npm run demo:record    # -> demo/sprint3-demo-v2.mp4 (H.264, silent) and demo/sprint3-demo-v2.webm
 npm run demo:record -- --headed        # watch it record
-npm run demo:record -- --only=coach    # one role while debugging (bm, member, coach, rec, bm2)
+npm run demo:record -- --only=coach    # one role while debugging (bm, coach1, member, rec, bm2, coach2, gm)
 ```
 
 Needs `backend/.venv`, Google Chrome and `ffmpeg` on the PATH, and free ports 4000 and 5173. The demo runs on its own
@@ -22,7 +25,7 @@ data alone is `DEMO_SEED=seed_demo npm run demo:seed`, and the Sprint 2 video is
 
 - **Format:** 1280x720, `slowMo` 400 ms, a visible cursor with a click ripple, **no audio**.
 - **Captions:** each story shows its Jira key, title and the role in use, with one sentence held for at least 3 seconds.
-- **Cards and length:** a title card first and a summary card listing the stories last. About 6 minutes.
+- **Cards and length:** a title card first and a summary card listing the stories last. About 10 minutes.
 - **Failures:** a step that fails skips its story, which is named in red on the summary card and in
   `demo/.data/recording-report.json`. Nothing is faked.
 - **Logins:** staff log in with a random password and an already-enrolled authenticator, members with a random password.
@@ -36,37 +39,51 @@ Everything from the Sprint 2 seed, plus:
   daily rhythm, so busy levels and typical hours have data.
 - **Classes and coaches:** the team's `seed_classes` timetable, which gives four weeks of classes and the coaches' PT hours.
   This week's classes are 30-70% booked.
-- **A live class:** a Spinning class with Hadi Nasser that started 15 minutes before the seed, with 6 booked members
-  including Lea Haddad.
-- **Lea's coach and log:** Lea had a private session with Hadi 5 days ago, which makes him her assigned coach. She has
-  three weeks of workouts and five weekly weigh-ins.
+- **A live class:** a Spinning class with Hadi Nasser that started 15 minutes before the seed and runs for 2.5 hours (so
+  it is still in progress when Hadi marks attendance late in the video), with 6 booked members.
+- **Lea's coach and log:** Lea had a private session with Hadi 5 days ago (attended), which makes him her assigned coach
+  and gives her a session to rate. She has three weeks of workouts and five weekly weigh-ins.
 - **Time off and capacities:** Hadi has a time-off block next week. Branch capacities are Hamra 60 (the branch manager
   changes it in the video) and Jnah 40.
+- **A full class (SCRUM-80):** "Boxing Bootcamp" at Hamra, two days from now, 6 spots, all booked. Karim Saad holds one
+  and cancels it in the video. Nobody is on the waitlist, so Lea is first in line when she joins.
+- **Reminders (SCRUM-61):** a Yoga class with Rita Aoun starting 50 minutes after the seed, which Lea booked two days
+  ago, and Lea's membership renewing in 12 days (she asked for the 14-day heads-up). The recorder runs the
+  `send_reminders` job once so the reminders are in her bell without waiting for the one-minute timer.
+- **Ratings (SCRUM-40, 37):** attended Hamra classes from the last three weeks, 10 ratings with feedback for Hadi
+  (average 4.2) and 8 for Rita, from other members.
+- **Past classes at both branches (SCRUM-22):** the timetable repeated for the three weeks before this one and this
+  week's finished classes, with bookings and attendance. Hamra is 70-100% full and mostly shows up; Jnah is 12-35%
+  full. One Jnah class was cancelled.
 
-## Order and logins (5 roles, 6 logins)
+## Order and logins (5 roles, 9 logins)
 
 | # | Login | Stories |
 |---|---|---|
-| 1 | Branch Manager, Hamra (`kabboud`) | SCRUM-81, 52, 128 (set capacity) |
-| 2 | Member (Lea Haddad) | SCRUM-77, 59, 60 (log) |
-| 3 | Coach (Hadi Nasser, `hnasser`) | SCRUM-34, 36, 57, 100, 60 (coach view) |
-| 4 | Receptionist, Hamra (`dsarkis`) | SCRUM-30, 128 (alert fires) |
-| 5 | Branch Manager again | SCRUM-128 (dashboard banner) |
+| 1 | Branch Manager, Hamra (`kabboud`) | SCRUM-52, 81, 128 (set capacity) |
+| 2 | Coach (Hadi Nasser, `hnasser`) | SCRUM-57, 100, 34 |
+| 3 | Member (Lea Haddad) | SCRUM-77, 59, 80 (join the waitlist) |
+| 4 | Member (Karim Saad) | SCRUM-80 (cancels, freeing a spot) |
+| 5 | Member (Lea Haddad) again | SCRUM-80 (booked in and notified), 61, 60 (log), 40 |
+| 6 | Receptionist, Hamra (`dsarkis`) | SCRUM-30, 128 (alert fires) |
+| 7 | Branch Manager again | SCRUM-128 (dashboard banner) |
+| 8 | Coach again | SCRUM-36, 37, 60 (coach view) |
+| 9 | General Manager (`rhaddad`) | SCRUM-22; SCRUM-106 is named as not shown |
 
 ---
 
-## 1. Branch Manager
-
-### SCRUM-81 Maximum capacity per class type
-- **Click path:** Class Schedule > "Class types" > Edit on Spinning > Maximum capacity 18 > Save changes.
-- **Caption:** Each class type has a safe maximum, so no class of that type can be overbooked.
-- **Expected:** "Spinning saved"; the table shows 18 people.
+## 1. Branch Manager (`kabboud`)
 
 ### SCRUM-52 Build the weekly class calendar
-- **Click path:** "Weekly calendar" > "+ Add class" on tomorrow > type "Pilates (max 15)", start 20:00, coach Rita Aoun >
+- **Click path:** Class Schedule > "Weekly calendar" > "+ Add class" on tomorrow > type "Pilates (max 15)", start 20:00, coach Rita Aoun >
   Add class.
 - **Caption:** The branch manager adds a class on tomorrow's calendar and assigns a coach to the slot.
 - **Expected:** "Pilates scheduled on ... at 20:00" and the class appears on tomorrow's column.
+
+### SCRUM-81 Maximum capacity per class type
+- **Click path:** "Class types" > Edit on Spinning > Maximum capacity 18 > Save changes.
+- **Caption:** Each class type has a safe maximum, so no class of that type can be overbooked.
+- **Expected:** "Spinning saved"; the table shows 18 people.
 
 ### SCRUM-128 Set the branch capacity and alert level
 - **Click path:** Live Headcount > Change capacity > maximum people, alert at 90% > Save capacity.
@@ -74,7 +91,24 @@ Everything from the Sprint 2 seed, plus:
 - **Expected:** the capacity bar reads "N of CAP people". The script picks CAP so the alert level is two people above
   the current count, so it can fire later in the video.
 
-## 2. Member (Lea Haddad)
+## 2. Coach (Hadi Nasser), first login
+
+### SCRUM-57 Set my own PT availability
+- **Click path:** My Availability > Every Friday, 14:00 to 17:00 > Add hours.
+- **Caption:** Hadi publishes his own private training hours, which members can book straight away.
+- **Expected:** "Added Friday 14:00-17:00 at Hamra - members can book it now."
+
+### SCRUM-100 Block off time I'm unavailable
+- **Click path:** My Time Off > From / To (in three days, 13:00-17:00) > reason > Block time off.
+- **Caption:** He blocks off an afternoon, so members can't book him then.
+- **Expected:** "Blocked ... - members can't book you then." and the block in the list.
+
+### SCRUM-34 My daily and weekly schedule
+- **Click path:** My Schedule: today's tab, another day, back to today.
+- **Caption:** Hadi sees his classes and private sessions for each day of the week.
+- **Expected:** today's live Spinning class "In progress" with its Attendance button, and other days' classes.
+
+## 3. Member (Lea Haddad, then Karim Saad, then Lea again)
 
 ### SCRUM-77 How busy is my branch, now and at typical hours
 - **Click path:** "How busy is it?" card > Saturday > Branch: Jnah > back to Hamra.
@@ -91,41 +125,31 @@ Everything from the Sprint 2 seed, plus:
 - **Caption:** Lea reserves a spot in tomorrow's class and books private training with her coach.
 - **Expected:** "You're booked into ..." and "Booked: private training with Hadi Nasser on ...".
 
+### SCRUM-80 Join a waitlist for a full class, and be notified when a spot opens
+- **Click path:** Lea: "Classes" > the day two days ahead > Boxing Bootcamp (Full) > Join waitlist. Log out. Karim: the
+  same class > Cancel. Lea logs in again > notification bell.
+- **Caption:** Boxing Bootcamp is full, so Lea joins the waitlist and is told she'll be booked in if a spot opens.
+  Then: Karim cancels and the system gives the spot to the first member waiting. Then: Lea is booked in and notified.
+- **Expected:**
+  - "You're #1 on the waitlist for Boxing Bootcamp ..." and a "Waitlist #1" tag.
+  - Karim: "Your spot in Boxing Bootcamp ... was given back."
+  - Lea's bell: "You're in: Boxing Bootcamp, ..." (the booking is made in the same request as the cancel).
+
+### SCRUM-61 Class and renewal reminders
+- **Click path:** Lea: the Reminders card on the dashboard > notification bell.
+- **Caption:** Lea is reminded before her Yoga class starts and ahead of her membership renewal date.
+- **Expected:** the Reminders card with its settings and "Coming up" list; the bell holds "Reminder: Yoga today at ..."
+  and "Membership renewal due in 12 days (...)". The reminders come from the real `send_reminders` job.
+
 ### SCRUM-60 Log my own workouts and body metrics
 - **Click path:** My training log > Log a workout > Bench press, 4 x 8 @ 45 kg > Save > Body metrics tab.
 - **Caption:** Between sessions Lea logs her workouts and weight, for her coach and the AI to use.
 - **Expected:** "Workout logged." and the body-weight chart (74.8 to 73.0 kg) with the measurement list.
 
-## 3. Coach (Hadi Nasser)
-
-### SCRUM-34 My daily and weekly schedule
-- **Click path:** My Schedule: today's tab, another day, back to today.
-- **Caption:** Hadi sees his classes and private sessions for each day of the week.
-- **Expected:** today's live Spinning class "In progress" with its Attendance button, and other days' classes.
-
-### SCRUM-36 Mark attendance for my classes
-- **Click path:** Attendance on the live Spinning class > Lea Attended, another member Attended, another No-show >
-  walk-in by membership ID > Add walk-in > Close.
-- **Caption:** During his class Hadi marks who came, who didn't, and adds a walk-in.
-- **Expected:**
-  - The counts update: Attended, No-show and Walk-ins.
-  - "... added as attended."
-  - Each mark is written to the AI training log as `attended` or `no_show`.
-
-### SCRUM-57 Set my own PT availability
-- **Click path:** My Availability > Every Friday, 14:00 to 17:00 > Add hours.
-- **Caption:** Hadi publishes his own private training hours, which members can book straight away.
-- **Expected:** "Added Friday 14:00-17:00 at Hamra - members can book it now."
-
-### SCRUM-100 Block off time I'm unavailable
-- **Click path:** My Time Off > From / To (in three days, 13:00-17:00) > reason > Block time off.
-- **Caption:** He blocks off an afternoon, so members can't book him then.
-- **Expected:** "Blocked ... - members can't book you then." and the block in the list.
-
-### SCRUM-60 (coach view) Coach views a client's training log
-- **Click path:** My Clients > Lea Haddad.
-- **Caption:** Her coach sees the workouts and weight Lea logged, read-only, to plan the next session.
-- **Expected:** a "Read-only" log with the weight chart and recent workouts, including the bench press just logged.
+### SCRUM-40 Rate my coach after a session
+- **Click path:** Lea: "Rate your coaches" > Rate on "Private training with Hadi Nasser" > 5 stars > comment > Submit rating.
+- **Caption:** After her private session Lea rates Hadi and leaves feedback, which he can see.
+- **Expected:** "Thanks - your coach will see your rating." and the rating under "Your ratings".
 
 ## 4. Receptionist
 
@@ -150,9 +174,48 @@ Everything from the Sprint 2 seed, plus:
 - **Expected:** a red "Near capacity: N of CAP people inside" banner. It clears 5% of capacity below the threshold, so
   it doesn't flicker.
 
+## 6. Coach (Hadi Nasser), second login
+
+### SCRUM-36 Mark attendance for my classes
+- **Click path:** My Schedule > Attendance on the live Spinning class > two members Attended, one No-show >
+  walk-in by membership ID > Add walk-in > Close.
+- **Caption:** During his class Hadi marks who came, who didn't, and adds a walk-in.
+- **Expected:**
+  - The counts update: Attended, No-show and Walk-ins.
+  - "... added as attended."
+  - Each mark is written to the AI training log as `attended` or `no_show`.
+
+### SCRUM-37 View ratings and feedback from my clients
+- **Click path:** Coach, second login: My Ratings > overall rating, star breakdown, by session > filter 5 stars >
+  "Only with comments".
+- **Caption:** Hadi sees his average, the star breakdown and each comment, including Lea's new rating.
+- **Expected:** the average (about 4.2), the distribution, "Spinning" and "Private training" averages, and Lea's
+  comment at the top.
+
+### SCRUM-60 (coach view) Coach views a client's training log
+- **Click path:** My Clients > Lea Haddad.
+- **Caption:** Her coach sees the workouts and weight Lea logged, read-only, to plan the next session.
+- **Expected:** a "Read-only" log with the weight chart and recent workouts, including the bench press just logged.
+
+
+## 7. General Manager (`rhaddad`)
+
+### SCRUM-22 View the class reservation schedule for each branch
+- **Click path:** Rami (`rhaddad`): Class Reservations > branch cards > Jnah > Hamra > "By class" and "Schedule" >
+  Previous week > This week.
+- **Caption:** Rami compares how full each branch's classes are, then opens a branch's schedule and last week.
+- **Expected:** Hamra about 80% full against Jnah's low fill, the five stats (Fill rate, Classes, Full classes,
+  On waitlists, Showed up), classes busiest first, and last week's history.
+
+### SCRUM-106 Compare branch attendance and class utilization (not shown)
+- **Status:** Marked Done in Jira, but nothing was merged for it: no pull request, no commit, no comment, and no
+  assignee. The app has no view that puts branch check-in attendance next to class utilization.
+- **What the video does:** nothing is passed off as this story. The branch cards in SCRUM-22 compare class fill and class
+  show-up across branches, which is the nearest thing, but the summary card lists SCRUM-106 in red as "not shown".
+
 ---
 
-## Stories shown (11)
+## Stories shown (16 of 17)
 
-SCRUM-30, 34, 36, 52, 57, 59, 60, 77, 81, 100, 128. The team's Sprint 3 stories (30, 34, 52, 57, 59, 81, 100) and
-Ahmad's (36, 60, 77, 128; PRs #28-#31).
+SCRUM-22, 30, 34, 36, 37, 40, 52, 57, 59, 60, 61, 77, 80, 81, 100, 128. **Not shown: SCRUM-106** (see above).
+The team's Sprint 3 stories (22, 30, 34, 37, 40, 52, 57, 59, 61, 80, 81, 100) and Ahmad's (36, 60, 77, 128; PRs #28-#31).

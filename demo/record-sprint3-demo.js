@@ -1,11 +1,11 @@
 /*
- * Records the Sprint 3 demo video of Fitness Zone (FYP Group 28), silent.
+ * Records the Sprint 3 demo video (v2: all 17 finished stories) of Fitness Zone (FYP Group 28), silent.
  *
  *   npm run demo:seed       once: a clean, realistic demo database + logins
  *   npm run demo:record     records every story, role by role
  *   npm run demo:record -- --headed     watch the browser while it records
  *
- * Output (git-ignored): demo/sprint3-demo.webm (raw) and demo/sprint3-demo.mp4
+ * Output (git-ignored): demo/sprint3-demo-v2.webm (raw) and demo/sprint3-demo-v2.mp4
  * (H.264, no audio), plus demo/.data/recording-report.json (chapters, skipped
  * stories). The story order, logins and click paths are in
  * docs/sprint3-demo-script.md; keep the two in step.
@@ -34,8 +34,8 @@ const DATA = path.join(__dirname, ".data");
 const DB = path.join(DATA, "demo.sqlite3");
 const CREDENTIALS = path.join(DATA, "credentials.json");
 const VIDEO_DIR = path.join(DATA, "video");
-const WEBM = path.join(__dirname, "sprint3-demo.webm");
-const MP4 = path.join(__dirname, "sprint3-demo.mp4");
+const WEBM = path.join(__dirname, "sprint3-demo-v2.webm");
+const MP4 = path.join(__dirname, "sprint3-demo-v2.mp4");
 const REPORT = path.join(DATA, "recording-report.json");
 const APP = "http://localhost:5173";
 const HEADED = process.argv.includes("--headed");
@@ -343,6 +343,24 @@ class Demo {
     );
   }
 
+  // The smallest element holding both a text and a button, i.e. one class card.
+  cardWith(text, buttonName) {
+    return this.page.locator(
+      `xpath=//*[contains(normalize-space(.), "${text}")][.//button[normalize-space()="${buttonName}"]]` +
+        `[not(.//*[contains(normalize-space(.), "${text}")][.//button[normalize-space()="${buttonName}"]])]`
+    );
+  }
+
+  // A story the app cannot show: named on the summary card and in the report, never faked.
+  async skipStory(def, reason, sentence) {
+    log(`${def.key} ${def.title}: NOT SHOWN (${reason})`);
+    this.skipped.push({ key: def.key, title: def.title, reason });
+    // Say so on screen too, for long enough to read.
+    await this.store("demoCaption", { key: def.key, role: def.role, title: `${def.title} (not shown)`, sentence });
+    await sleep(5000);
+    await this.store("demoCaption", null);
+  }
+
   button(name, exact = true) {
     return this.page.getByRole("button", { name, exact });
   }
@@ -394,6 +412,13 @@ const MEMBER = "Member";
 const ONLY = (process.argv.find((a) => a.startsWith("--only=")) || "").slice(7).split(",").filter(Boolean);
 const want = (persona) => ONLY.length === 0 || ONLY.includes(persona);
 
+// Runs the reminder job once, so the reminders the member sees do not depend on the 60-second timer.
+function runManage(args) {
+  const result = spawnSync(python(), ["manage.py", ...args], { cwd: BACKEND, env: { ...process.env, GYM_DB_PATH: DB }, encoding: "utf8" });
+  if (result.status !== 0) throw new Error(`manage.py ${args[0]} failed: ${result.stderr}`);
+  log(`  ${args[0]}: ${result.stdout.trim()}`);
+}
+
 function isoDay(offset) {
   const d = new Date(Date.now() + offset * 86400000);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -415,30 +440,19 @@ async function recordStories(d) {
   const named = creds.named;
   const dialog = () => page.getByRole("dialog").last();
   let inside = null;
+  const dayTab = (offset) =>
+    page.getByRole("tab").filter({ hasText: new RegExp(`^${new Date(Date.now() + offset * 86400000).toLocaleDateString("en-GB", { weekday: "short" })}`) }).first();
+  const bell = () => page.getByRole("button", { name: /^Notifications/ });
 
   // ============================== Branch Manager =============================
   if (want("bm")) {
   await d.staffLogin("kabboud");
 
   await d.story({
-    key: "SCRUM-81", role: BM, title: "Maximum capacity per class type",
-    sentence: "Each class type has a safe maximum, so no class of that type can be overbooked.",
-  }, async () => {
-    await d.click(d.button("Class Schedule"), 900);
-    await d.click(d.radio("Class types"), 900);
-    const row = page.getByRole("row", { name: /Spinning/ }).first();
-    await d.reveal(row, 1200);
-    await d.click(row.getByRole("button", { name: "Edit" }), 700);
-    await d.type(d.field("Maximum capacity"), "18");
-    await d.click(d.button("Save changes"), 1000);
-    await d.see(page.getByText("Spinning saved", { exact: false }));
-    await d.reveal(page.getByText("Spinning saved", { exact: false }), 1500);
-  });
-
-  await d.story({
     key: "SCRUM-52", role: BM, title: "Build the weekly class calendar",
     sentence: "The branch manager adds a class on tomorrow's calendar and assigns a coach to the slot.",
   }, async () => {
+    await d.click(d.button("Class Schedule"), 900);
     await d.click(d.radio("Weekly calendar"), 900);
     await d.click(page.getByRole("region", { name: longDay(1) }).getByRole("button", { name: "+ Add class" }), 900);
     const form = dialog();
@@ -448,6 +462,20 @@ async function recordStories(d) {
     await d.click(form.getByRole("button", { name: "Add class" }), 1200);
     await d.see(page.getByText("scheduled on", { exact: false }));
     await d.reveal(page.getByText("scheduled on", { exact: false }), 1500);
+  });
+
+  await d.story({
+    key: "SCRUM-81", role: BM, title: "Maximum capacity per class type",
+    sentence: "Each class type has a safe maximum, so no class of that type can be overbooked.",
+  }, async () => {
+    await d.click(d.radio("Class types"), 900);
+    const row = page.getByRole("row", { name: /Spinning/ }).first();
+    await d.reveal(row, 1200);
+    await d.click(row.getByRole("button", { name: "Edit" }), 700);
+    await d.type(d.field("Maximum capacity"), "18");
+    await d.click(d.button("Save changes"), 1000);
+    await d.see(page.getByText("Spinning saved", { exact: false }));
+    await d.reveal(page.getByText("Spinning saved", { exact: false }), 1500);
   });
 
   await d.story({
@@ -469,97 +497,9 @@ async function recordStories(d) {
   await d.logout();
   }
 
-  // ================================== Member =================================
-  if (want("member")) {
-  await d.memberLogin("memberLogin");
-
-  await d.story({
-    key: "SCRUM-77", role: MEMBER, title: "How busy is my branch, now and at typical hours",
-    sentence: "Members see a busy level, never a headcount, plus the typical day hour by hour.",
-  }, async () => {
-    const card = page.getByText("How busy is it?");
-    await d.reveal(card, 1500);
-    await d.click(page.getByRole("radio", { name: "Saturday" }), 1500);
-    await d.choose(page.getByLabel("Branch"), "Jnah");
-    await sleep(1200);
-    await d.choose(page.getByLabel("Branch"), "Hamra");
-  });
-
-  await d.story({
-    key: "SCRUM-59", role: MEMBER, title: "Book a class or a private session in the app",
-    sentence: "Lea reserves a spot in tomorrow's class and books private training with her coach.",
-  }, async () => {
-    await d.reveal(page.getByRole("heading", { name: /^Book at/ }), 600);
-    await d.click(page.getByRole("tab").filter({ hasText: new RegExp(`^${new Date(Date.now() + 86400000).toLocaleDateString("en-GB", { weekday: "short" })}`) }).first(), 800);
-    await d.click(d.button("Reserve").first(), 1200);
-    await d.see(page.getByText("You're booked into", { exact: false }));
-    await d.reveal(page.getByText("You're booked into", { exact: false }), 1400);
-    await d.click(d.radio("Coaches & PT"), 900);
-    const card = page.locator("div").filter({ has: page.getByText("Hadi Nasser", { exact: true }) }).filter({ has: d.button("See times") }).last();
-    await d.click(card.getByRole("button", { name: "See times" }), 900);
-    for (let i = 0; i < 3; i++) {
-      const freeDay = page.getByRole("tab").filter({ hasText: /free/ }).first();
-      if (await freeDay.count()) break;
-      await d.click(page.getByRole("button", { name: "Next week" }), 900);
-    }
-    await d.click(page.getByRole("tab").filter({ hasText: /free/ }).first(), 700);
-    await d.click(page.getByRole("button", { name: /: Free$/ }).first(), 700);
-    await d.type(page.getByLabel("Note for the coach"), "Deadlift technique");
-    await d.click(d.button("Book session"), 1200);
-    await d.see(page.getByText("Booked: private training", { exact: false }));
-    await d.reveal(page.getByText("Booked: private training", { exact: false }), 1600);
-  });
-
-  await d.story({
-    key: "SCRUM-60", role: MEMBER, title: "Log my own workouts and body metrics",
-    sentence: "Between sessions Lea logs her workouts and weight, for her coach and the AI to use.",
-  }, async () => {
-    await d.click(d.button("Log a workout"), 700);
-    await d.choose(page.locator("#tl-exercise"), "Bench press");
-    await d.type(page.locator("#tl-sets"), "4");
-    await d.type(page.locator("#tl-reps"), "8");
-    await d.type(page.locator("#tl-weight"), "45");
-    await d.click(d.button("Save"), 1000);
-    await d.see(page.getByText("Workout logged."));
-    await d.click(page.getByRole("tab", { name: /^Body metrics/ }), 900);
-    await d.reveal(page.locator("figure").last(), 2200);
-  });
-
-  await d.logout();
-  }
-
   // =================================== Coach =================================
-  if (want("coach")) {
+  if (want("coach1")) {
   await d.staffLogin("hnasser");
-
-  await d.story({
-    key: "SCRUM-34", role: COACH, title: "My daily and weekly schedule",
-    sentence: "Hadi sees his classes and private sessions for each day of the week.",
-  }, async () => {
-    await d.see(page.getByRole("tablist", { name: "Days" }));
-    await d.reveal(page.getByRole("tab", { name: /^Today/ }), 1200);
-    await d.click(page.getByRole("tab").nth(4), 1400);
-    await d.click(page.getByRole("tab", { name: /^Today/ }), 900);
-  });
-
-  await d.story({
-    key: "SCRUM-36", role: COACH, title: "Mark attendance for my classes",
-    sentence: "During his class Hadi marks who came, who didn't, and adds a walk-in.",
-  }, async () => {
-    await d.click(d.button("Attendance").first(), 900);
-    const sheet = page.getByRole("dialog", { name: "Attendance" });
-    await d.see(sheet);
-    const lea = creds.members.memberLogin.name;
-    await d.click(sheet.getByRole("radiogroup", { name: `Attendance for ${lea}` }).getByRole("radio", { name: "Attended" }), 700);
-    const others = sheet.getByRole("radiogroup", { name: new RegExp(`^Attendance for (?!${lea})`) });
-    await d.click(others.nth(0).getByRole("radio", { name: "Attended" }), 500);
-    await d.click(others.nth(1).getByRole("radio", { name: "No-show" }), 500);
-    await d.type(sheet.getByPlaceholder("Membership ID"), String(named.walkIn.id));
-    await d.click(sheet.getByRole("button", { name: "Add walk-in" }), 1200);
-    await d.see(sheet.getByText("added as attended", { exact: false }));
-    await d.reveal(sheet.getByText("Walk-ins", { exact: true }), 1800);
-    await d.click(sheet.getByRole("button", { name: "Close" }), 600);
-  });
 
   await d.story({
     key: "SCRUM-57", role: COACH, title: "Set my own PT availability",
@@ -590,13 +530,153 @@ async function recordStories(d) {
   });
 
   await d.story({
-    key: "SCRUM-60", role: COACH, title: "Coach views a client's training log (read-only)",
-    sentence: "Her coach sees the workouts and weight Lea logged, read-only, to plan the next session.",
+    key: "SCRUM-34", role: COACH, title: "My daily and weekly schedule",
+    sentence: "Hadi sees his classes and private sessions for each day of the week.",
   }, async () => {
-    await d.click(d.button("My Clients"), 1200);
-    await d.see(page.getByText("Read-only"));
-    await d.reveal(page.locator("figure").first(), 1800);
-    await d.reveal(page.getByRole("heading", { name: "Recent workouts" }), 1500);
+    await d.click(d.button("My Schedule"), 900);
+    await d.see(page.getByRole("tablist", { name: "Days" }));
+    await d.reveal(page.getByRole("tab", { name: /^Today/ }), 1200);
+    await d.click(page.getByRole("tab").nth(4), 1400);
+    await d.click(page.getByRole("tab", { name: /^Today/ }), 900);
+  });
+
+  await d.logout();
+  }
+
+  // ================================== Member =================================
+  if (want("member")) {
+  await d.memberLogin("memberLogin");
+
+  await d.story({
+    key: "SCRUM-77", role: MEMBER, title: "How busy is my branch, now and at typical hours",
+    sentence: "Members see a busy level, never a headcount, plus the typical day hour by hour.",
+  }, async () => {
+    const card = page.getByText("How busy is it?");
+    await d.reveal(card, 1500);
+    await d.click(page.getByRole("radio", { name: "Saturday" }), 1500);
+    await d.choose(page.getByLabel("Branch"), "Jnah");
+    await sleep(1200);
+    await d.choose(page.getByLabel("Branch"), "Hamra");
+  });
+
+  await d.story({
+    key: "SCRUM-59", role: MEMBER, title: "Book a class or a private session in the app",
+    sentence: "Lea reserves a spot in tomorrow's class and books private training with her coach.",
+  }, async () => {
+    await d.reveal(page.getByRole("heading", { name: /^Book at/ }), 600);
+    await d.click(dayTab(1), 800);
+    await d.click(d.button("Reserve").first(), 1200);
+    await d.see(page.getByText("You're booked into", { exact: false }));
+    await d.reveal(page.getByText("You're booked into", { exact: false }), 1400);
+    await d.click(d.radio("Coaches & PT"), 900);
+    const card = page.locator("div").filter({ has: page.getByText("Hadi Nasser", { exact: true }) }).filter({ has: d.button("See times") }).last();
+    await d.click(card.getByRole("button", { name: "See times" }), 900);
+    for (let i = 0; i < 3; i++) {
+      const freeDay = page.getByRole("tab").filter({ hasText: /free/ }).first();
+      if (await freeDay.count()) break;
+      await d.click(page.getByRole("button", { name: "Next week" }), 900);
+    }
+    await d.click(page.getByRole("tab").filter({ hasText: /free/ }).first(), 700);
+    await d.click(page.getByRole("button", { name: /: Free$/ }).first(), 700);
+    await d.type(page.getByLabel("Note for the coach"), "Deadlift technique");
+    await d.click(d.button("Book session"), 1200);
+    await d.see(page.getByText("Booked: private training", { exact: false }));
+    await d.reveal(page.getByText("Booked: private training", { exact: false }), 1600);
+  });
+
+  await d.story({
+    key: "SCRUM-80", role: MEMBER, title: "Join the waitlist for a full class",
+    sentence: "Boxing Bootcamp is full, so Lea joins the waitlist and is told she'll be booked in if a spot opens.",
+  }, async () => {
+    await d.click(d.radio("Classes"), 900);
+    await d.click(dayTab(2), 900);
+    const card = d.cardWith(named.fullClass.name, "Join waitlist");
+    await d.reveal(card, 1500);
+    await d.click(card.getByRole("button", { name: "Join waitlist", exact: true }), 1000);
+    await d.see(page.getByText("on the waitlist for", { exact: false }));
+    await d.reveal(page.getByText("on the waitlist for", { exact: false }), 1800);
+    await d.reveal(page.getByText("Waitlist #1", { exact: false }), 1200);
+  });
+
+  await d.logout();
+  await d.memberLogin("deleteLogin");
+
+  await d.story({
+    key: "SCRUM-80", role: MEMBER, title: "A booked member cancels, which frees a spot",
+    sentence: "Karim, who holds a spot in Boxing Bootcamp, cancels. The system gives it to the first member waiting.",
+  }, async () => {
+    await d.click(d.radio("Classes"), 900);
+    await d.click(dayTab(2), 900);
+    const card = d.cardWith(named.fullClass.name, "Cancel");
+    await d.reveal(card, 1200);
+    await d.click(card.getByRole("button", { name: "Cancel", exact: true }), 1000);
+    await d.see(page.getByText("was given back", { exact: false }));
+    await d.reveal(page.getByText("was given back", { exact: false }), 1600);
+  });
+
+  await d.logout();
+  await d.memberLogin("memberLogin");
+
+  await d.story({
+    key: "SCRUM-80", role: MEMBER, title: "The waiting member is booked in and notified",
+    sentence: "Back as Lea: the spot was booked for her automatically, and the notification bell says so.",
+  }, async () => {
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await sleep(1500);
+    await d.click(bell(), 900);
+    const note = page.getByText("You're in: Boxing Bootcamp", { exact: false });
+    await d.see(note);
+    await d.reveal(note, 2600);
+    await page.keyboard.press("Escape");
+  });
+
+  await d.story({
+    key: "SCRUM-61", role: MEMBER, title: "Class and renewal reminders",
+    sentence: "Lea is reminded before her Yoga class starts and ahead of her membership renewal date.",
+  }, async () => {
+    runManage(["send_reminders"]);
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await sleep(1500);
+    await d.reveal(page.getByRole("heading", { name: "Reminders", exact: true }), 1500);
+    await d.reveal(page.getByText("Coming up", { exact: true }), 2200);
+    await d.click(bell(), 900);
+    const classNote = page.getByText("Reminder: Yoga", { exact: false });
+    await d.see(classNote);
+    await d.reveal(classNote, 2400);
+    const renewal = page.getByText("Membership renewal due", { exact: false });
+    await d.see(renewal);
+    await d.reveal(renewal, 2600);
+    await page.keyboard.press("Escape");
+  });
+
+  await d.story({
+    key: "SCRUM-60", role: MEMBER, title: "Log my own workouts and body metrics",
+    sentence: "Between sessions Lea logs her workouts and weight, for her coach and the AI to use.",
+  }, async () => {
+    await d.click(d.button("Log a workout"), 700);
+    await d.choose(page.locator("#tl-exercise"), "Bench press");
+    await d.type(page.locator("#tl-sets"), "4");
+    await d.type(page.locator("#tl-reps"), "8");
+    await d.type(page.locator("#tl-weight"), "45");
+    await d.click(d.button("Save"), 1000);
+    await d.see(page.getByText("Workout logged."));
+    await d.click(page.getByRole("tab", { name: /^Body metrics/ }), 900);
+    await d.reveal(page.locator("figure").last(), 2200);
+  });
+
+  await d.story({
+    key: "SCRUM-40", role: MEMBER, title: "Rate my coach after a session",
+    sentence: "After her private session Lea rates Hadi and leaves feedback, which he can see.",
+  }, async () => {
+    await d.reveal(page.getByRole("heading", { name: "Rate your coaches" }), 1200);
+    await d.reveal(page.getByText("Waiting for your rating"), 1000);
+    await d.click(d.button("Rate").first(), 900);
+    await d.click(page.getByRole("radio", { name: "5 stars - Excellent" }), 700);
+    await d.type(page.getByLabel("Comment (optional)"), "Great form coaching on my squat, very clear cues.");
+    await d.click(d.button("Submit rating"), 1200);
+    await d.see(page.getByText("Thanks - your coach will see your rating."));
+    await d.reveal(page.getByText("Thanks - your coach will see your rating."), 1600);
+    await d.reveal(page.getByText("Your ratings"), 1500);
   });
 
   await d.logout();
@@ -670,6 +750,95 @@ async function recordStories(d) {
     await d.see(page.getByRole("alert").filter({ hasText: "Near capacity" }));
     await d.reveal(page.getByRole("alert").filter({ hasText: "Near capacity" }), 2600);
   });
+  await d.logout();
+  }
+
+  // =================================== Coach =================================
+  if (want("coach2")) {
+  await d.staffLogin("hnasser");
+
+  await d.story({
+    key: "SCRUM-36", role: COACH, title: "Mark attendance for my classes",
+    sentence: "During his class Hadi marks who came, who didn't, and adds a walk-in.",
+  }, async () => {
+    await d.click(d.button("My Schedule"), 900);
+    await d.click(d.button("Attendance").first(), 900);
+    const sheet = page.getByRole("dialog", { name: "Attendance" });
+    await d.see(sheet);
+    const groups = sheet.getByRole("radiogroup", { name: /^Attendance for / });
+    await d.click(groups.nth(0).getByRole("radio", { name: "Attended" }), 700);
+    await d.click(groups.nth(1).getByRole("radio", { name: "Attended" }), 500);
+    await d.click(groups.nth(2).getByRole("radio", { name: "No-show" }), 500);
+    await d.type(sheet.getByPlaceholder("Membership ID"), String(named.walkIn.id));
+    await d.click(sheet.getByRole("button", { name: "Add walk-in" }), 1200);
+    await d.see(sheet.getByText("added as attended", { exact: false }));
+    await d.reveal(sheet.getByText("Walk-ins", { exact: true }), 1800);
+    await d.click(sheet.getByRole("button", { name: "Close" }), 600);
+  });
+
+  await d.story({
+    key: "SCRUM-37", role: COACH, title: "See the ratings and feedback from my clients",
+    sentence: "Hadi sees his average, the star breakdown and each comment, including Lea's new rating.",
+  }, async () => {
+    await d.click(d.button("My Ratings"), 1200);
+    await d.see(page.getByRole("heading", { name: "My Ratings" }));
+    await d.reveal(page.getByRole("region", { name: "Overall rating" }).or(page.locator('[aria-label="Overall rating"]')), 1800);
+    await d.reveal(page.locator('[aria-label="Star breakdown"]'), 1600);
+    await d.reveal(page.getByRole("heading", { name: "By session" }), 1500);
+    await d.reveal(page.getByText("Great form coaching on my squat", { exact: false }), 2200);
+    const starFilter = page.locator("label").filter({ hasText: /^Stars/ }).locator("select");
+    await d.choose(starFilter, "5 stars");
+    await sleep(1200);
+    await d.choose(starFilter, "All ratings");
+    await d.click(page.getByLabel("Only with comments"), 1400);
+  });
+
+  await d.story({
+    key: "SCRUM-60", role: COACH, title: "Coach views a client's training log (read-only)",
+    sentence: "Her coach sees the workouts and weight Lea logged, read-only, to plan the next session.",
+  }, async () => {
+    await d.click(d.button("My Clients"), 1200);
+    await d.see(page.getByText("Read-only"));
+    await d.reveal(page.locator("figure").first(), 1800);
+    await d.reveal(page.getByRole("heading", { name: "Recent workouts" }), 1500);
+  });
+
+  await d.logout();
+  }
+
+  // ============================== General Manager ============================
+  if (want("gm")) {
+  await d.staffLogin("rhaddad");
+
+  await d.story({
+    key: "SCRUM-22", role: "General Manager", title: "Class reservations for each branch",
+    sentence: "Rami compares how full each branch's classes are, then opens a branch's schedule and last week.",
+  }, async () => {
+    await d.click(d.button("Class Reservations"), 1200);
+    await d.see(page.getByRole("heading", { name: "Class Reservations" }));
+    const cards = page.locator('section[aria-label="Branches this week"]');
+    await d.reveal(cards, 2600);
+    await d.click(cards.getByRole("button", { name: /Jnah/ }), 1200);
+    await d.reveal(page.locator('section[aria-label="Jnah this week"]'), 2400);
+    await d.click(cards.getByRole("button", { name: /Hamra/ }), 1200);
+    await d.reveal(page.locator('section[aria-label="Hamra this week"]'), 2000);
+    await d.reveal(page.locator('section[aria-label="By class"]'), 2200);
+    await d.reveal(page.locator('section[aria-label="Schedule"]'), 2000);
+    await d.click(page.getByRole("button", { name: "Previous week" }), 1600);
+    await d.reveal(cards, 2400);
+    await d.click(d.button("This week"), 1000);
+  });
+
+  // SCRUM-106 is Done in Jira, but main has no code for it: no PR, no commit, and no page that puts
+  // branch check-in attendance next to class utilization. The branch cards above only compare class fill
+  // and class show-up (SCRUM-22). It is named on the summary card instead of being passed off as shown.
+  await d.skipStory(
+    { key: "SCRUM-106", role: "General Manager", title: "Compare branch attendance and class utilization" },
+    "Marked Done in Jira but nothing was merged for it: no PR or commit, and no view that compares branch check-in attendance with class utilization",
+    "Marked Done in Jira, but no code was merged for it, so there is nothing to show. The branch cards above only compare class fill."
+  );
+
+  await d.logout();
   }
 }
 
@@ -688,7 +857,7 @@ function summaryCard(d, order) {
       ? `<li class="skipped"><b>${s.key}</b>${s.title} (not shown)</li>`
       : `<li><b>${s.key}</b>${s.title}</li>`;
   });
-  return `<h1 style="font-size:40px">Sprint 3: what we built</h1>
+  return `<h1 style="font-size:38px">Sprint 3: what we built</h1>
     <h2 style="font-size:20px">${d.shown.length} stories shown &middot; Fitness Zone, FYP Group 28</h2><ul>${rows.join("")}</ul>`;
 }
 
@@ -741,12 +910,15 @@ function duration(file) {
     await recordStories(demo);
 
     const order = [
-      ["SCRUM-81", "Class capacity per class type"], ["SCRUM-52", "Weekly class calendar"],
-      ["SCRUM-128", "Branch capacity alert"], ["SCRUM-77", "Busy level for members"],
-      ["SCRUM-59", "Book classes and private training"], ["SCRUM-60", "Member workout and metrics log"],
-      ["SCRUM-34", "Coach daily and weekly schedule"], ["SCRUM-36", "Class attendance"],
-      ["SCRUM-57", "Coach PT availability"], ["SCRUM-100", "Coach time off"],
-      ["SCRUM-30", "Daily schedule and walk-in booking"],
+      ["SCRUM-52", "Weekly class calendar"], ["SCRUM-81", "Class capacity per class type"],
+      ["SCRUM-128", "Branch capacity alert"], ["SCRUM-57", "Coach PT availability"],
+      ["SCRUM-100", "Coach time off"], ["SCRUM-34", "Coach daily and weekly schedule"],
+      ["SCRUM-77", "Busy level for members"], ["SCRUM-59", "Book classes and private training"],
+      ["SCRUM-80", "Class waitlist with automatic notice"], ["SCRUM-61", "Class and renewal reminders"],
+      ["SCRUM-60", "Member workout and metrics log"], ["SCRUM-40", "Member rates their coach"],
+      ["SCRUM-30", "Daily schedule and walk-in booking"], ["SCRUM-36", "Class attendance"],
+      ["SCRUM-37", "Coach views ratings"], ["SCRUM-22", "GM: class reservations by branch"],
+      ["SCRUM-106", "GM: attendance and utilization comparison"],
     ].map(([key, title]) => ({ key, title }));
     await demo.card(summaryCard(demo, order), 6000);
     await context.close();
