@@ -5,7 +5,8 @@
   "description": "Dev-only tooling that seeds a demo database and records the sprint demo videos. Not part of the app.",
   "scripts": {
     "demo:seed": "node demo/seed-demo.js",
-    "demo:record": "node demo/record-sprint3-demo.js",
+    "demo:record": "node demo/record-sprint4-demo.js",
+    "demo:record:sprint3": "node demo/record-sprint3-demo.js",
     "demo:record:sprint2": "node demo/record-sprint2-demo.js"
   },
   "devDependencies": {
