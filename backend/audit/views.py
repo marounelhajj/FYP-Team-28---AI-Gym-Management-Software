@@ -40,6 +40,7 @@ CATEGORY_LABELS = {
     "class": "Class schedule",
     "audit_log": "Audit log",
     "access": "Blocked access (role permissions)",
+    "segment": "Member segments",
 }
 
 FILTER_PARAMS = ("user", "action", "branch", "dateFrom", "dateTo")

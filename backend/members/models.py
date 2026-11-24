@@ -72,6 +72,11 @@ class Member(models.Model):
     # 0008 data migration for members from before it).
     referral_code = models.CharField(max_length=8, unique=True)
 
+    # SCRUM-43: optional, for the "age range" segment filter. Members
+    # without one on file never match an age filter. (Opting out of
+    # marketing is the existing "offers" notification setting.)
+    date_of_birth = models.DateField(null=True, blank=True)
+
     class Meta:
         ordering = ["id"]
 

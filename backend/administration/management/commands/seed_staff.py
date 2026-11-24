@@ -25,6 +25,7 @@ ROLES = [
             "view_branch_headcount", "view_all_branches", "manage_retail_products", "view_class_reservations",
             "manage_member_feedback", "view_coach_ratings", "view_marketing_campaigns", "approve_purchase_orders",
             "view_at_risk_members", "manage_at_risk_list",
+            "manage_member_segments", "view_member_segments", "export_segment_members",
         ],
     },
     {
@@ -35,6 +36,7 @@ ROLES = [
             "view_branch_headcount", "process_sales", "manage_retail_products", "manage_billing",
             "manage_member_feedback",
             "view_at_risk_members", "manage_at_risk_list", "log_retention_calls",
+            "view_member_segments",
         ],
     },
     {
@@ -45,7 +47,9 @@ ROLES = [
     {
         "name": "Marketing Staff",
         "description": "Builds and tracks promotional campaigns and member segments.",
-        "permissions": ["manage_marketing_campaigns"],
+        "permissions": [
+            "manage_marketing_campaigns", "manage_member_segments", "view_member_segments", "export_segment_members",
+        ],
     },
     {
         "name": "Coach",

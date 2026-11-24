@@ -20,7 +20,10 @@ def _session_payload(member):
 
 
 def _profile_snapshot(member):
-    return {"name": member.name, "email": member.email, "phone": member.phone}
+    return {
+        "name": member.name, "email": member.email, "phone": member.phone,
+        "dateOfBirth": member.date_of_birth.isoformat() if member.date_of_birth else None,
+    }
 
 
 # POST /api/members/signup
