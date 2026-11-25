@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchSegments, fetchSegmentsMeta, fetchUptake } from "../../api/segments.js";
+import ExportButton from "./ExportButton.jsx";
 
 // SCRUM-113: Class and service uptake per segment.
 // User story: "As a marketing staff member, I want to view class and service
@@ -181,6 +182,18 @@ export default function SegmentUptake() {
               </label>
             )}
 
+            {/* Export button */}
+            <ExportButton
+              params={{
+                type: "aggregate",
+                segments: selectedSegments,
+                branch,
+                from,
+                to,
+              }}
+              label="Export CSV"
+              onError={setExportError}
+            />
           </div>
         </div>
 
