@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import trends, views
+from . import trends, uptake, views
 
 urlpatterns = [
     path("", views.segment_list),
@@ -10,5 +10,6 @@ urlpatterns = [
     path("/clusters/run", views.clusters_run),
     path("/clusters/<int:group_id>/save", views.cluster_save),
     path("/trends", trends.trends),
+    path("/uptake", uptake.uptake),
     path("/<int:segment_id>", views.segment_detail),
 ]

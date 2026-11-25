@@ -72,3 +72,16 @@ export function fetchTrends({ segments, branch, period } = {}) {
   const qs = q.toString();
   return request(`/trends${qs ? `?${qs}` : ""}`);
 }
+
+// GET /api/segments/uptake?segments=1,2&branch=&from=YYYY-MM-DD&to=YYYY-MM-DD
+export function fetchUptake({ segments, branch, from, to } = {}) {
+  const q = new URLSearchParams();
+  if (segments !== undefined && segments !== null && segments !== "") {
+    q.set("segments", Array.isArray(segments) ? segments.join(",") : segments);
+  }
+  if (branch) q.set("branch", branch);
+  if (from) q.set("from", from);
+  if (to) q.set("to", to);
+  const qs = q.toString();
+  return request(`/uptake${qs ? `?${qs}` : ""}`);
+}
