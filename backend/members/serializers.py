@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from django.utils import timezone
 
 from billing.models import Payment
 from plans.models import MembershipPlan
@@ -79,14 +80,26 @@ class WaiverSignatureFields(serializers.Serializer):
 # through staff/billing flows (a plan or branch switch has pricing
 # implications a member shouldn't be able to trigger unsupervised).
 class MemberProfileUpdateSerializer(serializers.ModelSerializer):
+    # SCRUM-43: a member can add a date of birth, used only by the age-range
+    # segment filter.
+    dateOfBirth = serializers.DateField(source="date_of_birth", required=False, allow_null=True)
+
     class Meta:
         model = Member
-        fields = ["name", "email", "phone"]
+        fields = ["name", "email", "phone", "dateOfBirth"]
         extra_kwargs = {
             "name": {"required": False},
             "email": {"required": False},
             "phone": {"required": False},
         }
+
+    def validate_dateOfBirth(self, value):
+        if value is None:
+            return value
+        today = timezone.localdate()
+        if value > today or value.year < today.year - 120:
+            raise serializers.ValidationError("Enter a real date of birth.")
+        return value
 
     def validate_name(self, value):
         value = " ".join(value.split())
@@ -110,8 +123,10 @@ class MemberSerializer(serializers.ModelSerializer):
         model = Member
         fields = [
             "id", "name", "email", "phone", "status", "branch", "membershipPlan",
-            "joinDate", "subscriptionExpiresAt", "waiver", "doorAccess",
+            "joinDate", "subscriptionExpiresAt", "waiver", "doorAccess", "dateOfBirth",
         ]
+
+    dateOfBirth = serializers.DateField(source="date_of_birth", format="%Y-%m-%d", read_only=True)
 
     # null for a member with no signed waiver on file.
     waiver = serializers.SerializerMethodField()

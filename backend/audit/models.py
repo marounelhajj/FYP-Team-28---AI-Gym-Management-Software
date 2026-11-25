@@ -111,6 +111,11 @@ class AuditLog(models.Model):
         CALL_CAPACITY_UPDATED = "retention.capacity_updated", "Weekly call capacity changed"
         # Role permissions (SCRUM-117): a signed-in staff member was refused.
         ACCESS_DENIED = "access.denied", "Blocked: action outside the role's permissions"
+        # Member segments (SCRUM-43/114)
+        SEGMENT_SAVED = "segment.saved", "Member segment created or edited"
+        SEGMENT_DELETED = "segment.deleted", "Member segment deleted"
+        SEGMENT_CLUSTERS_RUN = "segment.clusters_run", "Suggested segments recalculated"
+        SEGMENT_EXPORTED = "segment.exported", "Segment engagement data exported"
         # The log itself (SCRUM-126) - who took a copy of which entries.
         AUDIT_LOG_EXPORTED = "audit_log.exported", "Audit log exported"
         AUDIT_LOG_VIEWED = "audit_log.viewed", "Audit log viewed"

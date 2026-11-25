@@ -10,7 +10,12 @@ import { BUTTON_COLORS } from "../../styles/buttonColors.js";
 // name, email, and phone only. Branch, plan, and status aren't editable
 // here - those go through staff/billing flows.
 export default function MemberProfileForm({ member, onClose, onSaved }) {
-  const [form, setForm] = useState({ name: member.name, email: member.email, phone: member.phone });
+  const [form, setForm] = useState({
+    name: member.name,
+    email: member.email,
+    phone: member.phone,
+    dateOfBirth: member.dateOfBirth || "",
+  });
   const [fieldErrors, setFieldErrors] = useState({});
   const [submitError, setSubmitError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -25,7 +30,13 @@ export default function MemberProfileForm({ member, onClose, onSaved }) {
     setSubmitError(null);
     setFieldErrors({});
     try {
-      const saved = await updateMyProfile(form);
+      const payload = {
+        name: form.name,
+        email: form.email,
+        phone: form.phone,
+        dateOfBirth: form.dateOfBirth ? form.dateOfBirth : null,
+      };
+      const saved = await updateMyProfile(payload);
       onSaved(saved);
     } catch (err) {
       if (err.fieldErrors) setFieldErrors(err.fieldErrors);
@@ -69,6 +80,15 @@ export default function MemberProfileForm({ member, onClose, onSaved }) {
               type="tel"
               value={form.phone}
               onChange={(e) => update("phone", e.target.value)}
+              style={styles.input}
+            />
+          </Field>
+
+          <Field label="Date of birth" error={fieldErrors.dateOfBirth}>
+            <input
+              type="date"
+              value={form.dateOfBirth}
+              onChange={(e) => update("dateOfBirth", e.target.value)}
               style={styles.input}
             />
           </Field>

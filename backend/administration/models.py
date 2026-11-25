@@ -30,6 +30,9 @@ PERMISSION_CHOICES = [
     ("approve_purchase_orders", "Approve supply orders & manage suppliers"),
     ("view_at_risk_members", "View members at risk of leaving"),
     ("manage_at_risk_list", "Refresh the at-risk list and set call capacity"),
+    ("manage_member_segments", "Create, edit and delete member segments"),
+    ("view_member_segments", "View member segments, attendance trends and uptake"),
+    ("export_segment_members", "Export a segment's member list"),
     ("log_retention_calls", "Log retention calls to at-risk members"),
 ]
 PERMISSION_KEYS = {key for key, _ in PERMISSION_CHOICES}

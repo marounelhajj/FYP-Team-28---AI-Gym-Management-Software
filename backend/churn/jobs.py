@@ -67,6 +67,14 @@ def _run_forever():
                 logger.info("At-risk lists refreshed for %s", ", ".join(refreshed))
         except Exception:
             logger.exception("At-risk refresh failed; trying again next time")
+        try:
+            # SCRUM-43: the suggested segments are re-run weekly with this job.
+            from segments.clustering import refresh_due as refresh_segments
+
+            if refresh_segments() is not None:
+                logger.info("Suggested segments recalculated")
+        except Exception:
+            logger.exception("Suggested segments failed; trying again next time")
         finally:
             close_old_connections()
         time.sleep(config.SCHEDULER_INTERVAL_SECONDS)

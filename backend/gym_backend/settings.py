@@ -64,6 +64,7 @@ INSTALLED_APPS = [
     'purchasing',
     'loyalty',
     'churn',
+    'segments',
 ]
 
 MIDDLEWARE = [
