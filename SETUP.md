@@ -551,6 +551,33 @@ calls my staff can make per week, so that the list stays actionable."*
   now has `belowCap`, `capacity` and `accuracy`.
 - Tests: `python manage.py test churn.test_capacity`
 
+### Waivers and signed records (SCRUM-83)
+
+Story: *"As a member, I want to sign a digital waiver and health disclaimer
+during signup, so that the gym has liability protection on file before I
+start training."*
+
+- Both signups (online and the receptionist's walk-in form) end with the
+  liability waiver and health disclaimer: two ticks and a typed full name
+  that must match. No waiver, no member and no payment.
+- **One record per signature** (`members.WaiverSignature`): member, version,
+  signed name, time, IP address (the member's device online, the desk's
+  computer for a walk-in), who witnessed it, and a snapshot of the exact
+  text signed. `Waiver` is the member's current signature.
+- **Versioned text** (`members/waiver.py`, `WAIVER_VERSION`). Change the
+  wording, bump the version, and every member's `waiver.needsResign` turns
+  true: their dashboard asks them to read and sign the new version
+  (`POST /api/members/me/waiver`). Earlier signatures are kept.
+- **Staff** with `manage_members` open a member's signed record from
+  Subscription Details ("Open signed record"): `GET /api/members/<id>/waiver`,
+  written to the audit log as `waiver.viewed`. **Members** see only their own
+  (`GET /api/members/me/waiver`).
+- Data deletion (SCRUM-62) keeps the records for liability but removes the
+  signed name and IP address; the data export includes every signature.
+- Run `python manage.py migrate` after pulling (members 0010-0011, audit).
+  Existing waivers get a signature record with the text of version 2026-10.
+- Tests: `python manage.py test members`
+
 ## Folder structure
 
 ```

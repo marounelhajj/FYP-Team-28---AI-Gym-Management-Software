@@ -116,6 +116,9 @@ class AuditLog(models.Model):
         SEGMENT_DELETED = "segment.deleted", "Member segment deleted"
         SEGMENT_CLUSTERS_RUN = "segment.clusters_run", "Suggested segments recalculated"
         SEGMENT_EXPORTED = "segment.exported", "Segment engagement data exported"
+        # Waivers (SCRUM-83)
+        WAIVER_VIEWED = "waiver.viewed", "Signed waiver record opened by staff"
+        WAIVER_SIGNED = "waiver.signed", "Member signed a new waiver version"
         # The log itself (SCRUM-126) - who took a copy of which entries.
         AUDIT_LOG_EXPORTED = "audit_log.exported", "Audit log exported"
         AUDIT_LOG_VIEWED = "audit_log.viewed", "Audit log viewed"

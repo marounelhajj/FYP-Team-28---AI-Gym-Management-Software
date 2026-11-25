@@ -7,6 +7,7 @@ from plans.models import MembershipPlan
 from .access import door_access
 from .models import AccessCardReissue, Member, Waiver
 from .waiver import WAIVER_VERSION
+from .waiver_records import sign
 
 
 # Shared by walk-in registration and online signup: a new member can only
@@ -25,10 +26,12 @@ class WaiverSerializer(serializers.ModelSerializer):
     signedVia = serializers.CharField(source="signed_via")
     witnessedBy = serializers.CharField(source="witnessed_by.full_name", default=None)
     signedAt = serializers.DateTimeField(source="signed_at", format="%Y-%m-%d %H:%M")
+    # The wording changed since they signed (SCRUM-83): they need to re-sign.
+    needsResign = serializers.BooleanField(source="needs_resign", read_only=True)
 
     class Meta:
         model = Waiver
-        fields = ["signatureName", "waiverVersion", "signedVia", "witnessedBy", "signedAt"]
+        fields = ["signatureName", "waiverVersion", "signedVia", "witnessedBy", "signedAt", "needsResign"]
 
 
 # Shared by walk-in registration and online signup (SCRUM-83): the new
@@ -245,9 +248,9 @@ class MemberCreateSerializer(WaiverSignatureFields, serializers.ModelSerializer)
         # never gets committed unless Payment.record() also succeeds.)
         with transaction.atomic():
             member = Member.objects.create(**validated_data)
-            Waiver.objects.create(
-                member=member, signed_via=Waiver.SignedVia.FRONT_DESK,
-                witnessed_by=self.context.get("staff_account"), **signature,
+            sign(
+                member, signature, Waiver.SignedVia.FRONT_DESK,
+                witnessed_by=self.context.get("staff_account"), ip=self.context.get("ip"),
             )
             payment = Payment.record(
                 member, member.membership_plan, payment_method, payment_duration,
@@ -361,7 +364,7 @@ class MemberSignupSerializer(WaiverSignatureFields, serializers.ModelSerializer)
         # above - see its comment for why.
         with transaction.atomic():
             member.save()
-            Waiver.objects.create(member=member, signed_via=Waiver.SignedVia.ONLINE, **signature)
+            sign(member, signature, Waiver.SignedVia.ONLINE, ip=self.context.get("ip"))
             payment = Payment.record(
                 member, member.membership_plan, payment_method, payment_duration,
                 note="First payment at signup", offer=self._offer_campaign,

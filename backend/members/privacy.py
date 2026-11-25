@@ -22,7 +22,7 @@ from healthnotes.models import HealthDeclaration, HealthNote
 from progress.models import BodyMetric, WorkoutEntry
 from training.events import delete_training_events_for_member
 
-from .models import AccessCardReissue, Member
+from .models import AccessCardReissue, Member, WaiverSignature
 
 # User story (SCRUM-62): "As a member, I want to request an export or
 # deletion of my personal data, so that I have control over my own privacy."
@@ -128,7 +128,16 @@ def build_export(member):
             "liabilityWaiverAccepted": waiver.liability_waiver_accepted,
             "signedVia": waiver.signed_via,
             "signedAt": _stamp(waiver.signed_at),
+            "ipAddress": waiver.ip_address,
         },
+        # SCRUM-83: every signature, with the exact text agreed to.
+        "waiverSignatures": [
+            {
+                "signatureName": s.signature_name, "waiverVersion": s.waiver_version, "signedVia": s.signed_via,
+                "signedAt": _stamp(s.signed_at), "ipAddress": s.ip_address, "text": s.text_snapshot,
+            }
+            for s in member.waiver_signatures.all()
+        ],
         "accessCardReissues": [
             {"cardNumber": r.card_number, "reason": r.reason, "note": r.note, "reissuedAt": _stamp(r.reissued_at)}
             for r in member.card_reissues.all()
@@ -310,7 +319,10 @@ def anonymize_member(member):
         waiver = _waiver_of(member)
         if waiver is not None:
             waiver.signature_name = REDACTED
-            waiver.save(update_fields=["signature_name"])
+            waiver.ip_address = None
+            waiver.save(update_fields=["signature_name", "ip_address"])
+        # SCRUM-83: every earlier signature is kept the same way.
+        WaiverSignature.objects.filter(member=member).update(signature_name=REDACTED, ip_address=None)
 
         PaymentMethod.objects.filter(member=member).delete()
         AccessCardReissue.objects.filter(member=member).delete()

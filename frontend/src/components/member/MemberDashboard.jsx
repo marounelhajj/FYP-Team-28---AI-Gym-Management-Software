@@ -1,13 +1,17 @@
 import { useEffect, useState } from "react";
 import {
   cancelMyMembership,
+  fetchCurrentMember,
   fetchMyBilling,
   fetchMyPaymentMethod,
   fetchMyQrCode,
   freezeMyMembership,
   resumeMyMembership,
+  signMyWaiver,
 } from "../../api/memberAuth.js";
+import { fetchWaiverText } from "../../api/members.js";
 import { BUTTON_COLORS } from "../../styles/buttonColors.js";
+import WaiverRecordModal from "../WaiverRecordModal.jsx";
 import BranchBusyLevel from "./BranchBusyLevel.jsx";
 import MemberBooking from "./MemberBooking.jsx";
 import MyTrainingLog from "../progress/MyTrainingLog.jsx";
@@ -63,6 +67,9 @@ export default function MemberDashboard({ member: initialMember, onDeleted }) {
   const [membershipError, setMembershipError] = useState(null);
   const [membershipBusy, setMembershipBusy] = useState(false);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
+  const [showWaiverRecord, setShowWaiverRecord] = useState(false);
+
+  const needsSign = !member.waiver || Boolean(member.waiver.needsResign);
 
   // Check-in QR code (SCRUM-33): shown at the front desk instead of
   // reading out the membership ID.
@@ -161,6 +168,16 @@ export default function MemberDashboard({ member: initialMember, onDeleted }) {
 
       {savedNotice && <div style={styles.successBox}>{savedNotice}</div>}
 
+      {needsSign && (
+        <MemberWaiverCard
+          member={member}
+          onSigned={(updatedMember) => {
+            setMember(updatedMember);
+            setSavedNotice("Waiver signed successfully.");
+          }}
+        />
+      )}
+
       <div style={styles.card}>
         <Row label="Name" value={member.name} />
         <Row label="Email" value={member.email} />
@@ -180,7 +197,22 @@ export default function MemberDashboard({ member: initialMember, onDeleted }) {
         <Row label="Member since" value={member.joinDate} />
         <Row
           label="Waiver"
-          value={member.waiver ? `Signed ${member.waiver.signedAt.slice(0, 10)}` : "Not on file - ask at the front desk"}
+          value={
+            member.waiver ? (
+              <div style={styles.waiverRowValue}>
+                <span>{`Signed ${member.waiver.signedAt.slice(0, 10)}`}</span>
+                <button
+                  type="button"
+                  onClick={() => setShowWaiverRecord(true)}
+                  style={styles.smallButton}
+                >
+                  Open signed record
+                </button>
+              </div>
+            ) : (
+              "Not on file - ask at the front desk"
+            )
+          }
         />
       </div>
 
@@ -305,6 +337,10 @@ export default function MemberDashboard({ member: initialMember, onDeleted }) {
           onSaved={handlePaymentMethodSaved}
         />
       )}
+
+      {showWaiverRecord && (
+        <WaiverRecordModal onClose={() => setShowWaiverRecord(false)} />
+      )}
     </div>
   );
 }
@@ -314,6 +350,154 @@ function Row({ label, value }) {
     <div style={styles.row}>
       <span style={styles.rowLabel}>{label}</span>
       <span style={styles.rowValue}>{value}</span>
+    </div>
+  );
+}
+
+function first(err) {
+  return Array.isArray(err) ? err[0] : err;
+}
+
+function MemberWaiverCard({ member, onSigned }) {
+  const [text, setText] = useState(null);
+  const [loadError, setLoadError] = useState(null);
+  const [liabilityWaiverAccepted, setLiabilityWaiverAccepted] = useState(false);
+  const [healthDisclaimerAccepted, setHealthDisclaimerAccepted] = useState(false);
+  const [signatureName, setSignatureName] = useState("");
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [generalError, setGeneralError] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    fetchWaiverText()
+      .then(setText)
+      .catch((err) => setLoadError(err.message || "Failed to load waiver"));
+  }, []);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setSubmitting(true);
+    setFieldErrors({});
+    setGeneralError(null);
+    try {
+      const res = await signMyWaiver({
+        liabilityWaiverAccepted,
+        healthDisclaimerAccepted,
+        signatureName,
+      });
+      const fresh = await fetchCurrentMember();
+      onSigned(
+        fresh || {
+          ...member,
+          waiver: {
+            signatureName: res.current?.signatureName || signatureName,
+            waiverVersion: res.current?.waiverVersion || res.currentVersion,
+            signedVia: res.current?.signedVia || "Online",
+            witnessedBy: res.current?.witnessedBy || null,
+            signedAt: res.current?.signedAt || new Date().toISOString(),
+            needsResign: false,
+          },
+        }
+      );
+    } catch (err) {
+      if (err.fieldErrors) {
+        setFieldErrors(err.fieldErrors);
+      } else {
+        setGeneralError(err.message || "Could not sign waiver.");
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div style={styles.waiverCard} role="region" aria-labelledby="waiver-card-heading">
+      <h2 id="waiver-card-heading" style={styles.waiverCardTitle}>
+        Our waiver has been updated — please read and sign the new version
+      </h2>
+
+      <div style={styles.waiverTextBox} tabIndex={0} aria-label="Waiver and health disclaimer text">
+        {loadError && <p style={styles.errorBox}>Couldn't load the waiver: {loadError}</p>}
+        {!text && !loadError && <p style={styles.muted}>Loading agreement...</p>}
+        {text && (
+          <>
+            <strong style={styles.waiverHeading}>Liability waiver</strong>
+            <p style={styles.waiverParagraph}>{text.liabilityWaiver}</p>
+            <strong style={styles.waiverHeading}>Health disclaimer</strong>
+            <p style={styles.waiverParagraph}>{text.healthDisclaimer}</p>
+            <div style={styles.waiverVersion}>Version {text.version}</div>
+          </>
+        )}
+      </div>
+
+      <form onSubmit={handleSubmit}>
+        <div style={styles.checkboxField}>
+          <label style={styles.checkboxLabel} htmlFor="waiver-liability-cb">
+            <input
+              id="waiver-liability-cb"
+              type="checkbox"
+              checked={liabilityWaiverAccepted}
+              onChange={(e) => {
+                setLiabilityWaiverAccepted(e.target.checked);
+                setFieldErrors((f) => ({ ...f, liabilityWaiverAccepted: undefined }));
+              }}
+              style={styles.checkbox}
+            />
+            <span>I have read and agree to the liability waiver.</span>
+          </label>
+          {fieldErrors.liabilityWaiverAccepted && (
+            <div style={styles.fieldError}>{first(fieldErrors.liabilityWaiverAccepted)}</div>
+          )}
+        </div>
+
+        <div style={styles.checkboxField}>
+          <label style={styles.checkboxLabel} htmlFor="waiver-health-cb">
+            <input
+              id="waiver-health-cb"
+              type="checkbox"
+              checked={healthDisclaimerAccepted}
+              onChange={(e) => {
+                setHealthDisclaimerAccepted(e.target.checked);
+                setFieldErrors((f) => ({ ...f, healthDisclaimerAccepted: undefined }));
+              }}
+              style={styles.checkbox}
+            />
+            <span>I confirm the health disclaimer applies to me.</span>
+          </label>
+          {fieldErrors.healthDisclaimerAccepted && (
+            <div style={styles.fieldError}>{first(fieldErrors.healthDisclaimerAccepted)}</div>
+          )}
+        </div>
+
+        <div style={styles.inputGroup}>
+          <label htmlFor="waiver-sign-name" style={styles.inputLabel}>
+            Type your full name to sign
+          </label>
+          <input
+            id="waiver-sign-name"
+            type="text"
+            value={signatureName}
+            onChange={(e) => {
+              setSignatureName(e.target.value);
+              setFieldErrors((f) => ({ ...f, signatureName: undefined }));
+            }}
+            placeholder={member.name}
+            style={styles.signatureInput}
+            autoComplete="name"
+          />
+          {fieldErrors.signatureName && (
+            <div style={styles.fieldError}>{first(fieldErrors.signatureName)}</div>
+          )}
+        </div>
+
+        {generalError && <div style={styles.errorBox}>{generalError}</div>}
+
+        <div style={styles.signActions}>
+          <button type="submit" disabled={submitting} style={styles.signButton}>
+            {submitting ? "Signing..." : "Sign"}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
@@ -534,4 +718,113 @@ const styles = {
   confirmBox: { marginTop: 14 },
   confirmText: { fontSize: 13, color: "#444", margin: "0 0 10px" },
   confirmActions: { display: "flex", gap: 10 },
+  waiverCard: {
+    marginBottom: 20,
+    padding: 16,
+    border: "2px solid #124096",
+    borderRadius: 10,
+    background: "#f4f7fc",
+  },
+  waiverCardTitle: {
+    fontSize: 16,
+    fontWeight: 700,
+    color: "#0b2a66",
+    margin: "0 0 12px",
+    lineHeight: 1.3,
+  },
+  waiverTextBox: {
+    border: "1px solid #d0d0d5",
+    borderRadius: 8,
+    background: "#fff",
+    padding: "10px 12px",
+    maxHeight: 180,
+    overflowY: "auto",
+    marginBottom: 14,
+  },
+  waiverHeading: {
+    display: "block",
+    fontSize: 12,
+    fontWeight: 700,
+    color: "#1a1a1a",
+    marginTop: 4,
+    marginBottom: 2,
+  },
+  waiverParagraph: {
+    fontSize: 12,
+    lineHeight: 1.5,
+    color: "#444",
+    margin: "2px 0 8px",
+  },
+  waiverVersion: {
+    fontSize: 11,
+    color: "#888",
+    margin: 0,
+  },
+  checkboxField: {
+    marginBottom: 10,
+  },
+  checkboxLabel: {
+    display: "flex",
+    alignItems: "flex-start",
+    gap: 8,
+    fontSize: 13,
+    color: "#1a1a1a",
+    cursor: "pointer",
+    lineHeight: 1.4,
+  },
+  checkbox: {
+    width: 16,
+    height: 16,
+    marginTop: 2,
+    flexShrink: 0,
+    cursor: "pointer",
+  },
+  inputGroup: {
+    marginTop: 12,
+    marginBottom: 12,
+  },
+  inputLabel: {
+    display: "block",
+    fontSize: 13,
+    fontWeight: 600,
+    marginBottom: 6,
+    color: "#444",
+  },
+  signatureInput: {
+    width: "100%",
+    padding: "10px 12px",
+    fontSize: 15,
+    fontFamily: "inherit",
+    border: "1px solid #d0d0d5",
+    borderRadius: 8,
+    outline: "none",
+    background: "#fff",
+    boxSizing: "border-box",
+  },
+  fieldError: {
+    color: "#b3261e",
+    fontSize: 12,
+    marginTop: 4,
+  },
+  signActions: {
+    display: "flex",
+    justifyContent: "flex-end",
+    marginTop: 14,
+  },
+  signButton: {
+    padding: "10px 20px",
+    fontSize: 14,
+    border: "none",
+    borderRadius: 8,
+    ...BUTTON_COLORS.blue,
+    fontWeight: 600,
+    cursor: "pointer",
+  },
+  waiverRowValue: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 10,
+    flexWrap: "wrap",
+  },
 };

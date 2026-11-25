@@ -30,3 +30,13 @@ HEALTH_DISCLAIMER_TEXT = (
     "agree to inform staff immediately of any pain, discomfort, or medical issue that arises during a "
     "session."
 )
+
+
+# The exact wording of the current version, as stored with each signature
+# (Waiver.text_snapshot / WaiverSignature.text_snapshot).
+def current_text():
+    return "\n\n".join([
+        f"Waiver version {WAIVER_VERSION}",
+        f"LIABILITY WAIVER\n{LIABILITY_WAIVER_TEXT}",
+        f"HEALTH DISCLAIMER\n{HEALTH_DISCLAIMER_TEXT}",
+    ])
