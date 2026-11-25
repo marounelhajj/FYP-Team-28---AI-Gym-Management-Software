@@ -645,7 +645,7 @@ async function recordStories(d) {
       await openTab(d, "Supply Orders");
       const low = page.getByRole("region", { name: "Running low" });
       await d.reveal(low.getByText("Running low at Hamra"), 1500);
-      await d.click(low.getByRole("button", { name: /^Order from / }).first(), 1200);
+      await d.click(low.getByRole("button", { name: /^Order from NutriPro/ }).first(), 1200);
       const form = page.getByRole("dialog", { name: "New supply order" });
       await d.reveal(form.getByText("Order total"), 1500);
       await d.reveal(form.getByText(/General Manager approves it first/), 2000);
@@ -743,11 +743,12 @@ async function recordStories(d) {
       await sleep(1500);
       await d.reveal(page.locator("svg[role=img]").first(), 2600);
       await d.reveal(page.getByText(/Change vs prev period/i), 2400);
-      await d.click(d.button("Monthly"), 1800);
+      const toggle = (name) => page.getByRole("radio", { name, exact: true }).or(d.button(name)).first();
+      await d.click(toggle("Monthly"), 1800);
       await d.reveal(page.locator("svg[role=img]").first(), 2200);
-      await d.click(d.button("Total visits"), 1800);
-      await d.click(d.button("Visits / member"), 1000);
-      await d.click(d.button("Weekly"), 1200);
+      await d.click(toggle("Total visits"), 1800);
+      await d.click(toggle("Visits / member"), 1000);
+      await d.click(toggle("Weekly"), 1200);
     });
 
     await d.story({
@@ -894,7 +895,8 @@ async function recordStories(d) {
       await openTab(d, "Supply Orders");
       const approvals = page.getByRole("region", { name: "Waiting for your approval" });
       await d.reveal(approvals, 2000);
-      const pending = approvals.getByRole("listitem").filter({ hasText: "Hamra" }).first();
+      const hamra = approvals.getByRole("listitem").filter({ hasText: "Hamra" });
+      const pending = (await hamra.count()) ? hamra.first() : approvals.getByRole("listitem").first();
       await d.click(pending.getByRole("button").first(), 1200);
       await d.click(page.getByRole("button", { name: /^Approve \$/ }), 1200);
       await d.reveal(page.getByText("Approved and sent to the supplier."), 2000);
