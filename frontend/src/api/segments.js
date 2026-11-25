@@ -60,3 +60,15 @@ export function runClusters() {
 export function saveClusterGroup(groupId, name) {
   return send("POST", `/clusters/${groupId}/save`, name ? { name } : {});
 }
+
+// GET /api/segments/trends?segments=1,2&branch=&period=week|month
+export function fetchTrends({ segments, branch, period } = {}) {
+  const q = new URLSearchParams();
+  if (segments !== undefined && segments !== null && segments !== "") {
+    q.set("segments", Array.isArray(segments) ? segments.join(",") : segments);
+  }
+  if (branch) q.set("branch", branch);
+  if (period) q.set("period", period);
+  const qs = q.toString();
+  return request(`/trends${qs ? `?${qs}` : ""}`);
+}
