@@ -1,4 +1,5 @@
 from django.contrib.auth.hashers import check_password
+from rest_framework import serializers
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
@@ -7,7 +8,9 @@ from audit.models import AuditLog
 from billing.serializers import PaymentSerializer
 from . import qr
 from .models import Member
-from .serializers import MemberProfileUpdateSerializer, MemberSerializer, MemberSignupSerializer
+from .serializers import MemberProfileUpdateSerializer, MemberSerializer, MemberSignupSerializer, WaiverSignatureFields
+from .models import Waiver
+from .waiver_records import client_ip, sign, waiver_payload
 
 # Member sign-in/sign-up. Separate session key ("member_id") from staff
 # ("staff_account_id" in administration/auth_views.py) so the two account
@@ -35,7 +38,7 @@ def _profile_snapshot(member):
 # 400 + field errors (e.g. username/email already taken) on failure.
 @api_view(["POST"])
 def signup(request):
-    serializer = MemberSignupSerializer(data=request.data)
+    serializer = MemberSignupSerializer(data=request.data, context={"ip": client_ip(request)})
     if not serializer.is_valid():
         return Response({"error": serializer.errors}, status=400)
     from marketing.offers import OfferError
@@ -147,3 +150,41 @@ def my_qr(request):
         return Response({"error": "Not authenticated."}, status=401)
     payload = qr.payload_for(member)
     return Response({"membershipId": member.id, "payload": payload, "qrCode": qr.svg_data_uri(payload)})
+
+
+class ResignSerializer(WaiverSignatureFields):
+    # Not editable: the signature has to match the name on their record.
+    name = serializers.CharField()
+
+
+# GET  /api/members/me/waiver - the member's own signed waiver: current
+#      record, earlier signatures, and whether they need to sign the new
+#      version. Members only ever see their own (SCRUM-83).
+# POST /api/members/me/waiver {liabilityWaiverAccepted,
+#      healthDisclaimerAccepted, signatureName} - sign the current version
+#      after the wording changed. 400 if they're already up to date.
+@api_view(["GET", "POST"])
+def my_waiver(request):
+    member_id = request.session.get("member_id")
+    member = Member.objects.filter(id=member_id).first() if member_id else None
+    if member is None:
+        return Response({"error": "Not authenticated."}, status=401)
+
+    if request.method == "POST":
+        waiver = getattr(member, "waiver", None) if hasattr(member, "waiver") else None
+        if waiver is not None and not waiver.needs_resign:
+            return Response({"error": "Your waiver is already up to date."}, status=400)
+        fields = ResignSerializer(data={**request.data, "name": member.name})
+        if not fields.is_valid():
+            return Response({"error": fields.errors}, status=400)
+        data = dict(fields.validated_data)
+        data.pop("name", None)
+        signature = WaiverSignatureFields.pop_signature(data)
+        waiver = sign(member, signature, Waiver.SignedVia.ONLINE, ip=client_ip(request))
+        record(
+            request, AuditLog.Action.WAIVER_SIGNED, actor=member, target=member,
+            summary=f"{member.name} signed waiver version {waiver.waiver_version}",
+            details={"waiverVersion": waiver.waiver_version},
+        )
+        member.refresh_from_db()
+    return Response(waiver_payload(member))

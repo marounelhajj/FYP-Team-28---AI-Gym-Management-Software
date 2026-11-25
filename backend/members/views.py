@@ -17,6 +17,7 @@ from training.models import TrainingEvent
 from . import qr
 from .models import AccessCardReissue, Member
 from .waiver import HEALTH_DISCLAIMER_TEXT, LIABILITY_WAIVER_TEXT, WAIVER_VERSION
+from .waiver_records import client_ip, waiver_payload
 from .serializers import (
     AccessCardReissueCreateSerializer, AccessCardReissueSerializer, MemberCreateSerializer, MemberSerializer,
 )
@@ -83,7 +84,9 @@ def member_list(request):
 
     if request.method == "POST":
         # The receptionist is recorded as the witness on the member's waiver.
-        serializer = MemberCreateSerializer(data=request.data, context={"staff_account": account})
+        serializer = MemberCreateSerializer(
+            data=request.data, context={"staff_account": account, "ip": client_ip(request)},
+        )
         if not serializer.is_valid():
             return Response({"error": serializer.errors}, status=400)
         from marketing.offers import OfferError
@@ -404,3 +407,24 @@ def member_access_card(request, member_id):
                      "note": serializer.validated_data["note"]},
         )
     return Response(_access_card_data(member), status=201)
+
+
+# GET /api/members/<id>/waiver - a member's signed waiver record (SCRUM-83:
+# "Staff can see whether a member has a signed waiver and open the signed
+# record"). The current signature with the exact text signed, the IP it was
+# signed from, who witnessed it, and every earlier signature. Same
+# permission as the member's record itself (manage_members). Opening it is
+# written to the audit log.
+@api_view(["GET"])
+def member_waiver(request, member_id):
+    account, denied = authorize(request, "manage_members")
+    if denied:
+        return denied
+    member = Member.objects.filter(pk=member_id).first()
+    if member is None:
+        return Response({"error": f"Member {member_id} not found"}, status=404)
+    record(
+        request, AuditLog.Action.WAIVER_VIEWED, actor=account, target=member,
+        summary=f"Opened the signed waiver of {member.name}",
+    )
+    return Response(waiver_payload(member))

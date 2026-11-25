@@ -50,6 +50,25 @@ export async function fetchMyQrCode() {
   return res.json();
 }
 
+// GET /api/members/me/waiver - the logged-in member's signed waiver record (SCRUM-83):
+// { memberId, currentVersion, onFile, needsResign, current, history }
+export async function fetchMyWaiver() {
+  const res = await fetch("/api/members/me/waiver");
+  if (!res.ok) throw await parseError(res);
+  return res.json();
+}
+
+// POST /api/members/me/waiver - sign or re-sign the current waiver (SCRUM-83).
+export async function signMyWaiver({ liabilityWaiverAccepted, healthDisclaimerAccepted, signatureName }) {
+  const res = await fetch("/api/members/me/waiver", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ liabilityWaiverAccepted, healthDisclaimerAccepted, signatureName }),
+  });
+  if (!res.ok) throw await parseError(res);
+  return res.json();
+}
+
 
 // PATCH /api/members/me - a member editing their own name/email/phone.
 //

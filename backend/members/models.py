@@ -147,9 +147,45 @@ class Waiver(models.Model):
         "administration.StaffAccount", on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
     )
     signed_at = models.DateTimeField(default=timezone.now)
+    # Where it was signed from (the member's device online, the front desk's
+    # computer for a walk-in) and the exact wording agreed to (SCRUM-83).
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    text_snapshot = models.TextField(blank=True)
+
+    # The waiver wording changed since they signed: they're asked to sign
+    # the new version (members/waiver_records.py).
+    @property
+    def needs_resign(self):
+        from .waiver import WAIVER_VERSION
+
+        return self.waiver_version != WAIVER_VERSION
 
     def __str__(self):
         return f"Waiver for {self.member.name} ({self.signed_at:%Y-%m-%d})"
+
+
+# Every signature, kept forever (SCRUM-83: "one record is stored per
+# signature"). Waiver above is the member's current one; a re-signature after
+# the wording changes adds a row here and replaces the Waiver's fields.
+class WaiverSignature(models.Model):
+    member = models.ForeignKey(Member, on_delete=models.CASCADE, related_name="waiver_signatures")
+    signature_name = models.CharField(max_length=150)
+    health_disclaimer_accepted = models.BooleanField(default=False)
+    liability_waiver_accepted = models.BooleanField(default=False)
+    waiver_version = models.CharField(max_length=20)
+    text_snapshot = models.TextField(blank=True)
+    signed_via = models.CharField(max_length=20, choices=Waiver.SignedVia.choices)
+    witnessed_by = models.ForeignKey(
+        "administration.StaffAccount", on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    signed_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["-signed_at", "-id"]
+
+    def __str__(self):
+        return f"{self.member_id} signed waiver {self.waiver_version} on {self.signed_at:%Y-%m-%d}"
 
 
 # User story: "As a receptionist, I want to reissue lost access cards or QR

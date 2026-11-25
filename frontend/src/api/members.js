@@ -24,6 +24,14 @@ export async function fetchWaiverText() {
   return res.json();
 }
 
+// Staff viewing a member's signed waiver record (SCRUM-83):
+// { memberId, currentVersion, onFile, needsResign, current, history }
+export async function fetchMemberWaiver(memberId) {
+  const res = await fetch(`/api/members/${memberId}/waiver`);
+  if (!res.ok) throw await parseError(res);
+  return res.json();
+}
+
 export async function fetchMemberFilterOptions() {
   const res = await fetch("/api/members/meta");
   if (!res.ok) throw new Error("Failed to load filter options");

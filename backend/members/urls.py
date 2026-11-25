@@ -23,6 +23,7 @@ urlpatterns = [
     path("/logout", auth_views.logout),
     path("/me", auth_views.me),
     path("/me/qr", auth_views.my_qr),
+    path("/me/waiver", auth_views.my_waiver),
     path("/me/export", privacy.my_data_export),
     path("/me/delete", privacy.my_data_delete),
     path("/me/payment-method", billing_views.my_payment_method),
@@ -66,6 +67,7 @@ urlpatterns = [
     path("/<int:member_id>/payments", billing_views.member_payment),
     path("/<int:member_id>/cancel", views.member_cancel),
     path("/<int:member_id>/access-card", views.member_access_card),
+    path("/<int:member_id>/waiver", views.member_waiver),
     path("/<int:member_id>", views.member_detail),
     path("", views.member_list),
 ]

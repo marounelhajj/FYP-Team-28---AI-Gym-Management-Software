@@ -41,6 +41,7 @@ CATEGORY_LABELS = {
     "audit_log": "Audit log",
     "access": "Blocked access (role permissions)",
     "segment": "Member segments",
+    "waiver": "Waivers",
 }
 
 FILTER_PARAMS = ("user", "action", "branch", "dateFrom", "dateTo")

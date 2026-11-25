@@ -4,6 +4,7 @@ import { BUTTON_COLORS } from "../styles/buttonColors.js";
 import AccessCardPanel from "./AccessCardPanel.jsx";
 import PaymentMethodForm from "./PaymentMethodForm.jsx";
 import RetentionCallHistory from "./churn/RetentionCallHistory.jsx";
+import WaiverRecordModal from "./WaiverRecordModal.jsx";
 
 const STATUS_STYLES = { Active: BUTTON_COLORS.green, Frozen: BUTTON_COLORS.blue, Cancelled: BUTTON_COLORS.red };
 
@@ -19,6 +20,7 @@ export default function SubscriptionDetails({ member, onClose, onCancelled, onRe
   const [showMethodForm, setShowMethodForm] = useState(false);
   const [methodSaved, setMethodSaved] = useState(false);
   const [showAccessCard, setShowAccessCard] = useState(false);
+  const [showWaiverRecord, setShowWaiverRecord] = useState(false);
 
   const current = billing?.member ?? member;
   const onFile = billing?.paymentMethod ?? null;
@@ -89,11 +91,24 @@ export default function SubscriptionDetails({ member, onClose, onCancelled, onRe
             <Row
               label="Waiver"
               value={
-                current.waiver
-                  ? `Signed ${current.waiver.signedAt.slice(0, 10)} (${current.waiver.signedVia}${
-                      current.waiver.witnessedBy ? `, witnessed by ${current.waiver.witnessedBy}` : ""
-                    })`
-                  : "Not on file"
+                current.waiver ? (
+                  <div style={styles.waiverRowValue}>
+                    <span>
+                      {`Signed ${current.waiver.signedAt.slice(0, 10)} (${current.waiver.signedVia}${
+                        current.waiver.witnessedBy ? `, witnessed by ${current.waiver.witnessedBy}` : ""
+                      })`}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowWaiverRecord(true)}
+                      style={styles.waiverRecordButton}
+                    >
+                      Open signed record
+                    </button>
+                  </div>
+                ) : (
+                  "Not on file"
+                )
               }
             />
           </div>
@@ -187,6 +202,10 @@ export default function SubscriptionDetails({ member, onClose, onCancelled, onRe
       )}
 
       {showAccessCard && <AccessCardPanel memberId={current.id} onClose={() => setShowAccessCard(false)} />}
+
+      {showWaiverRecord && (
+        <WaiverRecordModal memberId={current.id} onClose={() => setShowWaiverRecord(false)} />
+      )}
     </>
   );
 }
@@ -300,6 +319,23 @@ const styles = {
   },
   rowLabel: { color: "#666" },
   rowValue: { fontWeight: 600, textAlign: "right" },
+  waiverRowValue: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 10,
+    flexWrap: "wrap",
+  },
+  waiverRecordButton: {
+    padding: "4px 10px",
+    fontSize: 12,
+    fontWeight: 600,
+    border: "1px solid #d0d0d5",
+    borderRadius: 6,
+    background: "#f5f5f7",
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+  },
   accessGranted: { color: "#1d5e2f" },
   accessBlocked: { color: "#b3261e" },
   accessDeskOnly: { color: "#8a5a00" },
