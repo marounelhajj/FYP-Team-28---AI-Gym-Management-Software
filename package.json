@@ -6,6 +6,8 @@
   "scripts": {
     "demo:seed": "node demo/seed-demo.js",
     "demo:record": "node demo/record-sprint4-demo.js",
+    "demo:seed:full": "node -e \"process.env.DEMO_SEED='seed_demo_sprint4_full'; require('./demo/seed-demo.js')\"",
+    "demo:record:full": "node demo/record-sprint4-demo-full.js",
     "demo:record:sprint3": "node demo/record-sprint3-demo.js",
     "demo:record:sprint2": "node demo/record-sprint2-demo.js"
   },
